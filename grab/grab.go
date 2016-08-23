@@ -188,17 +188,20 @@ type UrlStore struct {
 	PopChannel  chan Url
 }
 
-func NewUrlStore(in_if interface{}) *UrlStore {
+func NewUrlStore(in_if_arr []interface{}) *UrlStore {
 
 	itm := new(UrlStore)
 	itm.data = make([]Url, 0, 1024)
 	itm.PopChannel = make(chan Url, 2)
+	for in_if := range in_if_arr {
 	switch in_if.(type) {
 	case chan Url:
 		itm.PushChannel = in_if.(chan Url)
+	case nil:
+		//Nothing to do
 	default:
 		fmt.Printf("Type is %T\n", in_if)
-	}
+	}}
 
 	if itm.PushChannel == nil {
 		itm.PushChannel = make(chan Url, 2)
