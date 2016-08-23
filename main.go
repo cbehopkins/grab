@@ -1,15 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 	"sync"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -112,6 +114,16 @@ func crawl(url Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter)
 		}
 	}
 }
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return true, err
+}
 func fetch(fetch_url Url) {
 	array := strings.Split(string(fetch_url), "/")
 	var fn string
@@ -119,12 +131,11 @@ func fetch(fetch_url Url) {
 		fn = array[len(array)-1]
 	}
 
-	//fmt.Printf("We should fetch %s, fn:%s\n", fetch_url, fn)
 	dir_struct := array[2 : len(array)-1]
 	dir_str := strings.Join(dir_struct, "/")
-	//fmt.Println("It should live in", dir_str)
 	potential_file_name := dir_str + "/" + fn
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
+		fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
 		os.MkdirAll(dir_str, os.ModeDir)
 
 		out, err := os.Create(potential_file_name)
@@ -139,27 +150,19 @@ func fetch(fetch_url Url) {
 		fmt.Println("skipping downloading", potential_file_name)
 	}
 }
-func exists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return true, err
-}
+
 type OutCounter struct {
 	sync.Mutex
-	Count int
+	Count    int
 	DoneChan chan struct{}
 }
-func (oc *OutCounter) Add () {
+
+func (oc *OutCounter) Add() {
 	oc.Lock()
 	oc.Count++
 	oc.Unlock()
 }
-func (oc *OutCounter) Dec () {
+func (oc *OutCounter) Dec() {
 	oc.Lock()
 	oc.Count--
 	oc.Unlock()
@@ -167,47 +170,64 @@ func (oc *OutCounter) Dec () {
 		close(oc.DoneChan)
 	}
 }
-func (oc *OutCounter) Wait () {
-	if oc.DoneChan ==nil {
+func (oc *OutCounter) Wait() {
+	if oc.DoneChan == nil {
 		oc.DoneChan = make(chan struct{})
 	}
-	<- oc.DoneChan
+	<-oc.DoneChan
 }
+
 type Url string
 type UrlChannel chan Url
-func NewUrlChannel () (*UrlChannel) {
+
+func NewUrlChannel() *UrlChannel {
 	var itm UrlChannel
 	itm = make(UrlChannel)
 	return &itm
 }
-func UrlReceiver (chUrls UrlChannel, chan_fetch UrlChannel,out_count *OutCounter) {
+func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, sleep int) {
 	r := rand.New(rand.NewSource(1))
-	crawled_urls := make(map[Url]bool)	// URLS we've crawled already so no need to revisit
+	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
 
-                for url := range chUrls {
-                        fmt.Println("Receive URL to crawl", url)
-                        _, ok := crawled_urls[url]
-                        if !ok {
-                                fmt.Println("This url needs crawling")
-                                crawled_urls[url] = true
-                                time_to_sleep := 1000 * time.Millisecond * time.Duration(r.Intn(10))
-                                fmt.Println("Sleeping for", time_to_sleep)
-                                time.Sleep(time_to_sleep)
-                                fmt.Println("Done sleeping")
-                                go crawl(url, chUrls, chan_fetch, out_count)
-                        } else {
-                                out_count.Dec()
-                        }
-                }
-
+	for url := range chUrls {
+		fmt.Println("Receive URL to crawl", url)
+		_, ok := crawled_urls[url]
+		if !ok {
+			fmt.Println("This url needs crawling")
+			crawled_urls[url] = true
+			var time_to_sleep time.Duration
+			if sleep != 0 {
+				time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
+			}
+			fmt.Println("Sleeping for", time_to_sleep)
+			time.Sleep(time_to_sleep)
+			fmt.Println("Done sleeping")
+			go crawl(url, chUrls, chan_fetch, out_count)
+		} else {
+			out_count.Dec()
+		}
+	}
 }
+func Readln(r *bufio.Reader) (string, error) {
+	var (
+		isPrefix bool  = true
+		err      error = nil
+		line, ln []byte
+	)
+	for isPrefix && err == nil {
+		line, isPrefix, err = r.ReadLine()
+		ln = append(ln, line...)
+	}
+	return string(ln), err
+}
+
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count OutCounter
 
 	// Channels
-	chUrls := *NewUrlChannel () 	// URLS to crawl
-	chan_fetch := *NewUrlChannel ()	// Files to fetch
+	chUrls := *NewUrlChannel()     // URLS to crawl
+	chan_fetch := *NewUrlChannel() // Files to fetch
 
 	// Kick off the seed process (concurrently)
 	// Needs to be a gofunc as otherwise we get stuck here on channel send
@@ -222,8 +242,7 @@ func main() {
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
-	go UrlReceiver(chUrls, chan_fetch, &out_count)
-
+	go UrlReceiver(chUrls, chan_fetch, &out_count, 10000)
 
 	// This is now the fetch worker
 	// Fetch up to n simultaneous items
@@ -231,14 +250,39 @@ func main() {
 	for i := 0; i < 4; i++ {
 		fetch_token_chan <- true
 	}
+	file, err := os.Create("out_items.txt")
+	if err != nil {
+		log.Fatal("Cannot create file", err)
+	}
+	defer file.Close()
 	go func() {
+		f, err := os.Open("in_items.txt")
+		if err != nil {
+			//  fmt.Printf("error opening file: %v\n",err)
+			//  os.Exit(1)
+			return
+		}
+		r := bufio.NewReader(f)
+		s, e := Readln(r)
+		for e == nil {
+			fmt.Println("Fast adding ", s)
+			chan_fetch <- Url(s)
+			s, e = Readln(r)
+		}
+	}()
+	go func() {
+		fetched_urls := make(map[Url]bool)
 		for fetch_url := range chan_fetch {
-
-			<-fetch_token_chan
-			go func() {
-				fetch(fetch_url)
-				fetch_token_chan <- true
-			}()
+			_, ok := fetched_urls[fetch_url]
+			if !ok {
+				fetched_urls[fetch_url] = true
+				<-fetch_token_chan
+				go func() {
+					fetch(fetch_url)
+					fmt.Fprintf(file, "%s\n", string(fetch_url))
+					fetch_token_chan <- true
+				}()
+			}
 		}
 	}()
 
