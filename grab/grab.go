@@ -183,25 +183,29 @@ func NewUrlChannel() *UrlChannel {
 }
 
 type UrlStore struct {
-	data        []Url
-	PushChannel chan Url
-	PopChannel  chan Url
+	data          []Url
+	PushChannel   chan Url
+	PopChannel    chan Url
+	enforce_order bool
 }
 
-func NewUrlStore(in_if_arr []interface{}) *UrlStore {
-
+func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	itm := new(UrlStore)
 	itm.data = make([]Url, 0, 1024)
 	itm.PopChannel = make(chan Url, 2)
-	for in_if := range in_if_arr {
-	switch in_if.(type) {
-	case chan Url:
-		itm.PushChannel = in_if.(chan Url)
-	case nil:
-		//Nothing to do
-	default:
-		fmt.Printf("Type is %T\n", in_if)
-	}}
+	for _, in_if := range in_if_arr {
+		switch in_if.(type) {
+		case chan Url:
+			itm.PushChannel = in_if.(chan Url)
+		case bool:
+			// A bool type is controlling our ordering attribute
+			itm.enforce_order = in_if.(bool)
+		case nil:
+			//Nothing to do
+		default:
+			fmt.Printf("Type is %T\n", in_if)
+		}
+	}
 
 	if itm.PushChannel == nil {
 		itm.PushChannel = make(chan Url, 2)
@@ -218,7 +222,11 @@ func (us *UrlStore) urlWorker() {
 	for {
 		if len(us.data) > 0 {
 			tmp_chan = us.PopChannel
-			tmp_val = us.data[len(us.data)-1]
+			if us.enforce_order {
+				tmp_val = us.data[0]
+			} else {
+				tmp_val = us.data[len(us.data)-1]
+			}
 		} else {
 			tmp_chan = nil
 			if input_channel_closed == true {
@@ -241,7 +249,12 @@ func (us *UrlStore) urlWorker() {
 			}
 
 		case tmp_chan <- tmp_val:
-			us.data = us.data[:len(us.data)-1]
+			if us.enforce_order {
+				copy(us.data[:len(us.data)-1], us.data[1:len(us.data)])
+				us.data = us.data[:len(us.data)-1]
+			} else {
+				us.data = us.data[:len(us.data)-1]
+			}
 		}
 	}
 }
