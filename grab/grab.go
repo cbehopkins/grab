@@ -183,17 +183,27 @@ func NewUrlChannel() *UrlChannel {
 }
 
 type UrlStore struct {
-	sync.Mutex
 	data        []Url
 	PushChannel chan Url
 	PopChannel  chan Url
 }
 
-func NewUrlStore() *UrlStore {
+func NewUrlStore(in_if interface{}) *UrlStore {
+
 	itm := new(UrlStore)
 	itm.data = make([]Url, 0, 1024)
-	itm.PushChannel = make(chan Url, 2)
 	itm.PopChannel = make(chan Url, 2)
+	switch in_if.(type) {
+	case chan Url:
+		itm.PushChannel = in_if.(chan Url)
+	default:
+		fmt.Printf("Type is %T\n", in_if)
+	}
+
+	if itm.PushChannel == nil {
+		itm.PushChannel = make(chan Url, 2)
+	}
+
 	go itm.urlWorker()
 	return itm
 }
@@ -209,7 +219,7 @@ func (us *UrlStore) urlWorker() {
 		} else {
 			tmp_chan = nil
 			if input_channel_closed == true {
-				fmt.Println("Channel found closed")
+				//fmt.Println("Channel found closed")
 				close(us.PopChannel)
 				return
 			}
@@ -222,8 +232,8 @@ func (us *UrlStore) urlWorker() {
 				tmp_chan = us.PopChannel
 			} else {
 				//chanel is closed
-				fmt.Println("Channel is closed")	
-	in_chan = nil
+				//fmt.Println("Channel is closed")
+				in_chan = nil
 				input_channel_closed = true
 			}
 
@@ -234,7 +244,7 @@ func (us *UrlStore) urlWorker() {
 }
 
 func (us UrlStore) Close() {
-close(us.PushChannel)
+	close(us.PushChannel)
 }
 func (us UrlStore) Add(itm Url) {
 	us.PushChannel <- itm
@@ -253,11 +263,11 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 	// Somewhere we need an infinite bufer to absorb all the incoming URLs
 	// This could be on the stack of crawl function instances, or:
 
-	url_store := NewUrlStore()
+	url_store := NewUrlStore(chUrls)
 	// Receive from chUrls and store in a temporary buffer
-	go func () {for url := range chUrls {
-		url_store.Add(url)
-	}}()
+	//go func () {for url := range chUrls {
+	//	url_store.Add(url)
+	//}}()
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
 		fmt.Println("Receive URL to crawl", url)
 		_, ok := crawled_urls[url]
