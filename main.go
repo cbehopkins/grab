@@ -185,23 +185,83 @@ func NewUrlChannel() *UrlChannel {
 	itm = make(UrlChannel)
 	return &itm
 }
-func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, sleep int) {
-	r := rand.New(rand.NewSource(1))
-	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
 
-	for url := range chUrls {
+type UrlStore struct {
+	sync.Mutex
+	data        []Url
+	PushChannel chan Url
+	PopChannel  chan Url
+}
+
+func NewUrlStore() *UrlStore {
+	itm := new(UrlStore)
+	itm.data = make([]Url, 0, 1024)
+	itm.PushChannel = make(chan Url, 2)
+	itm.PopChannel = make(chan Url, 2)
+	go itm.urlWorker()
+	return itm
+}
+func (us *UrlStore) urlWorker() {
+	var tmp_chan chan Url
+	var input_channel_closed bool
+	var tmp_val Url
+	for {
+		if len(us.data) > 0 {
+			tmp_chan = us.PopChannel
+			tmp_val = us.data[len(us.data)-1]
+		} else {
+			tmp_chan = nil
+			if input_channel_closed == true {
+				close(us.PopChannel)
+				return
+			}
+		}
+		select {
+		case ind, ok := <-us.PushChannel:
+			if ok {
+				us.data = append(us.data, ind)
+				us.data[len(us.data)-1] = ind
+				tmp_chan = us.PopChannel
+			} else {
+				//chanel is closed
+				input_channel_closed = true
+			}
+
+		case tmp_chan <- tmp_val:
+			us.data = us.data[:len(us.data)-1]
+		}
+	}
+}
+
+func (us UrlStore) Add(itm Url) {
+	us.PushChannel <- itm
+}
+
+func (us UrlStore) Pop() (itm Url, ok bool) {
+	itm, ok = <-us.PopChannel
+	return
+}
+func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan chan struct{}) {
+	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
+	// It's bad news if the chUrls blocks as then:
+	// the crawl func can't add new URLS
+	// So it stops mid crawl
+	// Yet new crawls are still started
+	// Somewhere we need an infinite bufer to absorb all the incoming URLs
+	// This could be on the stack of crawl function instances, or:
+
+	url_store := NewUrlStore()
+	// Receive from chUrls and store in a temporary buffer
+	go func () {for url := range chUrls {
+		url_store.Add(url)
+	}}()
+	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
 		fmt.Println("Receive URL to crawl", url)
 		_, ok := crawled_urls[url]
 		if !ok {
 			fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
-			var time_to_sleep time.Duration
-			if sleep != 0 {
-				time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
-			}
-			fmt.Println("Sleeping for", time_to_sleep)
-			time.Sleep(time_to_sleep)
-			fmt.Println("Done sleeping")
+			<-crawl_chan
 			go crawl(url, chUrls, chan_fetch, out_count)
 		} else {
 			out_count.Dec()
@@ -224,6 +284,7 @@ func Readln(r *bufio.Reader) (string, error) {
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count OutCounter
+	r := rand.New(rand.NewSource(1))
 
 	// Channels
 	chUrls := *NewUrlChannel()     // URLS to crawl
@@ -239,10 +300,22 @@ func main() {
 			chUrls <- Url(url)
 		}
 	}()
+	crawl_token_chan := make(chan struct{}, 16)
+	sleep := 10000
+	go func() {
+		for {
+			crawl_token_chan <- *new(struct{})
+			var time_to_sleep time.Duration
+			if sleep != 0 {
+				time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
+			}
+			time.Sleep(time_to_sleep)
+		}
+	}()
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
-	go UrlReceiver(chUrls, chan_fetch, &out_count, 10000)
+	go UrlReceiver(chUrls, chan_fetch, &out_count, crawl_token_chan)
 
 	// This is now the fetch worker
 	// Fetch up to n simultaneous items
