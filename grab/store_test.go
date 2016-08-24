@@ -20,7 +20,9 @@ func TestCall(t *testing.T) {
 	rx_count := 0
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
 		rx_count++
-		if false {log.Println("Got:", url)}
+		if false {
+			log.Println("Got:", url)
+		}
 	}
 	if rx_count != num_tests {
 		log.Fatal("Insufficient entries:", rx_count)
@@ -42,7 +44,9 @@ func TestChan(t *testing.T) {
 	rx_count := 0
 	for url := range url_store.PopChannel {
 		rx_count++
-		if false {log.Println("Got:", url)}
+		if false {
+			log.Println("Got:", url)
+		}
 	}
 	if rx_count != 20 {
 		log.Fatal("Insufficient entries:", rx_count)

@@ -23,10 +23,24 @@ func Readln(r *bufio.Reader) (string, error) {
 	return string(ln), err
 }
 
+func token_source(sleep int, token_chan chan struct{}, action string) {
+	r := rand.New(rand.NewSource(1))
+	for {
+		token_chan <- *new(struct{})
+		var time_to_sleep time.Duration
+		if sleep != 0 {
+			time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
+		}
+		if action != "" {
+			fmt.Printf("It will be %s until next %s\n", time_to_sleep, action)
+		}
+		time.Sleep(time_to_sleep)
+	}
+}
+
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
-	r := rand.New(rand.NewSource(1))
 
 	// Channels
 	chUrls := *grab.NewUrlChannel()     // URLS to crawl
@@ -44,17 +58,7 @@ func main() {
 		}
 	}()
 	crawl_token_chan := make(chan struct{}, 16)
-	sleep := 10000
-	go func() {
-		for {
-			crawl_token_chan <- *new(struct{})
-			var time_to_sleep time.Duration
-			if sleep != 0 {
-				time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
-			}
-			time.Sleep(time_to_sleep)
-		}
-	}()
+	go token_source(10000, crawl_token_chan, "crawl")
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
@@ -62,37 +66,40 @@ func main() {
 
 	// This is now the fetch worker
 	// Fetch up to n simultaneous items
-	fetch_token_chan := make(chan bool, 16)
-	for i := 0; i < 4; i++ {
-		fetch_token_chan <- true
-	}
+	fetch_token_chan := make(chan struct{}, 16)
+	//for i := 0; i < 4; i++ {
+	//	fetch_token_chan <- *new(struct{})
+	//}
+	go token_source(1000, fetch_token_chan, "fetch")
+
 	file, err := os.Create("out_items.txt")
 	if err != nil {
 		log.Fatal("Cannot create file", err)
 	}
 	defer file.Close()
 	if false {
-	go func() {
-		f, err := os.Open("in_items.txt")
-		if err != nil {
-			  fmt.Printf("error opening file: %v\n",err)
-			  os.Exit(1)
-			return
-		}
-		r := bufio.NewReader(f)
-		s, e := Readln(r)
-		for e == nil {
-			fmt.Println("Fast adding ", s)
-			chan_fetch <- grab.Url(s)
-			s, e = Readln(r)
-		}
-	}()}
+		go func() {
+			f, err := os.Open("in_items.txt")
+			if err != nil {
+				fmt.Printf("error opening file: %v\n", err)
+				os.Exit(1)
+				return
+			}
+			r := bufio.NewReader(f)
+			s, e := Readln(r)
+			for e == nil {
+				fmt.Println("Fast adding ", s)
+				chan_fetch <- grab.Url(s)
+				s, e = Readln(r)
+			}
+		}()
+	}
 	go func() {
 		fetched_urls := make(map[grab.Url]bool)
 		for fetch_url := range chan_fetch {
 			_, ok := fetched_urls[fetch_url]
 			//if false {
-			 if !ok {
+			if !ok {
 				fetched_urls[fetch_url] = true
 				//fmt.Println("Fetching token")
 				<-fetch_token_chan
@@ -100,7 +107,7 @@ func main() {
 				go func() {
 					//grab.Fetch(fetch_url)
 					fmt.Fprintf(file, "%s\n", string(fetch_url))
-					fetch_token_chan <- true
+					//fetch_token_chan <- true
 				}()
 			}
 		}

@@ -35,7 +35,7 @@ func getHref(t html.Token) (ok bool, href string) {
 }
 
 // Extract all http** links from a given webpage
-func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter) {
+func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter, errored_urls UrlChannel) {
 
 	resp, err := http.Get(string(urli))
 	defer out_count.Dec()
@@ -67,13 +67,14 @@ func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter
 			fmt.Println("EOF error found")
 		default:
 			switch err.(type) {
-				case *url.Error:
-					fmt.Println("URL Error")
-				default:
-					fmt.Printf("Error type is %T, %#v\n", err,err)
-					panic(err)
+			case *url.Error:
+				fmt.Println("URL Error")
+			default:
+				fmt.Printf("Error type is %T, %#v\n", err, err)
+				panic(err)
 			}
 		}
+		errored_urls <- urli
 		return
 	}
 
@@ -258,13 +259,13 @@ func (us *UrlStore) urlWorker() {
 						us.data = append(us.data, ind)
 					} else {
 						if cap(backup_store) > cap(us.data) {
-						// here we copy into the backup store's data storage
+							// here we copy into the backup store's data storage
 							// the current data in the data store
 							//ncopy(backup_store[0:len(us.data)], us.data[0:len(us.data)])
 							// now stick the data on the end
 							backup_store = append(us.data, ind)
 							us.data = backup_store
-							//us.data = append(us.data, ind)	
+							//us.data = append(us.data, ind)
 						} else {
 							// This is the case where we need to grow the size of the store
 							us.data = append(us.data, ind)
@@ -319,7 +320,13 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 	// Yet new crawls are still started
 	// Somewhere we need an infinite bufer to absorb all the incoming URLs
 	// This could be on the stack of crawl function instances, or:
-
+	errored_urls := make(map[Url]bool)
+	err_url_chan := make(UrlChannel)
+	go func() {
+		for bob := range err_url_chan {
+			errored_urls[bob] = true
+		}
+	}()
 	url_store := NewUrlStore(chUrls)
 	// Receive from chUrls and store in a temporary buffer
 	//go func () {for url := range chUrls {
@@ -335,9 +342,13 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 			fmt.Println("Getting a crawl token")
 			<-crawl_chan
 			fmt.Println("Crawl token rx for:", url)
-			go crawl(url, chUrls, chan_fetch, out_count)
+			go crawl(url, chUrls, chan_fetch, out_count, err_url_chan)
 		} else {
 			out_count.Dec()
 		}
+	}
+	close(err_url_chan)
+	for bob, _ := range errored_urls {
+		fmt.Println("Errored URL:", bob)
 	}
 }
