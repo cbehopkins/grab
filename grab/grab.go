@@ -113,9 +113,17 @@ func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter
 				if is_jpg {
 					fetch_chan <- Url(urlj)
 				} else {
-					out_count.Add()
-					ch <- Url(urlj)
-					//fmt.Println("Interesting url", urlj)
+					arrayi := strings.Split(string(urli), "/")
+					arrayj := strings.Split(string(urlj), "/")
+					domain_i := arrayi[2]
+					domain_j := arrayj[2]
+					if domain_i == domain_j {
+						//fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, urlj)
+						out_count.Add()
+						ch <- Url(urlj)
+					} else {
+						//fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, urlj)
+					}
 				}
 			}
 		}
@@ -131,7 +139,7 @@ func exists(path string) (bool, error) {
 	}
 	return true, err
 }
-func Fetch(fetch_url Url) {
+func Fetch(fetch_url Url) bool {
 	array := strings.Split(string(fetch_url), "/")
 	var fn string
 	if len(array) > 0 {
@@ -153,8 +161,10 @@ func Fetch(fetch_url Url) {
 		check(err)
 		_, err = io.Copy(out, resp.Body)
 		check(err)
+		return true
 	} else {
 		fmt.Println("skipping downloading", potential_file_name)
+		return false
 	}
 }
 
@@ -252,7 +262,7 @@ func (us *UrlStore) urlWorker() {
 		select {
 		case ind, ok := <-in_chan:
 			if ok {
-				fmt.Println("Queueing URL :", ind)
+				//fmt.Println("Queueing URL :", ind)
 				if us.enforce_order {
 					if len(us.data) < cap(us.data) {
 						// Safe to use append here as it won't do the copy as there is capacity
@@ -286,7 +296,7 @@ func (us *UrlStore) urlWorker() {
 			}
 
 		case tmp_chan <- tmp_val:
-			fmt.Println("DeQueueing URL", tmp_val)
+			//fmt.Println("DeQueueing URL", tmp_val)
 			if us.enforce_order {
 				//copy(us.data[:len(us.data)-1],us.data[1:len(us.data)])
 				//us.data = us.data[:len(us.data)-1]
@@ -328,20 +338,15 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 		}
 	}()
 	url_store := NewUrlStore(chUrls)
-	// Receive from chUrls and store in a temporary buffer
-	//go func () {for url := range chUrls {
-	//	url_store.Add(url)
-	//	fmt.Println("added url to store:", url)
-	//}}()
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
-		fmt.Println("Receive URL to crawl", url)
 		_, ok := crawled_urls[url]
 		if !ok {
-			fmt.Println("This url needs crawling")
+			fmt.Println("Receive URL to crawl", url)
+			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
-			fmt.Println("Getting a crawl token")
+			//fmt.Println("Getting a crawl token")
 			<-crawl_chan
-			fmt.Println("Crawl token rx for:", url)
+			//fmt.Println("Crawl token rx for:", url)
 			go crawl(url, chUrls, chan_fetch, out_count, err_url_chan)
 		} else {
 			out_count.Dec()
