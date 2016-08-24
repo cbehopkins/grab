@@ -40,6 +40,7 @@ func main() {
 			fmt.Println("Seeding :", url)
 			out_count.Add()
 			chUrls <- grab.Url(url)
+			fmt.Println("Send succeeded")
 		}
 	}()
 	crawl_token_chan := make(chan struct{}, 16)
@@ -70,11 +71,12 @@ func main() {
 		log.Fatal("Cannot create file", err)
 	}
 	defer file.Close()
+	if false {
 	go func() {
 		f, err := os.Open("in_items.txt")
 		if err != nil {
-			//  fmt.Printf("error opening file: %v\n",err)
-			//  os.Exit(1)
+			  fmt.Printf("error opening file: %v\n",err)
+			  os.Exit(1)
 			return
 		}
 		r := bufio.NewReader(f)
@@ -84,16 +86,19 @@ func main() {
 			chan_fetch <- grab.Url(s)
 			s, e = Readln(r)
 		}
-	}()
+	}()}
 	go func() {
 		fetched_urls := make(map[grab.Url]bool)
 		for fetch_url := range chan_fetch {
 			_, ok := fetched_urls[fetch_url]
-			if !ok {
+			//if false {
+			 if !ok {
 				fetched_urls[fetch_url] = true
+				//fmt.Println("Fetching token")
 				<-fetch_token_chan
+				//fmt.Println("Got Token")
 				go func() {
-					grab.Fetch(fetch_url)
+					//grab.Fetch(fetch_url)
 					fmt.Fprintf(file, "%s\n", string(fetch_url))
 					fetch_token_chan <- true
 				}()

@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -34,13 +35,15 @@ func getHref(t html.Token) (ok bool, href string) {
 }
 
 // Extract all http** links from a given webpage
-func crawl(url Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter) {
-	resp, err := http.Get(string(url))
+func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter) {
+
+	resp, err := http.Get(string(urli))
 	defer out_count.Dec()
 
 	if err != nil {
 
-		fmt.Println("ERROR: Failed to crawl \"" + url + "\"")
+		fmt.Println("ERROR: Failed to crawl \"" + urli + "\"")
+		// TBD add in error queue to try again with at end of crawl.
 		switch err {
 		case http.ErrBodyReadAfterClose:
 			fmt.Println("Read after close error")
@@ -60,10 +63,17 @@ func crawl(url Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter)
 			fmt.Println("ErrNotMultipart")
 		case http.ErrMissingBoundary:
 			fmt.Println("ErrMissingBoundary")
+		case io.EOF:
+			fmt.Println("EOF error found")
 		default:
-			panic(err)
+			switch err.(type) {
+				case *url.Error:
+					fmt.Println("URL Error")
+				default:
+					fmt.Printf("Error type is %T, %#v\n", err,err)
+					panic(err)
+			}
 		}
-		panic("See above")
 		return
 	}
 
@@ -89,22 +99,22 @@ func crawl(url Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter)
 			}
 
 			// Extract the href value, if there is one
-			ok, url := getHref(t)
+			ok, urlj := getHref(t)
 			if !ok {
 				continue
 			}
 
 			// Make sure the url begines in http**
-			hasProto := strings.Index(url, "http") == 0
+			hasProto := strings.Index(urlj, "http") == 0
 			if hasProto {
 
-				is_jpg := strings.Contains(url, ".jpg")
+				is_jpg := strings.Contains(urlj, ".jpg")
 				if is_jpg {
-					fetch_chan <- Url(url)
+					fetch_chan <- Url(urlj)
 				} else {
 					out_count.Add()
-					ch <- Url(url)
-					//fmt.Println("Interesting url", url
+					ch <- Url(urlj)
+					//fmt.Println("Interesting url", urlj)
 				}
 			}
 		}
@@ -197,6 +207,8 @@ func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 		switch in_if.(type) {
 		case chan Url:
 			itm.PushChannel = in_if.(chan Url)
+		case UrlChannel:
+			itm.PushChannel = in_if.(UrlChannel)
 		case bool:
 			// A bool type is controlling our ordering attribute
 			itm.enforce_order = in_if.(bool)
@@ -218,6 +230,7 @@ func (us *UrlStore) urlWorker() {
 	var tmp_chan chan Url
 	in_chan := us.PushChannel
 	var input_channel_closed bool
+	backup_store := us.data
 	var tmp_val Url
 	for {
 		if len(us.data) > 0 {
@@ -238,8 +251,31 @@ func (us *UrlStore) urlWorker() {
 		select {
 		case ind, ok := <-in_chan:
 			if ok {
-				us.data = append(us.data, ind)
-				us.data[len(us.data)-1] = ind
+				fmt.Println("Queueing URL :", ind)
+				if us.enforce_order {
+					if len(us.data) < cap(us.data) {
+						// Safe to use append here as it won't do the copy as there is capacity
+						us.data = append(us.data, ind)
+					} else {
+						if cap(backup_store) > cap(us.data) {
+						// here we copy into the backup store's data storage
+							// the current data in the data store
+							//ncopy(backup_store[0:len(us.data)], us.data[0:len(us.data)])
+							// now stick the data on the end
+							backup_store = append(us.data, ind)
+							us.data = backup_store
+							//us.data = append(us.data, ind)	
+						} else {
+							// This is the case where we need to grow the size of the store
+							us.data = append(us.data, ind)
+							backup_store = us.data
+						}
+					}
+				} else {
+					//in the normal case we just chuck the data on the end
+					us.data = append(us.data, ind)
+				}
+				// activate the pop channel
 				tmp_chan = us.PopChannel
 			} else {
 				//chanel is closed
@@ -249,10 +285,14 @@ func (us *UrlStore) urlWorker() {
 			}
 
 		case tmp_chan <- tmp_val:
+			fmt.Println("DeQueueing URL", tmp_val)
 			if us.enforce_order {
-				copy(us.data[:len(us.data)-1], us.data[1:len(us.data)])
-				us.data = us.data[:len(us.data)-1]
+				//copy(us.data[:len(us.data)-1],us.data[1:len(us.data)])
+				//us.data = us.data[:len(us.data)-1]
+				// Reduce the length and capacity
+				us.data = us.data[1:len(us.data)]
 			} else {
+				// take one off the length without reducing the capacity
 				us.data = us.data[:len(us.data)-1]
 			}
 		}
@@ -268,6 +308,7 @@ func (us UrlStore) Add(itm Url) {
 
 func (us UrlStore) Pop() (itm Url, ok bool) {
 	itm, ok = <-us.PopChannel
+	fmt.Println("Popped URL:", itm)
 	return
 }
 func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan chan struct{}) {
@@ -283,6 +324,7 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 	// Receive from chUrls and store in a temporary buffer
 	//go func () {for url := range chUrls {
 	//	url_store.Add(url)
+	//	fmt.Println("added url to store:", url)
 	//}}()
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
 		fmt.Println("Receive URL to crawl", url)
@@ -290,7 +332,9 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 		if !ok {
 			fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
+			fmt.Println("Getting a crawl token")
 			<-crawl_chan
+			fmt.Println("Crawl token rx for:", url)
 			go crawl(url, chUrls, chan_fetch, out_count)
 		} else {
 			out_count.Dec()
