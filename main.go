@@ -1,42 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/cbehopkins/grab/grab"
-	"log"
-	"math/rand"
 	"os"
-	"time"
 )
 
-func Readln(r *bufio.Reader) (string, error) {
-	var (
-		isPrefix bool  = true
-		err      error = nil
-		line, ln []byte
-	)
-	for isPrefix && err == nil {
-		line, isPrefix, err = r.ReadLine()
-		ln = append(ln, line...)
-	}
-	return string(ln), err
-}
-
-func token_source(sleep int, token_chan chan struct{}, action string) {
-	r := rand.New(rand.NewSource(1))
-	for {
-		token_chan <- *new(struct{})
-		var time_to_sleep time.Duration
-		if sleep != 0 {
-			time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
-		}
-		if action != "" {
-			fmt.Printf("It will be %s until next %s\n", time_to_sleep, action)
-		}
-		time.Sleep(time_to_sleep)
-	}
-}
 
 func main() {
 	seedUrls := os.Args[1:]
@@ -60,67 +29,28 @@ func main() {
 			//fmt.Println("Send succeeded")
 		}
 	}()
-	crawl_token_chan := make(chan struct{}, 16)
-	go token_source(20000, crawl_token_chan, "")
+
+	// Next, if they exist get the input fromt he seed files
+	if true {
+		go grab.LoadFile("in_fetch.txt", chan_fetch_push, &out_count)
+	}
+	if true {
+		go grab.LoadFile("in_urls.txt", chUrls, &out_count)
+	}
+
+	// We've two token channels
+	// This is our method of controlling the amount of traffic we generate
+	// We generate a token at intervals and the fetchers do not
+	// touch the network until they have one of these tokens.
+	// If they do not need the token, they return it
+	crawl_token_chan := *grab.NewTokenChan(20000, "")
+	fetch_token_chan := *grab.NewTokenChan(4000, "")
+
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
-	go grab.UrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan)
-
-	// This is now the fetch worker
-	// Fetch up to n simultaneous items
-	fetch_token_chan := make(chan struct{}, 16)
-	//for i := 0; i < 4; i++ {
-	//	fetch_token_chan <- *new(struct{})
-	//}
-	go token_source(4000, fetch_token_chan, "")
-
-	file, err := os.Create("out_items.txt")
-	if err != nil {
-		log.Fatal("Cannot create file", err)
-	}
-	defer file.Close()
-	if true {
-		go func() {
-			f, err := os.Open("in_items.txt")
-			if err != nil {
-				fmt.Printf("error opening file: %v\n", err)
-				os.Exit(1)
-				return
-			}
-			r := bufio.NewReader(f)
-			s, e := Readln(r)
-			for e == nil {
-				fmt.Println("Fast adding ", s)
-				chan_fetch_push <- grab.Url(s)
-				s, e = Readln(r)
-			}
-		}()
-	}
-	go func() {
-		fetched_urls := make(map[grab.Url]bool)
-		for fetch_url := range chan_fetch_pop {
-			_, ok := fetched_urls[fetch_url]
-			//if false {
-			if !ok {
-				fetched_urls[fetch_url] = true
-				//fmt.Println("Fetching token")
-				<-fetch_token_chan
-				//fmt.Println("Got Token")
-				go func() {
-					//used_network := false
-					//grab.Fetch(fetch_url)
-					fmt.Println("Fetching :", fetch_url)
-					fmt.Fprintf(file, "%s\n", string(fetch_url))
-					//fetch_token_chan <- true
-					//if !used_network {
-					fmt.Println("Not used fetch token, returning")
-					//	fetch_token_chan <- *new(struct{})
-					//}
-				}()
-			}
-		}
-	}()
+	go grab.UrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan, "out_urls.txt")
+	go grab.FetchReceiver(       chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt")
 
 	out_count.Wait()
 	close(chUrls)

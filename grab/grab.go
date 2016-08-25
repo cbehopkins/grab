@@ -2,16 +2,48 @@ package grab
 
 import (
 	"fmt"
+	"golang.org/x/net/html"
 	"io"
 	"io/ioutil"
+	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
-
-	"golang.org/x/net/html"
+	"time"
+	"bufio"
 )
+
+func token_source(sleep int, token_chan TokenChan, action string) {
+	r := rand.New(rand.NewSource(1))
+	for {
+		token_chan.PutToken()
+		var time_to_sleep time.Duration
+		if sleep != 0 {
+			time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
+		}
+		if action != "" {
+			fmt.Printf("It will be %s until next %s\n", time_to_sleep, action)
+		}
+		time.Sleep(time_to_sleep)
+	}
+}
+
+type TokenChan chan struct{}
+
+func NewTokenChan(delay int, name string) *TokenChan {
+	itm := make(TokenChan, 16)
+	go token_source(delay, itm, name)
+	return &itm
+}
+func (tc TokenChan) GetToken() {
+	<-tc
+}
+func (tc TokenChan) PutToken() {
+	tc <-struct{}{}
+}
 
 func check(err error) {
 	if err != nil {
@@ -32,6 +64,40 @@ func getHref(t html.Token) (ok bool, href string) {
 	// "bare" return will return the variables (ok, href) as defined in
 	// the function definition
 	return
+}
+func Readln(r *bufio.Reader) (string, error) {
+        var (
+                isPrefix bool  = true
+                err      error = nil 
+                line, ln []byte
+        )   
+        for isPrefix && err == nil {
+                line, isPrefix, err = r.ReadLine()
+                ln = append(ln, line...)
+        }   
+        return string(ln), err 
+}
+
+func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
+	if filename == "" {
+		return
+	}
+	f, err := os.Open(filename)
+	if err != nil {
+		fmt.Printf("error opening file: %v\n", err)
+		os.Exit(1)
+		return
+	}
+	r := bufio.NewReader(f)
+	s, e := Readln(r)
+	for e == nil {
+		fmt.Println("Fast adding ", s)
+		if counter!=nil {
+			counter.Add()
+		}
+		the_chan <- Url(s)
+		s, e = Readln(r)
+	}
 }
 
 // Extract all http** links from a given webpage
@@ -111,6 +177,7 @@ func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter
 
 				is_jpg := strings.Contains(urlj, ".jpg")
 				if is_jpg {
+					out_count.Add()
 					fetch_chan <- Url(urlj)
 				} else {
 					arrayi := strings.Split(string(urli), "/")
@@ -165,6 +232,44 @@ func Fetch(fetch_url Url) bool {
 	} else {
 		fmt.Println("skipping downloading", potential_file_name)
 		return false
+	}
+}
+func FetchReceiver(chan_fetch_pop UrlChannel,  out_count *OutCounter, fetch_token_chan TokenChan, fetch_file string) {
+	var file *os.File
+	var factive bool
+	if fetch_file != "" {
+		var err error
+		file, err = os.Create(fetch_file)
+		if err != nil {
+			log.Fatal("Cannot create file", err)
+		}
+		defer file.Close()
+		factive = true
+	}
+	fetched_urls := make(map[Url]bool)
+	for fetch_url := range chan_fetch_pop {
+		_, ok := fetched_urls[fetch_url]
+		if !ok {
+			fetched_urls[fetch_url] = true
+			fetch_token_chan.GetToken()
+			go func() {
+				run_download := false
+				var used_network bool
+				if run_download {
+					used_network = Fetch(fetch_url)
+				} else {
+					// Pretend we used it to make sure there is a sink of tokens - otherwise we can lock up
+					used_network = true
+				}
+				fmt.Println("Fetching :", fetch_url)
+				if factive {fmt.Fprintf(file, "%s\n", string(fetch_url))}
+				if !used_network {
+					fmt.Println("Not used fetch token, returning")
+					fetch_token_chan.PutToken()
+				}
+				out_count.Dec()
+			}()
+		} else {out_count.Dec()}
 	}
 }
 
@@ -322,7 +427,18 @@ func (us UrlStore) Pop() (itm Url, ok bool) {
 	fmt.Println("Popped URL:", itm)
 	return
 }
-func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan chan struct{}) {
+func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan, crawl_file string) {
+	var crawl_active bool
+	var file *os.File
+	if crawl_file != "" {
+		var err error
+		file, err = os.Create(crawl_file)
+		if err != nil {
+			log.Fatal("Cannot create file", err)
+		}
+		crawl_active = true
+		defer file.Close()
+	}
 	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
 	// It's bad news if the chUrls blocks as then:
 	// the crawl func can't add new URLS
@@ -345,9 +461,12 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
 			//fmt.Println("Getting a crawl token")
-			<-crawl_chan
+			crawl_chan.GetToken()
 			//fmt.Println("Crawl token rx for:", url)
 			go crawl(url, chUrls, chan_fetch, out_count, err_url_chan)
+			if crawl_active {
+				fmt.Fprintf(file, "%s\n", string(url))
+			}
 		} else {
 			out_count.Dec()
 		}
