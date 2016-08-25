@@ -1,8 +1,10 @@
 package grab
 
 import (
+	"bufio"
 	"fmt"
 	"golang.org/x/net/html"
+	"image/jpeg"
 	"io"
 	"io/ioutil"
 	"log"
@@ -13,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"bufio"
 )
 
 func token_source(sleep int, token_chan TokenChan, action string) {
@@ -42,7 +43,7 @@ func (tc TokenChan) GetToken() {
 	<-tc
 }
 func (tc TokenChan) PutToken() {
-	tc <-struct{}{}
+	tc <- struct{}{}
 }
 
 func check(err error) {
@@ -66,16 +67,16 @@ func getHref(t html.Token) (ok bool, href string) {
 	return
 }
 func Readln(r *bufio.Reader) (string, error) {
-        var (
-                isPrefix bool  = true
-                err      error = nil 
-                line, ln []byte
-        )   
-        for isPrefix && err == nil {
-                line, isPrefix, err = r.ReadLine()
-                ln = append(ln, line...)
-        }   
-        return string(ln), err 
+	var (
+		isPrefix bool  = true
+		err      error = nil
+		line, ln []byte
+	)
+	for isPrefix && err == nil {
+		line, isPrefix, err = r.ReadLine()
+		ln = append(ln, line...)
+	}
+	return string(ln), err
 }
 
 func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
@@ -92,7 +93,7 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 	s, e := Readln(r)
 	for e == nil {
 		fmt.Println("Fast adding ", s)
-		if counter!=nil {
+		if counter != nil {
 			counter.Add()
 		}
 		the_chan <- Url(s)
@@ -206,6 +207,48 @@ func exists(path string) (bool, error) {
 	}
 	return true, err
 }
+func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
+	os.MkdirAll(dir_str, os.ModeDir)
+
+	out, err := os.Create(potential_file_name)
+	defer out.Close()
+	check(err)
+	resp, err := http.Get(string(fetch_url))
+	defer resp.Body.Close()
+	check(err)
+	_, err = io.Copy(out, resp.Body)
+	check(err)
+}
+func check_jpg(filename string) bool {
+	out, err := os.Open(filename)
+	check(err)
+	defer out.Close()
+	_, err = jpeg.Decode(out)
+	if err == nil {
+	}
+	switch err.(type) {
+	case nil:
+		return true
+	case jpeg.FormatError:
+		switch err.Error() {
+		case "invalid JPEG format: short Huffman data":
+			return false
+		default:
+			fmt.Printf("Unknown jpeg Error Text type:%T, Value %v\n", err, err)
+			panic(err)
+		}
+	default:
+		switch err.Error() {
+		case "EOF":
+			return false
+		default:
+			fmt.Printf("Unknown jpeg Error type:%T, Value %v\n", err, err)
+			panic(err)
+		}
+	}
+
+	return true
+}
 func Fetch(fetch_url Url) bool {
 	array := strings.Split(string(fetch_url), "/")
 	var fn string
@@ -218,23 +261,21 @@ func Fetch(fetch_url Url) bool {
 	potential_file_name := dir_str + "/" + fn
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
 		fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
-		os.MkdirAll(dir_str, os.ModeDir)
-
-		out, err := os.Create(potential_file_name)
-		defer out.Close()
-		check(err)
-		resp, err := http.Get(string(fetch_url))
-		defer resp.Body.Close()
-		check(err)
-		_, err = io.Copy(out, resp.Body)
-		check(err)
+		fetch_file(potential_file_name, dir_str, fetch_url)
 		return true
 	} else {
 		fmt.Println("skipping downloading", potential_file_name)
-		return false
+		good_file := check_jpg(potential_file_name)
+		if good_file {
+			return false
+		} else {
+			fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+			fetch_file(potential_file_name, dir_str, fetch_url)
+			return true
+		}
 	}
 }
-func FetchReceiver(chan_fetch_pop UrlChannel,  out_count *OutCounter, fetch_token_chan TokenChan, fetch_file string) {
+func FetchReceiver(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan, fetch_file string) {
 	var file *os.File
 	var factive bool
 	if fetch_file != "" {
@@ -253,7 +294,7 @@ func FetchReceiver(chan_fetch_pop UrlChannel,  out_count *OutCounter, fetch_toke
 			fetched_urls[fetch_url] = true
 			fetch_token_chan.GetToken()
 			go func() {
-				run_download := false
+				run_download := true
 				var used_network bool
 				if run_download {
 					used_network = Fetch(fetch_url)
@@ -262,14 +303,18 @@ func FetchReceiver(chan_fetch_pop UrlChannel,  out_count *OutCounter, fetch_toke
 					used_network = true
 				}
 				fmt.Println("Fetching :", fetch_url)
-				if factive {fmt.Fprintf(file, "%s\n", string(fetch_url))}
+				if factive {
+					fmt.Fprintf(file, "%s\n", string(fetch_url))
+				}
 				if !used_network {
 					fmt.Println("Not used fetch token, returning")
 					fetch_token_chan.PutToken()
 				}
 				out_count.Dec()
 			}()
-		} else {out_count.Dec()}
+		} else {
+			out_count.Dec()
+		}
 	}
 }
 

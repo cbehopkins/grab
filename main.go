@@ -6,7 +6,6 @@ import (
 	"os"
 )
 
-
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
@@ -50,7 +49,7 @@ func main() {
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
 	go grab.UrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan, "out_urls.txt")
-	go grab.FetchReceiver(       chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt")
+	go grab.FetchReceiver(chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt")
 
 	out_count.Wait()
 	close(chUrls)
