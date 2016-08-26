@@ -51,7 +51,8 @@ func main() {
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
-	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan, "out_urls.txt")
+	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan)
+	urlx.DbgFile("out_urls.txt")
 	go grab.FetchReceiver(chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt", 8)
 
 	// Show a progress bar

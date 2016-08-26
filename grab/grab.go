@@ -505,34 +505,32 @@ type UrlRx struct {
 	chan_fetch UrlChannel
 	out_count  *OutCounter
 	crawl_chan TokenChan
-	crawl_file string
 	UrlStore   *UrlStore
+	crawl_active bool
+file *os.File
 }
 
-func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan, crawl_file string) *UrlRx {
+func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan) *UrlRx {
 	itm := new(UrlRx)
 	itm.chUrls = chUrls
 	itm.chan_fetch = chan_fetch
 	itm.out_count = out_count
 	itm.crawl_chan = crawl_chan
-	itm.crawl_file = crawl_file
 	itm.UrlStore = NewUrlStore(chUrls)
 	go itm.urlRxWorker()
 	return itm
 }
-func (ur *UrlRx) urlRxWorker() {
-
-	var crawl_active bool
-	var file *os.File
-	if ur.crawl_file != "" {
+func (ur *UrlRx) DbgFile(crawl_file string) {
+	if crawl_file != "" {
 		var err error
-		file, err = os.Create(ur.crawl_file)
+		ur.file, err = os.Create(crawl_file)
 		if err != nil {
 			log.Fatal("Cannot create file", err)
 		}
-		crawl_active = true
-		defer file.Close()
+		ur.crawl_active = true
 	}
+}
+func (ur *UrlRx) urlRxWorker() {
 	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
 	// It's bad news if the chUrls blocks as then:
 	// the crawl func can't add new URLS
@@ -557,8 +555,8 @@ func (ur *UrlRx) urlRxWorker() {
 			ur.crawl_chan.GetToken()
 			//fmt.Println("Crawl token rx for:", url)
 			go crawl(url, ur.chUrls, ur.chan_fetch, ur.out_count, err_url_chan)
-			if crawl_active {
-				fmt.Fprintf(file, "%s\n", string(url))
+			if ur.crawl_active {
+				fmt.Fprintf(ur.file, "%s\n", string(url))
 			}
 		} else {
 			ur.out_count.Dec()
@@ -567,5 +565,8 @@ func (ur *UrlRx) urlRxWorker() {
 	close(err_url_chan)
 	for bob, _ := range errored_urls {
 		fmt.Println("Errored URL:", bob)
+	}
+	if ur.crawl_active {
+		defer ur.file.Close()
 	}
 }
