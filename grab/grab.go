@@ -34,9 +34,15 @@ func token_source(sleep int, token_chan TokenChan, action string) {
 
 type TokenChan chan struct{}
 
-func NewTokenChan(delay int, name string) *TokenChan {
-	itm := make(TokenChan, 16)
-	go token_source(delay, itm, name)
+func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
+	itm := make(TokenChan, num_tokens)
+	if delay > 0 {
+		go token_source(delay, itm, name)
+	} else {
+		for i := 0; i < num_tokens; i++ {
+			itm.PutToken()
+		}
+	}
 	return &itm
 }
 func (tc TokenChan) GetToken() {
@@ -92,7 +98,7 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 	r := bufio.NewReader(f)
 	s, e := Readln(r)
 	for e == nil {
-		fmt.Println("Fast adding ", s)
+		//fmt.Println("Fast adding ", s)
 		if counter != nil {
 			counter.Add()
 		}
@@ -246,8 +252,6 @@ func check_jpg(filename string) bool {
 			panic(err)
 		}
 	}
-
-	return true
 }
 func Fetch(fetch_url Url) bool {
 	array := strings.Split(string(fetch_url), "/")
@@ -260,22 +264,23 @@ func Fetch(fetch_url Url) bool {
 	dir_str := strings.Join(dir_struct, "/")
 	potential_file_name := dir_str + "/" + fn
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
-		fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+		//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
 		fetch_file(potential_file_name, dir_str, fetch_url)
 		return true
 	} else {
-		fmt.Println("skipping downloading", potential_file_name)
+		//fmt.Println("skipping downloading", potential_file_name)
 		good_file := check_jpg(potential_file_name)
 		if good_file {
 			return false
 		} else {
-			fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+			//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
 			fetch_file(potential_file_name, dir_str, fetch_url)
 			return true
 		}
 	}
 }
-func FetchReceiver(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan, fetch_file string) {
+func FetchReceiver(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan, fetch_file string, num_sim int) {
+	fetch_sim_chan := *NewTokenChan(0, 8, "")
 	var file *os.File
 	var factive bool
 	if fetch_file != "" {
@@ -292,8 +297,15 @@ func FetchReceiver(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token
 		_, ok := fetched_urls[fetch_url]
 		if !ok {
 			fetched_urls[fetch_url] = true
+			// Two tokens are needed to proceed
+			// The first is to make sure in no circumstances do we have nore than N trying to process stuff
+			// i.e. that there are not too many things happening at once
+			fetch_sim_chan.GetToken()
+
+			// The second token is rate limiting making sure we don't make a request too frequently
 			fetch_token_chan.GetToken()
 			go func() {
+				defer fetch_sim_chan.PutToken()
 				run_download := true
 				var used_network bool
 				if run_download {
@@ -302,13 +314,13 @@ func FetchReceiver(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token
 					// Pretend we used it to make sure there is a sink of tokens - otherwise we can lock up
 					used_network = true
 				}
-				fmt.Println("Fetching :", fetch_url)
+				//fmt.Println("Fetching :", fetch_url)
 				if factive {
 					fmt.Fprintf(file, "%s\n", string(fetch_url))
 				}
 				if !used_network {
-					fmt.Println("Not used fetch token, returning")
-					fetch_token_chan.PutToken()
+					//fmt.Println("Not used fetch token, returning")
+					//fetch_token_chan.PutToken()
 				}
 				out_count.Dec()
 			}()
@@ -354,10 +366,13 @@ func NewUrlChannel() *UrlChannel {
 }
 
 type UrlStore struct {
+	sync.Mutex
 	data          []Url
 	PushChannel   chan Url
 	PopChannel    chan Url
 	enforce_order bool
+	InCount       int
+	OutCount      int
 }
 
 func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
@@ -413,6 +428,9 @@ func (us *UrlStore) urlWorker() {
 		case ind, ok := <-in_chan:
 			if ok {
 				//fmt.Println("Queueing URL :", ind)
+				us.Lock()
+				us.InCount++
+				us.Unlock()
 				if us.enforce_order {
 					if len(us.data) < cap(us.data) {
 						// Safe to use append here as it won't do the copy as there is capacity
@@ -446,6 +464,9 @@ func (us *UrlStore) urlWorker() {
 			}
 
 		case tmp_chan <- tmp_val:
+			us.Lock()
+			us.OutCount++
+			us.Unlock()
 			//fmt.Println("DeQueueing URL", tmp_val)
 			if us.enforce_order {
 				//copy(us.data[:len(us.data)-1],us.data[1:len(us.data)])
@@ -469,15 +490,43 @@ func (us UrlStore) Add(itm Url) {
 
 func (us UrlStore) Pop() (itm Url, ok bool) {
 	itm, ok = <-us.PopChannel
-	fmt.Println("Popped URL:", itm)
+	//fmt.Println("Popped URL:", itm)
 	return
 }
-func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan, crawl_file string) {
+func (us UrlStore) InputCount() int {
+	return us.InCount + len(us.PushChannel)
+}
+func (us UrlStore) OutputCount() int {
+	return us.OutCount + len(us.PopChannel)
+}
+
+type UrlRx struct {
+	chUrls     UrlChannel
+	chan_fetch UrlChannel
+	out_count  *OutCounter
+	crawl_chan TokenChan
+	crawl_file string
+	UrlStore   *UrlStore
+}
+
+func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan, crawl_file string) *UrlRx {
+	itm := new(UrlRx)
+	itm.chUrls = chUrls
+	itm.chan_fetch = chan_fetch
+	itm.out_count = out_count
+	itm.crawl_chan = crawl_chan
+	itm.crawl_file = crawl_file
+	itm.UrlStore = NewUrlStore(chUrls)
+	go itm.urlRxWorker()
+	return itm
+}
+func (ur *UrlRx) urlRxWorker() {
+
 	var crawl_active bool
 	var file *os.File
-	if crawl_file != "" {
+	if ur.crawl_file != "" {
 		var err error
-		file, err = os.Create(crawl_file)
+		file, err = os.Create(ur.crawl_file)
 		if err != nil {
 			log.Fatal("Cannot create file", err)
 		}
@@ -498,22 +547,21 @@ func UrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter
 			errored_urls[bob] = true
 		}
 	}()
-	url_store := NewUrlStore(chUrls)
-	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
+	for url, ok := ur.UrlStore.Pop(); ok; url, ok = ur.UrlStore.Pop() {
 		_, ok := crawled_urls[url]
 		if !ok {
-			fmt.Println("Receive URL to crawl", url)
+			//fmt.Println("Receive URL to crawl", url)
 			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
 			//fmt.Println("Getting a crawl token")
-			crawl_chan.GetToken()
+			ur.crawl_chan.GetToken()
 			//fmt.Println("Crawl token rx for:", url)
-			go crawl(url, chUrls, chan_fetch, out_count, err_url_chan)
+			go crawl(url, ur.chUrls, ur.chan_fetch, ur.out_count, err_url_chan)
 			if crawl_active {
 				fmt.Fprintf(file, "%s\n", string(url))
 			}
 		} else {
-			out_count.Dec()
+			ur.out_count.Dec()
 		}
 	}
 	close(err_url_chan)

@@ -3,7 +3,10 @@ package main
 import (
 	"fmt"
 	"github.com/cbehopkins/grab/grab"
+	"github.com/cheggaaa/pb"
 	"os"
+	"runtime"
+	"time"
 )
 
 func main() {
@@ -42,15 +45,44 @@ func main() {
 	// We generate a token at intervals and the fetchers do not
 	// touch the network until they have one of these tokens.
 	// If they do not need the token, they return it
-	crawl_token_chan := *grab.NewTokenChan(20000, "")
-	fetch_token_chan := *grab.NewTokenChan(4000, "")
+	crawl_token_chan := *grab.NewTokenChan(20000, 16, "")
+	fetch_token_chan := *grab.NewTokenChan(400, 16, "")
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
-	go grab.UrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan, "out_urls.txt")
-	go grab.FetchReceiver(chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt")
+	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan, "out_urls.txt")
+	go grab.FetchReceiver(chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt", 8)
+
+	// Show a progress bar
+	fetch_bar := pb.New(fetch_url_store.InputCount())
+	url_bar := pb.New(urlx.UrlStore.InputCount())
+	max_procs_seen := runtime.NumGoroutine()
+	gor_bar := pb.New(max_procs_seen)
+	gor_bar.ShowTimeLeft = false
+	// and start
+	pool, err := pb.StartPool(fetch_bar, url_bar, gor_bar)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		for {
+			time.Sleep(1000 * time.Millisecond)
+			current_go_procs := runtime.NumGoroutine()
+			if max_procs_seen < current_go_procs {
+				max_procs_seen = current_go_procs
+				gor_bar.Total = int64(current_go_procs)
+			}
+			gor_bar.Set(current_go_procs)
+			fetch_bar.Total = int64(fetch_url_store.InputCount())
+			fetch_bar.Set(fetch_url_store.OutputCount())
+			url_bar.Total = int64(urlx.UrlStore.InputCount())
+			url_bar.Set(urlx.UrlStore.OutputCount())
+		}
+	}()
 
 	out_count.Wait()
 	close(chUrls)
+	pool.Stop()
 }
