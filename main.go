@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/cbehopkins/grab/grab"
-	"github.com/cheggaaa/pb"
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/cbehopkins/grab/grab"
+	"github.com/cheggaaa/pb"
 )
 
 func main() {
@@ -53,7 +54,8 @@ func main() {
 	// And feeds itself new URLs on the chUrls
 	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan)
 	urlx.DbgFile("out_urls.txt")
-	go grab.FetchReceiver(chan_fetch_pop, &out_count, fetch_token_chan, "out_fetch.txt", 8)
+	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan, 8)
+	fetch_inst.DbgFile("out_fetch.txt")
 
 	// Show a progress bar
 	fetch_bar := pb.New(fetch_url_store.InputCount())
