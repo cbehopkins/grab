@@ -45,7 +45,7 @@ func main() {
 	// We generate a token at intervals and the fetchers do not
 	// touch the network until they have one of these tokens.
 	// If they do not need the token, they return it
-	crawl_token_chan := *grab.NewTokenChan(20000, 16, "")
+	crawl_token_chan := *grab.NewTokenChan(10000, 16, "")
 	fetch_token_chan := *grab.NewTokenChan(400, 16, "")
 
 	// This is actually the Crawler that takes URLS and spits out
@@ -76,6 +76,7 @@ func main() {
 				gor_bar.Total = int64(current_go_procs)
 			}
 			gor_bar.Set(current_go_procs)
+			// TBD If ewusl then zero both
 			fetch_bar.Total = int64(fetch_url_store.InputCount())
 			fetch_bar.Set(fetch_url_store.OutputCount())
 			url_bar.Total = int64(urlx.UrlStore.InputCount())

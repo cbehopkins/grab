@@ -217,11 +217,16 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	os.MkdirAll(dir_str, os.ModeDir)
 
 	out, err := os.Create(potential_file_name)
+	check(err)
 	defer out.Close()
-	check(err)
+	if fetch_url=="" {
+		fmt.Println("null fetch")
+	}
+
 	resp, err := http.Get(string(fetch_url))
-	defer resp.Body.Close()
+	// Add error handling here
 	check(err)
+	defer resp.Body.Close()
 	_, err = io.Copy(out, resp.Body)
 	check(err)
 }
@@ -268,6 +273,10 @@ func Fetch(fetch_url Url) bool {
 		fetch_file(potential_file_name, dir_str, fetch_url)
 		return true
 	} else {
+		test_jpg := false
+		if !test_jpg {
+			return false
+		}
 		//fmt.Println("skipping downloading", potential_file_name)
 		good_file := check_jpg(potential_file_name)
 		if good_file {
