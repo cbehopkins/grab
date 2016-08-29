@@ -79,17 +79,16 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 }
 
 // Extract all http** links from a given webpage
-func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter, errored_urls UrlChannel) {
+func crawl(url_in Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter, errored_urls UrlChannel, print_urls, all_interesting bool) {
 
-	resp, err := http.Get(string(urli))
+	resp, err := http.Get(string(url_in))
 	defer out_count.Dec()
 
 	if err != nil {
 
-		fmt.Println("ERROR: Failed to crawl \"" + urli + "\"")
-		// TBD add in error queue to try again with at end of crawl.
+		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
 		DecodeHttpError(err)
-		errored_urls <- urli
+		errored_urls <- url_in
 		return
 	}
 
@@ -97,7 +96,9 @@ func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter
 	defer b.Close()
 	defer io.Copy(ioutil.Discard, b)
 	z := html.NewTokenizer(b)
-
+	if print_urls {
+		fmt.Printf("Analyzing UR: %s\n", url_in)
+	}
 	for {
 		tt := z.Next()
 
@@ -115,30 +116,37 @@ func crawl(urli Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter
 			}
 
 			// Extract the href value, if there is one
-			ok, urlj := getHref(t)
+			ok, linked_url := getHref(t)
 			if !ok {
 				continue
 			}
 
 			// Make sure the url begines in http**
-			hasProto := strings.Index(urlj, "http") == 0
+			hasProto := strings.Index(linked_url, "http") == 0
 			if hasProto {
 
-				is_jpg := strings.Contains(urlj, ".jpg")
+				is_jpg := strings.Contains(linked_url, ".jpg")
 				if is_jpg {
 					out_count.Add()
-					fetch_chan <- Url(urlj)
+					if print_urls {
+						fmt.Printf("Found jpg:%s\n", linked_url)
+					}
+					fetch_chan <- Url(linked_url)
 				} else {
-					arrayi := strings.Split(string(urli), "/")
-					arrayj := strings.Split(string(urlj), "/")
+					arrayi := strings.Split(string(url_in), "/")
+					arrayj := strings.Split(string(linked_url), "/")
 					domain_i := arrayi[2]
 					domain_j := arrayj[2]
-					if domain_i == domain_j {
-						//fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, urlj)
+					if all_interesting || (domain_i == domain_j) {
+						if print_urls {
+							fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
+						}
 						out_count.Add()
-						ch <- Url(urlj)
+						ch <- Url(linked_url)
 					} else {
-						//fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, urlj)
+						if print_urls {
+							fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
+						}
 					}
 				}
 			}

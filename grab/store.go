@@ -8,8 +8,8 @@ import (
 type UrlStore struct {
 	sync.Mutex
 	data          []Url
-	PushChannel   chan Url
-	PopChannel    chan Url
+	PushChannel   UrlChannel
+	PopChannel    UrlChannel
 	enforce_order bool
 	InCount       int
 	OutCount      int

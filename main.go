@@ -13,6 +13,8 @@ import (
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
+	var show_progress_bar bool
+	load_seeds := true
 
 	// Channels
 	chUrls := *grab.NewUrlChannel() // URLS to crawl
@@ -34,10 +36,10 @@ func main() {
 	}()
 
 	// Next, if they exist get the input fromt he seed files
-	if true {
+	if load_seeds {
 		go grab.LoadFile("in_fetch.txt", chan_fetch_push, &out_count)
 	}
-	if true {
+	if load_seeds {
 		go grab.LoadFile("in_urls.txt", chUrls, &out_count)
 	}
 
@@ -54,39 +56,49 @@ func main() {
 	// And feeds itself new URLs on the chUrls
 	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan)
 	urlx.DbgFile("out_urls.txt")
+	urlx.DbgUrls(!show_progress_bar)
+	//urlx.AllInteresting(true)
+	urlx.Start()
 	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan, 8)
 	fetch_inst.DbgFile("out_fetch.txt")
+	fetch_inst.DbgUrls(!show_progress_bar)
+	fetch_inst.SetTestJpg(false)
+	fetch_inst.SetRunDownload(false)
+	fetch_inst.Start()
 
-	// Show a progress bar
-	fetch_bar := pb.New(fetch_url_store.InputCount())
-	url_bar := pb.New(urlx.UrlStore.InputCount())
-	max_procs_seen := runtime.NumGoroutine()
-	gor_bar := pb.New(max_procs_seen)
-	gor_bar.ShowTimeLeft = false
-	// and start
-	pool, err := pb.StartPool(fetch_bar, url_bar, gor_bar)
-	if err != nil {
-		panic(err)
-	}
-
-	go func() {
-		for {
-			time.Sleep(1000 * time.Millisecond)
-			current_go_procs := runtime.NumGoroutine()
-			if max_procs_seen < current_go_procs {
-				max_procs_seen = current_go_procs
-				gor_bar.Total = int64(current_go_procs)
-			}
-			gor_bar.Set(current_go_procs)
-			// TBD If ewusl then zero both
-			fetch_bar.Total = int64(fetch_url_store.InputCount())
-			fetch_bar.Set(fetch_url_store.OutputCount())
-			url_bar.Total = int64(urlx.UrlStore.InputCount())
-			url_bar.Set(urlx.UrlStore.OutputCount())
+	if show_progress_bar {
+		// Show a progress bar
+		fetch_bar := pb.New(fetch_url_store.InputCount())
+		url_bar := pb.New(urlx.UrlStore.InputCount())
+		max_procs_seen := runtime.NumGoroutine()
+		gor_bar := pb.New(max_procs_seen)
+		gor_bar.ShowTimeLeft = false
+		// and start
+		pool, err := pb.StartPool(fetch_bar, url_bar, gor_bar)
+		if err != nil {
+			panic(err)
 		}
-	}()
 
+		go func() {
+			for {
+				time.Sleep(1000 * time.Millisecond)
+				current_go_procs := runtime.NumGoroutine()
+				if max_procs_seen < current_go_procs {
+					max_procs_seen = current_go_procs
+					gor_bar.Total = int64(current_go_procs)
+				}
+				gor_bar.Set(current_go_procs)
+				// TBD If ewusl then zero both
+				fetch_bar.Total = int64(fetch_url_store.InputCount())
+				fetch_bar.Set(fetch_url_store.OutputCount())
+				url_bar.Total = int64(urlx.UrlStore.InputCount())
+				url_bar.Set(urlx.UrlStore.OutputCount())
+			}
+		}()
+		defer pool.Stop()
+
+	}
 	out_count.Wait()
 	close(chUrls)
-	pool.Stop()
+
 }

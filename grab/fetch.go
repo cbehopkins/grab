@@ -11,7 +11,6 @@ import (
 )
 
 // Test the jpeg for validity
-var test_jpg bool
 
 func exists(path string) (bool, error) {
 	_, err := os.Stat(path)
@@ -77,14 +76,29 @@ type Fetcher struct {
 	out_count        *OutCounter
 	fetch_token_chan TokenChan
 	num_sim          int
+	test_jpg         bool
+	dbg_urls         bool
 }
 
 func NewFetcher(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan, num_sim int) *Fetcher {
 	itm := new(Fetcher)
 	itm.run_download = true
-	go itm.FetchReceiver()
+	itm.chan_fetch_pop = chan_fetch_pop
+	itm.out_count = out_count
+	itm.fetch_token_chan = fetch_token_chan
+	itm.num_sim = num_sim
 
 	return itm
+}
+func (f Fetcher) Start() {
+	go f.FetchReceiver()
+
+}
+func (f *Fetcher) SetTestJpg(vary bool) {
+	f.test_jpg = vary
+}
+func (f *Fetcher) SetRunDownload(vary bool) {
+	f.run_download = vary
 }
 func (f Fetcher) Fetch(fetch_url Url) bool {
 	array := strings.Split(string(fetch_url), "/")
@@ -101,7 +115,7 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 		fetch_file(potential_file_name, dir_str, fetch_url)
 		return true
 	} else {
-		if !test_jpg {
+		if !f.test_jpg {
 			return false
 		}
 		//fmt.Println("skipping downloading", potential_file_name)
@@ -126,6 +140,9 @@ func (f *Fetcher) DbgFile(fetch_file string) {
 		f.factive = true
 	}
 }
+func (f *Fetcher) DbgUrls(vary bool) {
+	f.dbg_urls = vary
+}
 func (f Fetcher) FetchReceiver() {
 
 	fetch_sim_chan := *NewTokenChan(0, 8, "")
@@ -135,9 +152,11 @@ func (f Fetcher) FetchReceiver() {
 
 	fetched_urls := make(map[Url]bool)
 	for fetch_url := range f.chan_fetch_pop {
+
 		_, ok := fetched_urls[fetch_url]
 		if !ok {
 			fetched_urls[fetch_url] = true
+
 			// Two tokens are needed to proceed
 			// The first is to make sure in no circumstances do we have nore than N trying to process stuff
 			// i.e. that there are not too many things happening at once
@@ -146,21 +165,24 @@ func (f Fetcher) FetchReceiver() {
 			// The second token is rate limiting making sure we don't make a request too frequently
 			f.fetch_token_chan.GetToken()
 			go func() {
+				// When we're done then always return the simultaneous limit token
 				defer fetch_sim_chan.PutToken()
 				var used_network bool
 				if f.run_download {
+					if f.dbg_urls {
+						fmt.Printf("Fetching $s\n", fetch_url)
+					}
 					used_network = f.Fetch(fetch_url)
-				} else {
-					// Pretend we used it to make sure there is a sink of tokens - otherwise we can lock up
-					used_network = true
 				}
-				//fmt.Println("Fetching :", fetch_url)
 				if f.factive {
 					fmt.Fprintf(f.file, "%s\n", string(fetch_url))
 				}
+				// If we have not used the network then return the Rate lmit token
 				if !used_network {
 					//fmt.Println("Not used fetch token, returning")
-					//fetch_token_chan.PutToken()
+					// Tries to put the token if there is space available
+					// otherwise doesn't do anything - avoids locking
+					f.fetch_token_chan.TryPutToken()
 				}
 				f.out_count.Dec()
 			}()

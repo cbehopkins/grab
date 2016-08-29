@@ -25,7 +25,12 @@ func (tc TokenChan) GetToken() {
 func (tc TokenChan) PutToken() {
 	tc <- struct{}{}
 }
-
+func (tc TokenChan) TryPutToken() {
+	select {
+	case tc <- struct{}{}:
+	default:
+	}
+}
 func token_source(sleep int, token_chan TokenChan, action string) {
 	r := rand.New(rand.NewSource(1))
 	for {
