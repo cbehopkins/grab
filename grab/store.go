@@ -59,7 +59,7 @@ func (us *UrlStore) urlWorker() {
 		} else {
 			tmp_chan = nil
 			if input_channel_closed == true {
-				//fmt.Println("Channel found closed")
+				fmt.Println("Channel found closed")
 				close(us.PopChannel)
 				return
 			}
@@ -98,7 +98,7 @@ func (us *UrlStore) urlWorker() {
 				tmp_chan = us.PopChannel
 			} else {
 				//chanel is closed
-				//fmt.Println("Channel is closed")
+				fmt.Println("in_ chan Channel is closed")
 				in_chan = nil
 				input_channel_closed = true
 			}
@@ -122,6 +122,7 @@ func (us *UrlStore) urlWorker() {
 }
 
 func (us UrlStore) Close() {
+	//fmt.Println("Closing Push")
 	close(us.PushChannel)
 }
 func (us UrlStore) Add(itm Url) {

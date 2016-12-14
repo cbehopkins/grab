@@ -25,6 +25,7 @@ func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCoun
 	itm.out_count = out_count
 	itm.crawl_chan = crawl_chan
 	itm.UrlStore = NewUrlStore(chUrls)
+	itm.dbg_urls = true
 	return itm
 }
 func (ur UrlRx) Start() {
@@ -65,7 +66,7 @@ func (ur UrlRx) urlRxWorker() {
 	for url, ok := ur.UrlStore.Pop(); ok; url, ok = ur.UrlStore.Pop() {
 		_, ok := crawled_urls[url]
 		if !ok {
-			//fmt.Println("Receive URL to crawl", url)
+			fmt.Println("Receive URL to crawl", url)
 			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
 			//fmt.Println("Getting a crawl token")

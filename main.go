@@ -14,6 +14,7 @@ func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
+	show_progress_bar = true
 	load_seeds := true
 
 	// Channels
@@ -37,9 +38,13 @@ func main() {
 
 	// Next, if they exist get the input fromt he seed files
 	if load_seeds {
+		out_count.Add()
+
 		go grab.LoadFile("in_fetch.txt", chan_fetch_push, &out_count)
 	}
 	if load_seeds {
+		out_count.Add()
+
 		go grab.LoadFile("in_urls.txt", chUrls, &out_count)
 	}
 
@@ -63,7 +68,7 @@ func main() {
 	fetch_inst.DbgFile("out_fetch.txt")
 	fetch_inst.DbgUrls(!show_progress_bar)
 	fetch_inst.SetTestJpg(false)
-	fetch_inst.SetRunDownload(false)
+	fetch_inst.SetRunDownload(true)
 	fetch_inst.Start()
 
 	if show_progress_bar {

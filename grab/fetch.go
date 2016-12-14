@@ -101,6 +101,9 @@ func (f *Fetcher) SetRunDownload(vary bool) {
 	f.run_download = vary
 }
 func (f Fetcher) Fetch(fetch_url Url) bool {
+	if strings.HasSuffix(string(fetch_url), "/") {
+		fetch_url += "index.html"
+	}
 	array := strings.Split(string(fetch_url), "/")
 	var fn string
 	if len(array) > 0 {
@@ -111,14 +114,14 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 	dir_str := strings.Join(dir_struct, "/")
 	potential_file_name := dir_str + "/" + fn
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
-		//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
 		fetch_file(potential_file_name, dir_str, fetch_url)
 		return true
 	} else {
 		if !f.test_jpg {
+			//fmt.Println("skipping downloading", potential_file_name)
 			return false
 		}
-		//fmt.Println("skipping downloading", potential_file_name)
 		good_file := check_jpg(potential_file_name)
 		if good_file {
 			return false
@@ -170,7 +173,7 @@ func (f Fetcher) FetchReceiver() {
 				var used_network bool
 				if f.run_download {
 					if f.dbg_urls {
-						fmt.Printf("Fetching $s\n", fetch_url)
+						fmt.Printf("FetchReceiver Fetching %s\n", fetch_url)
 					}
 					used_network = f.Fetch(fetch_url)
 				}

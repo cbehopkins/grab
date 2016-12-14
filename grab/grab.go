@@ -61,10 +61,16 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 		return
 	}
 	f, err := os.Open(filename)
-	if err != nil {
-		fmt.Printf("error opening file: %v\n", err)
-		os.Exit(1)
+	if err == os.ErrNotExist {
 		return
+	} else if err != nil {
+		if os.IsNotExist(err) {
+			return
+		} else {
+			fmt.Printf("error opening file: %T\n", err)
+			os.Exit(1)
+			return
+		}
 	}
 	r := bufio.NewReader(f)
 	s, e := Readln(r)
@@ -76,6 +82,7 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 		the_chan <- Url(s)
 		s, e = Readln(r)
 	}
+	counter.Dec()
 }
 
 // Extract all http** links from a given webpage
@@ -98,6 +105,7 @@ func crawl(url_in Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCount
 	z := html.NewTokenizer(b)
 	if print_urls {
 		fmt.Printf("Analyzing UR: %s\n", url_in)
+
 	}
 	for {
 		tt := z.Next()
@@ -123,9 +131,20 @@ func crawl(url_in Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCount
 
 			// Make sure the url begines in http**
 			hasProto := strings.Index(linked_url, "http") == 0
-			if hasProto {
+			is_jpg := strings.Contains(linked_url, ".jpg")
+			if !hasProto && is_jpg {
+				// Some smart arse has used a relative URL
+				array := strings.Split(string(url_in), "/")
+				var base_url string
+				for i := 0; i < (len(array) - 1); i++ {
+					part := array[i]
+					base_url = base_url + part + "/"
+				}
+				//fmt.Println("Base URL is:", base_url)
+				linked_url = base_url + linked_url
+			}
+			if hasProto || is_jpg {
 
-				is_jpg := strings.Contains(linked_url, ".jpg")
 				if is_jpg {
 					out_count.Add()
 					if print_urls {
