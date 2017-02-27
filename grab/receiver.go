@@ -7,23 +7,34 @@ import (
 )
 
 type UrlRx struct {
+	// URLs come in on this channel
+	// The Magic is that this channel is the input to our UrlStore
 	chUrls          UrlChannel
+	// When we find something we want to fetch it goes out on here
 	chan_fetch      UrlChannel
+	// WaitGroup to say we are busy/when we have finished
 	out_count       *OutCounter
+	// Our way of limiting our throughput - Number of Crawls happening at once
 	crawl_chan      TokenChan
+	// We need a place to store infinitly many Urls waiting to be crawled
 	UrlStore        *UrlStore
+	// Is the debug fiel in use/need closing
 	crawl_active    bool
 	file            *os.File
 	dbg_urls        bool
+	// Mark all urls(Not just those in the current domain) as interesting
 	all_interesting bool
 }
 
 func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan) *UrlRx {
 	itm := new(UrlRx)
+	// The seed URLs come in from here
+	// and are sent to the UrlStore
 	itm.chUrls = chUrls
 	itm.chan_fetch = chan_fetch
 	itm.out_count = out_count
 	itm.crawl_chan = crawl_chan
+	// Tell the UrlStore to take input from the channel our seed Urls come in on
 	itm.UrlStore = NewUrlStore(chUrls)
 	itm.dbg_urls = true
 	return itm

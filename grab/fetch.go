@@ -26,7 +26,25 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	os.MkdirAll(dir_str, os.ModeDir)
 
 	out, err := os.Create(potential_file_name)
-	check(err)
+	switch t := err.(type) {
+	case *os.PathError:
+		switch t.Err {
+		case os.ErrNotExist:
+			log.Fatal("Invalid filename", potential_file_name)
+		case os.ErrInvalid:
+			log.Fatal("Invalid argument", potential_file_name)
+		default:
+			log.Fatalf("Que?\n\"%s\"\n%v\n,Dir:%s\nUrl:%s\n", potential_file_name,t.Err,dir_str,fetch_url)
+
+		}
+	case nil:
+		// nothing
+	default:
+		log.Printf("Error is of type %T,n", err)
+		check(err)
+
+	}
+
 	defer out.Close()
 	if fetch_url == "" {
 		fmt.Println("null fetch")
@@ -34,6 +52,9 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 
 	resp, err := http.Get(string(fetch_url))
 	// TBD Add error handling here
+        if err !=nil {
+          return
+        }
 	_ = DecodeHttpError(err)
 	defer resp.Body.Close()
 	_, err = io.Copy(out, resp.Body)
@@ -69,24 +90,27 @@ func check_jpg(filename string) bool {
 }
 
 type Fetcher struct {
+	// Log file of files we have fetched
 	file             *os.File
 	run_download     bool
 	factive          bool
+	// Files to fetch come in on this channel
 	chan_fetch_pop   UrlChannel
+	// Effectively a Waitgroup to allow us to know when we are busy
 	out_count        *OutCounter
+	// Our way of managing how many fetches we have running at once
 	fetch_token_chan TokenChan
-	num_sim          int
+	// If the file already exists should we load it in to check if it is valid?
 	test_jpg         bool
 	dbg_urls         bool
 }
 
-func NewFetcher(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan, num_sim int) *Fetcher {
+func NewFetcher(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan) *Fetcher {
 	itm := new(Fetcher)
 	itm.run_download = true
 	itm.chan_fetch_pop = chan_fetch_pop
 	itm.out_count = out_count
 	itm.fetch_token_chan = fetch_token_chan
-	itm.num_sim = num_sim
 
 	return itm
 }
@@ -101,6 +125,9 @@ func (f *Fetcher) SetRunDownload(vary bool) {
 	f.run_download = vary
 }
 func (f Fetcher) Fetch(fetch_url Url) bool {
+        
+	n_url := strings.Replace(string(fetch_url), "\n", "", -1)
+        fetch_url = Url(n_url)
 	if strings.HasSuffix(string(fetch_url), "/") {
 		fetch_url += "index.html"
 	}
@@ -109,10 +136,20 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 	if len(array) > 0 {
 		fn = array[len(array)-1]
 	}
-
+	fn = strings.TrimLeft(fn, ".php?")
 	dir_struct := array[2 : len(array)-1]
 	dir_str := strings.Join(dir_struct, "/")
+	dir_str = strings.Replace(dir_str, "//", "/", -1)
+	dir_str = strings.Replace(dir_str, "%", "_", -1)
+        dir_str = strings.Replace(dir_str, "&", "_", -1)
+	dir_str = strings.Replace(dir_str, "?", "_", -1)
+	dir_str = strings.Replace(dir_str, "=", "_", -1)
+	fn = strings.Replace(fn, "%", "_", -1)
+ 	fn = strings.Replace(fn, "&", "_", -1)
+	fn = strings.Replace(fn, "?", "_", -1)
+	fn = strings.Replace(fn, "=", "_", -1)
 	potential_file_name := dir_str + "/" + fn
+
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
 		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
 		fetch_file(potential_file_name, dir_str, fetch_url)

@@ -57,6 +57,7 @@ func Readln(r *bufio.Reader) (string, error) {
 }
 
 func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
+	defer counter.Dec()
 	if filename == "" {
 		return
 	}
@@ -82,15 +83,24 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 		the_chan <- Url(s)
 		s, e = Readln(r)
 	}
-	counter.Dec()
 }
 
 // Extract all http** links from a given webpage
-func crawl(url_in Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCounter, errored_urls UrlChannel, print_urls, all_interesting bool) {
+func crawl(
+		url_in Url,		// The URL we are tasked with crawling 
+		ch UrlChannel, 		// Any interesting URLs are sent here
+		fetch_chan UrlChannel,	// Any files to fetch are requested here
+		out_count *OutCounter,	// Keep track of busy status
+		errored_urls UrlChannel,// Report errors here
+		print_urls,		// Flag saying we should printout
+		all_interesting bool) {
 
 	resp, err := http.Get(string(url_in))
 	defer out_count.Dec()
-
+	if print_urls {
+		fmt.Printf("Analyzing UR: %s\n", url_in)
+	        defer fmt.Println("Done with URL:",url_in)
+	}
 	if err != nil {
 
 		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
@@ -100,13 +110,10 @@ func crawl(url_in Url, ch UrlChannel, fetch_chan UrlChannel, out_count *OutCount
 	}
 
 	b := resp.Body
-	defer b.Close()
+	defer b.Close()	// Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
-	z := html.NewTokenizer(b)
-	if print_urls {
-		fmt.Printf("Analyzing UR: %s\n", url_in)
 
-	}
+	z := html.NewTokenizer(b)
 	for {
 		tt := z.Next()
 

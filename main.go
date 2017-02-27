@@ -14,7 +14,7 @@ func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
-	show_progress_bar = true
+	show_progress_bar = false
 	load_seeds := true
 
 	// Channels
@@ -53,8 +53,8 @@ func main() {
 	// We generate a token at intervals and the fetchers do not
 	// touch the network until they have one of these tokens.
 	// If they do not need the token, they return it
-	crawl_token_chan := *grab.NewTokenChan(10000, 16, "")
-	fetch_token_chan := *grab.NewTokenChan(400, 16, "")
+	crawl_token_chan := *grab.NewTokenChan(10000, 16, "")	// Number of URL crawlers
+	fetch_token_chan := *grab.NewTokenChan(400, 64, "")	// Number of jpgs being fetched
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
@@ -64,7 +64,7 @@ func main() {
 	urlx.DbgUrls(!show_progress_bar)
 	//urlx.AllInteresting(true)
 	urlx.Start()
-	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan, 8)
+	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan)
 	fetch_inst.DbgFile("out_fetch.txt")
 	fetch_inst.DbgUrls(!show_progress_bar)
 	fetch_inst.SetTestJpg(false)
@@ -86,7 +86,7 @@ func main() {
 
 		go func() {
 			for {
-				time.Sleep(1000 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				current_go_procs := runtime.NumGoroutine()
 				if max_procs_seen < current_go_procs {
 					max_procs_seen = current_go_procs
@@ -103,6 +103,7 @@ func main() {
 		defer pool.Stop()
 
 	}
+        fmt.Println("Waitng for out_count")
 	out_count.Wait()
 	close(chUrls)
 
