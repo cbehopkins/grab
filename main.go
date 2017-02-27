@@ -14,7 +14,7 @@ func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
-	show_progress_bar = false
+	show_progress_bar = true
 	load_seeds := true
 
 	// Channels
@@ -78,12 +78,19 @@ func main() {
 		max_procs_seen := runtime.NumGoroutine()
 		gor_bar := pb.New(max_procs_seen)
 		gor_bar.ShowTimeLeft = false
+
+		oct_bar := pb.New(out_count.Count)
+
+		fetch_bar.Prefix("Fetch:")
+		url_bar.Prefix("URLs :")
+                gor_bar.Prefix("Go Rt:")
+		oct_bar.Prefix("OutCt:")
 		// and start
-		pool, err := pb.StartPool(fetch_bar, url_bar, gor_bar)
+		pool, err := pb.StartPool(fetch_bar, url_bar, gor_bar,oct_bar)
 		if err != nil {
 			panic(err)
 		}
-
+		max_cout_count := out_count.Count
 		go func() {
 			for {
 				time.Sleep(100 * time.Millisecond)
@@ -93,7 +100,12 @@ func main() {
 					gor_bar.Total = int64(current_go_procs)
 				}
 				gor_bar.Set(current_go_procs)
-				// TBD If ewusl then zero both
+				if (out_count.Count>max_cout_count) {
+					max_cout_count = out_count.Count
+					oct_bar.Total = int64(max_cout_count)
+				}
+				oct_bar.Set(out_count.Count)
+				// TBD If equal then zero both
 				fetch_bar.Total = int64(fetch_url_store.InputCount())
 				fetch_bar.Set(fetch_url_store.OutputCount())
 				url_bar.Total = int64(urlx.UrlStore.InputCount())

@@ -77,7 +77,7 @@ func (ur UrlRx) urlRxWorker() {
 	for url, ok := ur.UrlStore.Pop(); ok; url, ok = ur.UrlStore.Pop() {
 		_, ok := crawled_urls[url]
 		if !ok {
-			fmt.Println("Receive URL to crawl", url)
+			if ur.dbg_urls{fmt.Println("Receive URL to crawl", url)}
 			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
 			//fmt.Println("Getting a crawl token")
