@@ -6,12 +6,18 @@ import (
 	"time"
 )
 
-type TokenChan chan struct{}
+type ToC chan struct{}
+type TokenChan struct {
+	tc       ToC
+	autofill bool
+}
 
 func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
-	itm := make(TokenChan, num_tokens)
+	var itm TokenChan
+	itm.tc = make(ToC, num_tokens)
 	if delay > 0 {
-		go token_source(delay, itm, name)
+		itm.SetAutoFill()
+		go itm.token_source(delay, itm, name)
 	} else {
 		for i := 0; i < num_tokens; i++ {
 			itm.PutToken()
@@ -19,22 +25,27 @@ func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
 	}
 	return &itm
 }
+func (tc *TokenChan) SetAutoFill() {
+	tc.autofill = true
+}
 func (tc TokenChan) GetToken() {
-	<-tc
+	<-tc.tc
 }
 func (tc TokenChan) PutToken() {
-	tc <- struct{}{}
+	if !tc.autofill {
+		tc.TryPutToken()
+	}
 }
 func (tc TokenChan) TryPutToken() {
 	select {
-	case tc <- struct{}{}:
+	case tc.tc <- struct{}{}:
 	default:
 	}
 }
-func token_source(sleep int, token_chan TokenChan, action string) {
+func (tc TokenChan) token_source(sleep int, token_chan TokenChan, action string) {
 	r := rand.New(rand.NewSource(1))
 	for {
-		token_chan.PutToken()
+		tc.tc <- struct{}{}
 		var time_to_sleep time.Duration
 		if sleep != 0 {
 			time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))

@@ -1,19 +1,19 @@
 package grab
 
 import (
-	"sync"
 	"fmt"
+	"sync"
 )
 
 type OutCounter struct {
 	sync.Mutex
 	Count    int
-	closed	 bool
+	closed   bool
 	DoneChan chan struct{}
 }
 
 func (oc *OutCounter) Add() {
-        //fmt.Println("Add 1 to count")
+	//fmt.Println("Add 1 to count")
 	oc.Lock()
 	oc.Count++
 	if oc.closed {
@@ -27,12 +27,14 @@ func (oc *OutCounter) Add() {
 }
 func (oc *OutCounter) Dec() {
 	oc.Lock()
-        if false {fmt.Println("Dec 1 from count:", oc.Count)}
+	if false {
+		fmt.Println("Dec 1 from count:", oc.Count)
+	}
 	oc.Count--
 	if oc.Count == 0 {
-	 	if oc.DoneChan == nil {
-                	oc.DoneChan = make(chan struct{})
-	        }
+		if oc.DoneChan == nil {
+			oc.DoneChan = make(chan struct{})
+		}
 		oc.closed = true
 		close(oc.DoneChan)
 	}

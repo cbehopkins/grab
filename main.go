@@ -14,8 +14,9 @@ func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
-	show_progress_bar = true
+	show_progress_bar = true 
 	load_seeds := true
+	drip_feed := false
 
 	// Channels
 	chUrls := *grab.NewUrlChannel() // URLS to crawl
@@ -53,44 +54,59 @@ func main() {
 	// We generate a token at intervals and the fetchers do not
 	// touch the network until they have one of these tokens.
 	// If they do not need the token, they return it
-	crawl_token_chan := *grab.NewTokenChan(10000, 16, "")	// Number of URL crawlers
-	fetch_token_chan := *grab.NewTokenChan(400, 64, "")	// Number of jpgs being fetched
+	// Specify how often we generate a new token, how many to hold in the queue and a name
+	var drip_crawl_interval int
+	var drip_fetch_interval int
+	if drip_feed {
+		drip_crawl_interval = 10000
+		drip_fetch_interval = 400
+	}
+	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 16, "")	// Number of URL crawlers
+	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 64, "")	// Number of jpgs being fetched
+
+	//fetch_token_chan.SetAutoFill()
+	//crawl_token_chan.SetAutoFill()
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
 	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan)
 	urlx.DbgFile("out_urls.txt")
-	urlx.DbgUrls(!show_progress_bar)
-	//urlx.AllInteresting(true)
+	urlx.SetDbgUrls(!show_progress_bar)
+	//urlx.SetAllInteresting(true)
 	urlx.Start()
 	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan)
 	fetch_inst.DbgFile("out_fetch.txt")
-	fetch_inst.DbgUrls(!show_progress_bar)
+	fetch_inst.SetDbgUrls(!show_progress_bar)
 	fetch_inst.SetTestJpg(false)
 	fetch_inst.SetRunDownload(true)
 	fetch_inst.Start()
 
 	if show_progress_bar {
 		// Show a progress bar
-		fetch_bar := pb.New(fetch_url_store.InputCount())
-		url_bar := pb.New(urlx.UrlStore.InputCount())
+
+		// First keep track of max of things
 		max_procs_seen := runtime.NumGoroutine()
+		max_cout_count := out_count.Count
+
+		// Create instances of the progress bars
+		fet_bar := pb.New(fetch_url_store.InputCount())
+		url_bar := pb.New(urlx.UrlStore.InputCount())
 		gor_bar := pb.New(max_procs_seen)
 		gor_bar.ShowTimeLeft = false
-
 		oct_bar := pb.New(out_count.Count)
 
-		fetch_bar.Prefix("Fetch:")
-		url_bar.Prefix("URLs :")
-                gor_bar.Prefix("Go Rt:")
-		oct_bar.Prefix("OutCt:")
-		// and start
-		pool, err := pb.StartPool(fetch_bar, url_bar, gor_bar,oct_bar)
+		// Name them
+		fet_bar.Prefix("IMG Fetch :")
+		url_bar.Prefix("TBD URLs  :")
+                gor_bar.Prefix("Go Routine:")
+		oct_bar.Prefix("Out Count :")
+		// and start them
+		pool, err := pb.StartPool(gor_bar,fet_bar, url_bar,oct_bar)
 		if err != nil {
 			panic(err)
 		}
-		max_cout_count := out_count.Count
+		// Start a routine that will occasionally update them
 		go func() {
 			for {
 				time.Sleep(100 * time.Millisecond)
@@ -106,8 +122,8 @@ func main() {
 				}
 				oct_bar.Set(out_count.Count)
 				// TBD If equal then zero both
-				fetch_bar.Total = int64(fetch_url_store.InputCount())
-				fetch_bar.Set(fetch_url_store.OutputCount())
+				fet_bar.Total = int64(fetch_url_store.InputCount())
+				fet_bar.Set(fetch_url_store.OutputCount())
 				url_bar.Total = int64(urlx.UrlStore.InputCount())
 				url_bar.Set(urlx.UrlStore.OutputCount())
 			}

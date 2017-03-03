@@ -98,7 +98,7 @@ func (us *UrlStore) urlWorker() {
 				tmp_chan = us.PopChannel
 			} else {
 				//chanel is closed
-				fmt.Println("in_ chan Channel is closed")
+				fmt.Println("in_chan Channel is closed")
 				in_chan = nil
 				input_channel_closed = true
 			}

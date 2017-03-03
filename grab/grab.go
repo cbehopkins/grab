@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 
 	"net/http"
-
+	"net/url"
 	"os"
 	"strings"
 
@@ -86,20 +86,20 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 }
 
 // Extract all http** links from a given webpage
-func crawl(
-		url_in Url,		// The URL we are tasked with crawling 
-		ch UrlChannel, 		// Any interesting URLs are sent here
-		fetch_chan UrlChannel,	// Any files to fetch are requested here
-		out_count *OutCounter,	// Keep track of busy status
-		errored_urls UrlChannel,// Report errors here
-		print_urls,		// Flag saying we should printout
-		all_interesting bool) {
-
+func (ur UrlRx) crawl(
+	url_in Url, // The URL we are tasked with crawling
+	errored_urls UrlChannel, // Report errors here
+) {
+	// Flag saying we should printout
+	print_urls := ur.DbgUrls
+	all_interesting := ur.AllInteresting
+	ch := ur.chUrls             // Any interesting URLs are sent here
+	fetch_chan := ur.chan_fetch // Any files to fetch are requested here
 	resp, err := http.Get(string(url_in))
-	defer out_count.Dec()
+	defer ur.OutCount.Dec()
 	if print_urls {
 		fmt.Printf("Analyzing UR: %s\n", url_in)
-	        defer fmt.Println("Done with URL:",url_in)
+		defer fmt.Println("Done with URL:", url_in)
 	}
 	if err != nil {
 
@@ -110,9 +110,9 @@ func crawl(
 	}
 
 	b := resp.Body
-	defer b.Close()	// Defer close to after discard
+	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
-
+	defer ur.crawl_chan.PutToken()
 	z := html.NewTokenizer(b)
 	for {
 		tt := z.Next()
@@ -136,46 +136,43 @@ func crawl(
 				continue
 			}
 
-			// Make sure the url begines in http**
-			hasProto := strings.Index(linked_url, "http") == 0
-			is_jpg := strings.Contains(linked_url, ".jpg")
-			if !hasProto && is_jpg {
-				// Some smart arse has used a relative URL
-				array := strings.Split(string(url_in), "/")
-				var base_url string
-				for i := 0; i < (len(array) - 1); i++ {
-					part := array[i]
-					base_url = base_url + part + "/"
-				}
-				//fmt.Println("Base URL is:", base_url)
-				linked_url = base_url + linked_url
+			// I need to get this into an absolute URL again
+			base, err := url.Parse(string(url_in))
+			check(err)
+			u, err := url.Parse(linked_url)
+			check(err)
+			linked_url_ut := base.ResolveReference(u)
+			linked_url_string := linked_url_ut.String()
+			linked_url = linked_url_string
+			if print_urls {
+				fmt.Println("Resolved URL to:", linked_url)
 			}
-			if hasProto || is_jpg {
 
-				if is_jpg {
-					out_count.Add()
+			is_jpg := strings.Contains(linked_url, ".jpg")
+			if is_jpg {
+				ur.OutCount.Add()
+				if print_urls {
+					fmt.Printf("Found jpg:%s\n", linked_url)
+				}
+				fetch_chan <- Url(linked_url)
+			} else {
+				arrayi := strings.Split(string(url_in), "/")
+				arrayj := strings.Split(string(linked_url), "/")
+				domain_i := arrayi[2]
+				domain_j := arrayj[2]
+				if all_interesting || (domain_i == domain_j) {
 					if print_urls {
-						fmt.Printf("Found jpg:%s\n", linked_url)
+						fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
 					}
-					fetch_chan <- Url(linked_url)
+					ur.OutCount.Add()
+					ch <- Url(linked_url)
 				} else {
-					arrayi := strings.Split(string(url_in), "/")
-					arrayj := strings.Split(string(linked_url), "/")
-					domain_i := arrayi[2]
-					domain_j := arrayj[2]
-					if all_interesting || (domain_i == domain_j) {
-						if print_urls {
-							fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
-						}
-						out_count.Add()
-						ch <- Url(linked_url)
-					} else {
-						if print_urls {
-							fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
-						}
+					if print_urls {
+						fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
 					}
 				}
 			}
+			//}
 		}
 	}
 }

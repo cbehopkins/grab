@@ -22,8 +22,43 @@ func exists(path string) (bool, error) {
 	}
 	return true, err
 }
+const (
+	OS_READ = 04
+	OS_WRITE = 02
+	OS_EX = 01
+	OS_USER_SHIFT = 6
+	OS_GROUP_SHIFT = 3
+	OS_OTH_SHIFT = 0
+
+	OS_USER_R = OS_READ<<OS_USER_SHIFT
+	OS_USER_W = OS_WRITE<<OS_USER_SHIFT
+	OS_USER_X = OS_EX<<OS_USER_SHIFT
+	OS_USER_RW = OS_USER_R | OS_USER_W
+	OS_USER_RWX = OS_USER_RW | OS_USER_X
+
+	OS_GROUP_R = OS_READ<<OS_GROUP_SHIFT
+	OS_GROUP_W = OS_WRITE<<OS_GROUP_SHIFT
+	OS_GROUP_X = OS_EX<<OS_GROUP_SHIFT
+	OS_GROUP_RW = OS_GROUP_R | OS_GROUP_W
+	OS_GROUP_RWX = OS_GROUP_RW | OS_GROUP_X
+
+	OS_OTH_R = OS_READ<<OS_OTH_SHIFT
+	OS_OTH_W = OS_WRITE<<OS_OTH_SHIFT
+	OS_OTH_X = OS_EX<<OS_OTH_SHIFT
+	OS_OTH_RW = OS_OTH_R | OS_OTH_W
+	OS_OTH_RWX = OS_OTH_RW | OS_OTH_X
+
+	OS_ALL_R = OS_USER_R | OS_GROUP_R | OS_OTH_R
+	OS_ALL_W = OS_USER_W | OS_GROUP_W | OS_OTH_W
+	OS_ALL_X = OS_USER_X | OS_GROUP_X | OS_OTH_X
+	OS_ALL_RW = OS_ALL_R | OS_ALL_W
+	OS_ALL_RWX = OS_ALL_RW | OS_GROUP_X
+)
 func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
-	os.MkdirAll(dir_str, os.ModeDir)
+	// Create any directories needed to put this file in them
+	var dir_file_mode os.FileMode
+	dir_file_mode = os.ModeDir | (OS_USER_RWX | OS_ALL_R)
+	os.MkdirAll(dir_str, dir_file_mode)
 
 	out, err := os.Create(potential_file_name)
 	switch t := err.(type) {
@@ -34,7 +69,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 		case os.ErrInvalid:
 			log.Fatal("Invalid argument", potential_file_name)
 		default:
-			log.Fatalf("Que?\n\"%s\"\n%v\n,Dir:%s\nUrl:%s\n", potential_file_name,t.Err,dir_str,fetch_url)
+			log.Fatalf("Que?\n\"%s\"\n%v\n,Dir:%s\nUrl:%s\n", potential_file_name, t.Err, dir_str, fetch_url)
 
 		}
 	case nil:
@@ -46,15 +81,16 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	}
 
 	defer out.Close()
+
 	if fetch_url == "" {
 		fmt.Println("null fetch")
 	}
 
 	resp, err := http.Get(string(fetch_url))
 	// TBD Add error handling here
-        if err !=nil {
-          return
-        }
+	if err != nil {
+		return
+	}
 	_ = DecodeHttpError(err)
 	defer resp.Body.Close()
 	_, err = io.Copy(out, resp.Body)
@@ -91,18 +127,18 @@ func check_jpg(filename string) bool {
 
 type Fetcher struct {
 	// Log file of files we have fetched
-	file             *os.File
-	run_download     bool
-	factive          bool
+	file         *os.File
+	run_download bool
+	factive      bool
 	// Files to fetch come in on this channel
-	chan_fetch_pop   UrlChannel
+	chan_fetch_pop UrlChannel
 	// Effectively a Waitgroup to allow us to know when we are busy
-	out_count        *OutCounter
+	out_count *OutCounter
 	// Our way of managing how many fetches we have running at once
 	fetch_token_chan TokenChan
 	// If the file already exists should we load it in to check if it is valid?
-	test_jpg         bool
-	dbg_urls         bool
+	test_jpg bool
+	dbg_urls bool
 }
 
 func NewFetcher(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan) *Fetcher {
@@ -125,12 +161,26 @@ func (f *Fetcher) SetRunDownload(vary bool) {
 	f.run_download = vary
 }
 func (f Fetcher) Fetch(fetch_url Url) bool {
-        
+
 	n_url := strings.Replace(string(fetch_url), "\n", "", -1)
-        fetch_url = Url(n_url)
+	fetch_url = Url(n_url)
 	if strings.HasSuffix(string(fetch_url), "/") {
-		fetch_url += "index.html"
+		fetch_url_htm := fetch_url + "index.htm"
+		fmt.Printf("Trying to fetch %s with htm extension\n", fetch_url_htm)
+		if f.fetch_try(fetch_url_htm) {
+			return true
+		} else {
+			// Try again with the .html extension
+			fetch_url_htm += "l"
+			fmt.Printf("That clearly failed, Trying to fetch %s with html extension\n", fetch_url_htm)
+			return f.fetch_try(fetch_url_htm)
+		}
+
 	}
+	return f.fetch_try(fetch_url)
+}
+
+func (f Fetcher) fetch_try(fetch_url Url) bool {
 	array := strings.Split(string(fetch_url), "/")
 	var fn string
 	if len(array) > 0 {
@@ -141,11 +191,11 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 	dir_str := strings.Join(dir_struct, "/")
 	dir_str = strings.Replace(dir_str, "//", "/", -1)
 	dir_str = strings.Replace(dir_str, "%", "_", -1)
-        dir_str = strings.Replace(dir_str, "&", "_", -1)
+	dir_str = strings.Replace(dir_str, "&", "_", -1)
 	dir_str = strings.Replace(dir_str, "?", "_", -1)
 	dir_str = strings.Replace(dir_str, "=", "_", -1)
 	fn = strings.Replace(fn, "%", "_", -1)
- 	fn = strings.Replace(fn, "&", "_", -1)
+	fn = strings.Replace(fn, "&", "_", -1)
 	fn = strings.Replace(fn, "?", "_", -1)
 	fn = strings.Replace(fn, "=", "_", -1)
 	potential_file_name := dir_str + "/" + fn
@@ -180,7 +230,7 @@ func (f *Fetcher) DbgFile(fetch_file string) {
 		f.factive = true
 	}
 }
-func (f *Fetcher) DbgUrls(vary bool) {
+func (f *Fetcher) SetDbgUrls(vary bool) {
 	f.dbg_urls = vary
 }
 func (f Fetcher) FetchReceiver() {
@@ -223,6 +273,9 @@ func (f Fetcher) FetchReceiver() {
 					// Tries to put the token if there is space available
 					// otherwise doesn't do anything - avoids locking
 					f.fetch_token_chan.TryPutToken()
+				} else {
+					// PutToken puts it back if in the right mode
+					f.fetch_token_chan.PutToken()
 				}
 				f.out_count.Dec()
 			}()

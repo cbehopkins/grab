@@ -9,21 +9,21 @@ import (
 type UrlRx struct {
 	// URLs come in on this channel
 	// The Magic is that this channel is the input to our UrlStore
-	chUrls          UrlChannel
+	chUrls UrlChannel
 	// When we find something we want to fetch it goes out on here
-	chan_fetch      UrlChannel
+	chan_fetch UrlChannel
 	// WaitGroup to say we are busy/when we have finished
-	out_count       *OutCounter
+	OutCount *OutCounter
 	// Our way of limiting our throughput - Number of Crawls happening at once
-	crawl_chan      TokenChan
+	crawl_chan TokenChan
 	// We need a place to store infinitly many Urls waiting to be crawled
-	UrlStore        *UrlStore
+	UrlStore *UrlStore
 	// Is the debug fiel in use/need closing
-	crawl_active    bool
-	file            *os.File
-	dbg_urls        bool
+	crawl_active bool
+	file         *os.File
+	DbgUrls      bool
 	// Mark all urls(Not just those in the current domain) as interesting
-	all_interesting bool
+	AllInteresting bool
 }
 
 func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan) *UrlRx {
@@ -32,11 +32,11 @@ func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCoun
 	// and are sent to the UrlStore
 	itm.chUrls = chUrls
 	itm.chan_fetch = chan_fetch
-	itm.out_count = out_count
+	itm.OutCount = out_count
 	itm.crawl_chan = crawl_chan
 	// Tell the UrlStore to take input from the channel our seed Urls come in on
 	itm.UrlStore = NewUrlStore(chUrls)
-	itm.dbg_urls = true
+	itm.DbgUrls = true
 	return itm
 }
 func (ur UrlRx) Start() {
@@ -53,11 +53,11 @@ func (ur *UrlRx) DbgFile(crawl_file string) {
 		ur.crawl_active = true
 	}
 }
-func (ur *UrlRx) DbgUrls(vary bool) {
-	ur.dbg_urls = vary
+func (ur *UrlRx) SetDbgUrls(vary bool) {
+	ur.DbgUrls = vary
 }
-func (ur *UrlRx) AllInteresting(vary bool) {
-	ur.all_interesting = vary
+func (ur *UrlRx) SetAllInteresting(vary bool) {
+	ur.AllInteresting = vary
 }
 func (ur UrlRx) urlRxWorker() {
 	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
@@ -77,18 +77,20 @@ func (ur UrlRx) urlRxWorker() {
 	for url, ok := ur.UrlStore.Pop(); ok; url, ok = ur.UrlStore.Pop() {
 		_, ok := crawled_urls[url]
 		if !ok {
-			if ur.dbg_urls{fmt.Println("Receive URL to crawl", url)}
+			if ur.DbgUrls {
+				fmt.Println("Receive URL to crawl", url)
+			}
 			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = true
 			//fmt.Println("Getting a crawl token")
 			ur.crawl_chan.GetToken()
 			//fmt.Println("Crawl token rx for:", url)
-			go crawl(url, ur.chUrls, ur.chan_fetch, ur.out_count, err_url_chan, ur.dbg_urls, ur.all_interesting)
+			go ur.crawl(url, err_url_chan)
 			if ur.crawl_active {
 				fmt.Fprintf(ur.file, "%s\n", string(url))
 			}
 		} else {
-			ur.out_count.Dec()
+			ur.OutCount.Dec()
 		}
 	}
 	close(err_url_chan)
