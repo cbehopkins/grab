@@ -84,6 +84,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 
 	if fetch_url == "" {
 		fmt.Println("null fetch")
+		return
 	}
 
 	resp, err := http.Get(string(fetch_url))

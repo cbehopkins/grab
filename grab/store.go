@@ -4,7 +4,18 @@ import (
 	"fmt"
 	"sync"
 )
-
+// This is a Lazy implementation of an arbitrarily large queue
+// Arbitratily large in that you can just keep writing to it
+// and the queue will grow in length to accomodate this
+// Yes I know this can consume all system memory, but so can
+// any algorithm that fundamentally 1 worker can create N more items
+// We are Lazy because at the moment the algorithm on read/pop
+// slices down the store, and on push a copy may happen
+// This means a low load on the Memory allocation
+// but a (potentiall) high load on copy
+// More efficient would be to use a read and write pointer
+// This that would significantly increase the complexity 
+// of the code and we don't need the performance for our application
 type UrlStore struct {
 	sync.Mutex
 	data          []Url
@@ -79,11 +90,11 @@ func (us *UrlStore) urlWorker() {
 						if cap(backup_store) > cap(us.data) {
 							// here we copy into the backup store's data storage
 							// the current data in the data store
-							//ncopy(backup_store[0:len(us.data)], us.data[0:len(us.data)])
+							copy(backup_store, us.data[0:len(us.data)])
 							// now stick the data on the end
-							backup_store = append(us.data, ind)
-							us.data = backup_store
-							//us.data = append(us.data, ind)
+							//backup_store = append(us.data, ind)
+							//us.data = backup_store
+							us.data = append(us.data, ind)
 						} else {
 							// This is the case where we need to grow the size of the store
 							us.data = append(us.data, ind)
@@ -102,7 +113,7 @@ func (us *UrlStore) urlWorker() {
 				in_chan = nil
 				input_channel_closed = true
 			}
-
+		// If it is possible to write to us.PopChannel
 		case tmp_chan <- tmp_val:
 			us.Lock()
 			us.OutCount++

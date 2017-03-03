@@ -60,7 +60,7 @@ func (ur *UrlRx) SetAllInteresting(vary bool) {
 	ur.AllInteresting = vary
 }
 func (ur UrlRx) urlRxWorker() {
-	crawled_urls := make(map[Url]bool) // URLS we've crawled already so no need to revisit
+	crawled_urls := make(map[Url]struct{}) // URLS we've crawled already so no need to revisit
 	// It's bad news if the chUrls blocks as then:
 	// the crawl func can't add new URLS
 	// So it stops mid crawl
@@ -81,7 +81,7 @@ func (ur UrlRx) urlRxWorker() {
 				fmt.Println("Receive URL to crawl", url)
 			}
 			//fmt.Println("This url needs crawling")
-			crawled_urls[url] = true
+			crawled_urls[url] = struct{}{}
 			//fmt.Println("Getting a crawl token")
 			ur.crawl_chan.GetToken()
 			//fmt.Println("Crawl token rx for:", url)

@@ -20,7 +20,6 @@ func main() {
 
 	// Channels
 	chUrls := *grab.NewUrlChannel() // URLS to crawl
-	//chan_fetch := *grab.NewUrlChannel() // Files to fetch
 	fetch_url_store := grab.NewUrlStore()
 	chan_fetch_push := fetch_url_store.PushChannel
 	chan_fetch_pop := fetch_url_store.PopChannel
@@ -63,9 +62,6 @@ func main() {
 	}
 	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 16, "")	// Number of URL crawlers
 	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 64, "")	// Number of jpgs being fetched
-
-	//fetch_token_chan.SetAutoFill()
-	//crawl_token_chan.SetAutoFill()
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
