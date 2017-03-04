@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-func TestCall(t *testing.T) {
+func TestCall4(t *testing.T) {
 
 	url_store := NewUrlStore()
 	// Receive from chUrls and store in a temporary buffer
 	url := "URL"
-	num_tests := 2048
+	num_tests := 4
 	for url_int := 0; url_int < num_tests; url_int++ {
 		tmp_url := url + strconv.Itoa(url_int)
-		url_store.Add(Url(tmp_url))
+		url_store.Push(Url(tmp_url))
 	}
 	url_store.Close()
 	rx_count := 0
@@ -29,7 +29,35 @@ func TestCall(t *testing.T) {
 	}
 	log.Println("All Done")
 }
+func TestCall16(t *testing.T) {
 
+	url_store := NewUrlStore()
+	// Receive from chUrls and store in a temporary buffer
+	url := "URL"
+	num_tests := 16
+	for url_int := 0; url_int < num_tests; url_int++ {
+		tmp_url := url + strconv.Itoa(url_int)
+		url_store.Push(Url(tmp_url))
+	}
+	url_store.Close()
+	rx_count := 0
+	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
+		tmp_url := "URL" + Url(strconv.Itoa(rx_count))
+		if tmp_url != url {
+			log.Fatalf("Bad Got:%s,%s\n", url, tmp_url)
+		} else {
+			//log.Printf("Good Got:%s,%s\n", url, tmp_url)
+		}
+		rx_count++
+		if false {
+			log.Println("Got:", url)
+		}
+	}
+	if rx_count != num_tests {
+		log.Fatal("Insufficient entries:", rx_count)
+	}
+	log.Println("All Done")
+}
 func TestChan(t *testing.T) {
 
 	tst := make(chan Url)
@@ -53,7 +81,43 @@ func TestChan(t *testing.T) {
 	}
 	log.Println("All Done")
 }
+func TestChanP0(t *testing.T) {
+	for i := 1; i < 2049; i++ {
+		i_local := i
+		name := strconv.Itoa(i)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
+			test_num(i_local)
+		})
+	}
+
+}
+func test_num(cnt int) {
+	tst := make(chan Url)
+	url_store := NewUrlStore(tst)
+	//url_store.SetDebug()
+	// Receive from chUrls and store in a temporary buffer
+	url := "URL"
+	go func() {
+		for url_int := 0; url_int < cnt; url_int++ {
+			tmp_url := url + strconv.Itoa(url_int)
+			url_store.PushChannel <- Url(tmp_url)
+		}
+		url_store.Close()
+	}()
+	rx_count := 0
+	for url := range url_store.PopChannel {
+		rx_count++
+		if false {
+			log.Println("Got:", url)
+		}
+	}
+	if rx_count != cnt {
+		log.Fatal("Insufficient entries:", rx_count)
+	}
+	log.Println("All Done:", cnt)
+}
 func TestCallE(t *testing.T) {
 
 	url_store := NewUrlStore(true)
@@ -62,7 +126,7 @@ func TestCallE(t *testing.T) {
 	num_tests := 2048
 	for url_int := 0; url_int < num_tests; url_int++ {
 		tmp_url := url + strconv.Itoa(url_int)
-		url_store.Add(Url(tmp_url))
+		url_store.Push(Url(tmp_url))
 	}
 	url_store.Close()
 	rx_count := 0
