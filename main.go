@@ -14,7 +14,7 @@ func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
-	show_progress_bar = true 
+	show_progress_bar = true
 	load_seeds := true
 	drip_feed := false
 
@@ -60,8 +60,8 @@ func main() {
 		drip_crawl_interval = 10000
 		drip_fetch_interval = 400
 	}
-	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 16, "")	// Number of URL crawlers
-	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 64, "")	// Number of jpgs being fetched
+	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 16, "") // Number of URL crawlers
+	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 64, "") // Number of jpgs being fetched
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
@@ -95,10 +95,10 @@ func main() {
 		// Name them
 		fet_bar.Prefix("IMG Fetch :")
 		url_bar.Prefix("TBD URLs  :")
-                gor_bar.Prefix("Go Routine:")
+		gor_bar.Prefix("Go Routine:")
 		oct_bar.Prefix("Out Count :")
 		// and start them
-		pool, err := pb.StartPool(gor_bar,fet_bar, url_bar,oct_bar)
+		pool, err := pb.StartPool(gor_bar, fet_bar, url_bar, oct_bar)
 		if err != nil {
 			panic(err)
 		}
@@ -112,7 +112,7 @@ func main() {
 					gor_bar.Total = int64(current_go_procs)
 				}
 				gor_bar.Set(current_go_procs)
-				if (out_count.Count>max_cout_count) {
+				if out_count.Count > max_cout_count {
 					max_cout_count = out_count.Count
 					oct_bar.Total = int64(max_cout_count)
 				}
@@ -127,7 +127,7 @@ func main() {
 		defer pool.Stop()
 
 	}
-        fmt.Println("Waitng for out_count")
+	fmt.Println("Waitng for out_count")
 	out_count.Wait()
 	close(chUrls)
 
