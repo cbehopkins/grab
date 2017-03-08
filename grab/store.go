@@ -2,7 +2,7 @@ package grab
 
 import (
 	"fmt"
-	"log"
+	//"log"
 	"sync"
 )
 
@@ -90,11 +90,9 @@ func (us UrlStore) grow_store(a, b, c, d int) {
 	}
 	*us.data = new_store
 }
+// To satisfty the FifoInt interface you need this:
 func (us UrlStore) DataGrow(a, b, c, d int) {
 	us.grow_store(a, b, c, d)
-	if us.debug {
-		//fmt.Println("Showing store after copy",us)
-	}
 }
 
 // Now we do
@@ -106,11 +104,11 @@ func (us *UrlStore) add_store(item Url) {
 	data_store := *us.data
 	data_store[location] = item
 	us.data_valid = true
-	//fmt.Printf("Adding %v\n%v\nLoc:%d\n",item,us,location)
+	if us.debug {fmt.Printf("Adding %v\n%v\nLoc:%d\n",item,us,location)}
 }
 func (us UrlStore) peek_store() Url {
 	data_store := *us.data
-	if us.FifoP.DataItems(us) > 0 {
+	if us.FifoP.DataValid(us)  {
 		location := us.FifoP.GetTail(us)
 		value := data_store[location]
 		return value
@@ -119,10 +117,10 @@ func (us UrlStore) peek_store() Url {
 }
 
 func (us *UrlStore) advance_store() bool {
-	if us.FifoP.DataItems(us) > 0 {
+	if us.FifoP.DataValid(us) {
 		ffp := us.FifoP.AdvanceTail(us)
 		us.FifoP = *ffp
-		us.data_valid = (us.FifoP.DataItems(us) > 0)
+		us.data_valid = us.FifoP.DataValid(us)
 		return true
 	} else {
 		return false
@@ -135,7 +133,7 @@ func (us *UrlStore) urlWorker() {
 	var input_channel_closed bool
 	var tmp_val Url
 	for {
-		if us.data_valid {
+		if us.FifoP.DataValid(us) {
 			tmp_out_chan = us.PopChannel
 			tmp_val = us.peek_store() // Peek at what the current value is
 		} else {
@@ -159,9 +157,6 @@ func (us *UrlStore) urlWorker() {
 
 				// Put the data into the main store
 				us.add_store(ind)
-				if us.FifoP.DataItems(us) == 0 {
-					log.Fatal("Data failed to update")
-				}
 
 				// activate the pop channel
 				tmp_out_chan = us.PopChannel

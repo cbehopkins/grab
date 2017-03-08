@@ -40,6 +40,13 @@ func (fp FifoProto) fifo_items(inter FifoInt) int {
 func (fp FifoProto) DataItems(inter FifoInt) int {
 	return fp.fifo_items(inter)
 }
+func (fp FifoProto) DataValid(inter FifoInt) bool {
+	// Canonically this is the point of the function
+	//return (fp.fifo_items(inter) >0)
+	return (fp.rp!=fp.wp)
+}
+
+
 func (fp FifoProto) fifo_free(inter FifoInt) int {
 	// Simply the capacity of the data store - the number of items in it
 	return inter.DataCap() - fp.fifo_items(inter)
