@@ -27,15 +27,15 @@ type UrlStore struct {
 	// a full queue is distinquished when rd%cap==wr%cap
 	//read_pointer  int
 	//write_pointer int
-	FifoP		FifoProto
-	debug         bool
+	FifoP FifoProto
+	debug bool
 }
 
 func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	itm := new(UrlStore)
 	tmp_store := make([]Url, 8)
 	itm.data = &tmp_store
-	//itm.data = make([]Url, 8)
+
 	itm.PopChannel = make(chan Url, 2)
 	for _, in_if := range in_if_arr {
 		switch in_if.(type) {
@@ -60,6 +60,13 @@ func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	go itm.urlWorker()
 	return itm
 }
+func (us UrlStore) String () string {
+	var ret_str string
+	ret_str = fmt.Sprintf("***Data Store***\n%v\n", *us.data)
+	ret_str += fmt.Sprintf("Capacity:%d\n", us.DataCap())
+	ret_str += us.FifoP.String()
+	return ret_str
+}
 func (us *UrlStore) SetDebug() {
 	us.debug = true
 }
@@ -67,40 +74,44 @@ func (us UrlStore) data_cap() int {
 	return cap(*us.data)
 }
 func (us UrlStore) DataCap() int {
-        return us.data_cap()
+	return us.data_cap()
 }
 
-func (us UrlStore) grow_store(a,b,c,d int) {
+func (us UrlStore) grow_store(a, b, c, d int) {
 	old_store := *us.data
-        store_capacity := us.DataCap()
-        new_store := make([]Url, store_capacity<<1)
+	store_capacity := us.DataCap()
+	new_store := make([]Url, store_capacity<<1)
 
-	if a!=b {
+	if a != b {
 		copy(new_store, old_store[a:b])
 	}
-	if (c!=d) {
-		copy(new_store[b-a:b],old_store[c:d])
+	if c != d {
+		copy(new_store[b-a:b], old_store[c:d])
 	}
 	*us.data = new_store
 }
-func (us UrlStore) DataGrow(a,b,c,d int) {
-	us.grow_store(a,b,c,d)
+func (us UrlStore) DataGrow(a, b, c, d int) {
+	us.grow_store(a, b, c, d)
+	if us.debug {
+		//fmt.Println("Showing store after copy",us)
+	}
 }
 
 // Now we do
 func (us *UrlStore) add_store(item Url) {
 	var location int
-	var ffp FifoProto
-	 location, ffp = us.FifoP.AddHead(us)
-	assign us.FifoP = ffp
-	 data_store := *us.data
-	 data_store[location] = item
-	 us.data_valid = true
+	var ffp *FifoProto
+	location, ffp = us.FifoP.AddHead(us)
+	us.FifoP = *ffp
+	data_store := *us.data
+	data_store[location] = item
+	us.data_valid = true
+	//fmt.Printf("Adding %v\n%v\nLoc:%d\n",item,us,location)
 }
 func (us UrlStore) peek_store() Url {
 	data_store := *us.data
 	if us.FifoP.DataItems(us) > 0 {
-		location := us.FifoP.GetTail()
+		location := us.FifoP.GetTail(us)
 		value := data_store[location]
 		return value
 	}
@@ -108,12 +119,13 @@ func (us UrlStore) peek_store() Url {
 }
 
 func (us *UrlStore) advance_store() bool {
-	if us.FifoP.FifoItems() >0 {
-	 	us.FifoP = us.FifoP.AdvanceTail()
-	 	us.data_valid = (us.FifoP.DataItems()>0)
-	 	return true
+	if us.FifoP.DataItems(us) > 0 {
+		ffp := us.FifoP.AdvanceTail(us)
+		us.FifoP = *ffp
+		us.data_valid = (us.FifoP.DataItems(us) > 0)
+		return true
 	} else {
-	 	return false
+		return false
 	}
 }
 
@@ -147,7 +159,7 @@ func (us *UrlStore) urlWorker() {
 
 				// Put the data into the main store
 				us.add_store(ind)
-				if us.FifoP.DataItems() == 0 {
+				if us.FifoP.DataItems(us) == 0 {
 					log.Fatal("Data failed to update")
 				}
 

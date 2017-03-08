@@ -44,7 +44,7 @@ func TestCall16(t *testing.T) {
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
 		tmp_url := "URL" + Url(strconv.Itoa(rx_count))
 		if tmp_url != url {
-			log.Fatalf("Bad Got:%s,%s\n", url, tmp_url)
+			log.Fatalf("Bad Got, Rxd:%s, Exp:%s\n", url, tmp_url)
 		} else {
 			//log.Printf("Good Got:%s,%s\n", url, tmp_url)
 		}
