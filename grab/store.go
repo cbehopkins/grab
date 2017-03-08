@@ -63,6 +63,10 @@ func (us *UrlStore) SetDebug() {
 func (us UrlStore) data_cap() int {
 	return cap(us.data)
 }
+func (us UrlStore) DataCap() int {
+        return us.data_cap()
+}
+
 func (us UrlStore) data_items() int {
 	q_cap := us.data_cap()
 	rd_norm := us.read_pointer % q_cap
@@ -83,11 +87,21 @@ func (us UrlStore) data_items() int {
 func (us UrlStore) data_free() int {
 	return us.data_cap() - us.data_items()
 }
-
+func (us *UrlStore) grow_store(a,b,c,d int) {
+        store_capacity := us.data_cap()
+        new_store := make([]Url, store_capacity<<1)
+	if a!=b {
+		copy(new_store, us.data[a:b])
+	}
+	if (c!=d) {
+		copy(new_store[b-a:b],us.data[c:d])
+	}
+	us.data = new_store
+}
+func (us *UrlStore) DataGrow(a,b,c,d int) {
+	us.grow_store(a,b,c,d)
+}
 func (us *UrlStore) grow_data() {
-	// First things first we need a new place to store all this new data
-	store_capacity := us.data_cap()
-	new_store := make([]Url, store_capacity<<1)
 
 	// Now we have it copy the new data into it
 	// Now we can make some assumptions. The only reasong we are here
@@ -96,7 +110,7 @@ func (us *UrlStore) grow_data() {
 	if us.read_pointer == us.write_pointer {
 		log.Fatal("Stupid sod you're telling me to grow an empty queue")
 	}
-	q_cap := us.data_cap()
+	q_cap := us.DataCap()
 	rd_norm := us.read_pointer % q_cap
 	wr_norm := us.write_pointer % q_cap
 	if rd_norm != wr_norm {
@@ -111,11 +125,7 @@ func (us *UrlStore) grow_data() {
 			if us.debug {
 				fmt.Println("Rp>Wp")
 			}
-			var cnt int
-			cnt = copy(new_store, us.data[rd_norm:])
-			if cnt < q_cap {
-				copy(new_store[q_cap-rd_norm:], us.data[0:wr_norm])
-			}
+			us.grow_store(rd_norm,q_cap,0,wr_norm)
 		} else {
 			// Data starts at read pointer and goes on until the write pointer
 			// How is this possible?
@@ -125,8 +135,7 @@ func (us *UrlStore) grow_data() {
 
 				fmt.Printf("Cap=%d\nWP=%d,RP=%d\nnWP=%d,nRP=%d\n", q_cap, us.write_pointer, us.read_pointer, wr_norm, rd_norm)
 			}
-			//log.Fatal("I don't think this is possible")
-			copy(new_store, us.data[rd_norm:wr_norm])
+			us.grow_store(rd_norm,wr_norm,0,0)
 		}
 	} else /*write pointer is larger*/ {
 		if us.write_pointer >= q_cap {
@@ -136,19 +145,10 @@ func (us *UrlStore) grow_data() {
 			// and read some of that
 			// so the old data is at the
 			// 5,6,7,x,x,x,2,3,4
-			var cnt int
 			if us.debug {
 				fmt.Println("Complex Wp>Rp")
 			}
-			cnt = copy(new_store, us.data[rd_norm:q_cap])
-			if cnt < q_cap {
-
-				cnt = copy(new_store[q_cap-rd_norm:], us.data[0:wr_norm])
-				if us.debug {
-					fmt.Println("Second copy happening", cnt)
-				}
-			}
-
+			us.grow_store(rd_norm,q_cap,0,wr_norm)
 		} else {
 			// there is data that starts at the read pointer and goes on until the write pointer
 			// i.e. we wrote some data in (and didn't wrap) and read some of that
@@ -156,22 +156,11 @@ func (us *UrlStore) grow_data() {
 			if us.debug {
 				fmt.Println("Simple Wp>Rp,", us.data[rd_norm:wr_norm])
 			}
-			copy(new_store, us.data[rd_norm:wr_norm])
+			us.grow_store(rd_norm,wr_norm,0,0)
 		}
 	}
-	if us.debug {
-		fmt.Printf("Cap=%d\nWP=%d,RP=%d\nnWP=%d,nRP=%d\n", q_cap, us.write_pointer, us.read_pointer, wr_norm, rd_norm)
-		fmt.Printf("Before copy:\n%v\n", us.data)
-		fmt.Printf("After Copy:\n%v\n", new_store)
-	}
-	us.data = new_store
 	us.read_pointer = 0
-	us.write_pointer = store_capacity
-	if (store_capacity << 1) == us.data_cap() {
-		return
-	} else {
-		log.Fatal("Capacity size error\n")
-	}
+	us.write_pointer = q_cap
 }
 
 // Now we do
