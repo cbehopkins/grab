@@ -3,7 +3,7 @@ package grab
 import (
 	"fmt"
 	//"log"
-	"sync"
+	//"sync"
 )
 
 // This is an implementation of an arbitrarily large queue
@@ -12,30 +12,23 @@ import (
 // Yes I know this can consume all system memory, but so can
 // any algorithm that fundamentally 1 worker can create N more items
 type UrlStore struct {
-	sync.Mutex
+	//sync.Mutex
 	data          *[]Url
 	PushChannel   UrlChannel
 	PopChannel    UrlChannel
 	enforce_order bool
 	InCount       int
 	OutCount      int
-	data_valid    bool
-	// This is really important!
-	// the pointers can go to twice the size of the queue
-	// This allows a full queue to use the full capacity
-	// an empty queue is when rd == wr
-	// a full queue is distinquished when rd%cap==wr%cap
-	//read_pointer  int
-	//write_pointer int
-	FifoP FifoProto
-	debug bool
+	FifoP         FifoProto
+	debug         bool
 }
 
 func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	itm := new(UrlStore)
-	tmp_store := make([]Url, 8)
+	ini_size := 8
+	tmp_store := make([]Url, ini_size)
 	itm.data = &tmp_store
-
+	itm.FifoP.SetCap(ini_size)
 	itm.PopChannel = make(chan Url, 2)
 	for _, in_if := range in_if_arr {
 		switch in_if.(type) {
@@ -60,7 +53,7 @@ func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	go itm.urlWorker()
 	return itm
 }
-func (us UrlStore) String () string {
+func (us UrlStore) String() string {
 	var ret_str string
 	ret_str = fmt.Sprintf("***Data Store***\n%v\n", *us.data)
 	ret_str += fmt.Sprintf("Capacity:%d\n", us.DataCap())
@@ -90,26 +83,28 @@ func (us UrlStore) grow_store(a, b, c, d int) {
 	}
 	*us.data = new_store
 }
+
 // To satisfty the FifoInt interface you need this:
 func (us UrlStore) DataGrow(a, b, c, d int) {
 	us.grow_store(a, b, c, d)
 }
 
-// Now we do
+// Add an item to the store
 func (us *UrlStore) add_store(item Url) {
 	var location int
-	var ffp *FifoProto
-	location, ffp = us.FifoP.AddHead(us)
-	us.FifoP = *ffp
+	location, us.FifoP = us.FifoP.AddHead(us)
 	data_store := *us.data
 	data_store[location] = item
-	us.data_valid = true
-	if us.debug {fmt.Printf("Adding %v\n%v\nLoc:%d\n",item,us,location)}
+	if us.debug {
+		fmt.Printf("Adding %v\n%v\nLoc:%d\n", item, us, location)
+	}
 }
+
+// Peek at the item in the store without modifying it
 func (us UrlStore) peek_store() Url {
 	data_store := *us.data
-	if us.FifoP.DataValid(us)  {
-		location := us.FifoP.GetTail(us)
+	if us.FifoP.DataValid() {
+		location := us.FifoP.GetTail()
 		value := data_store[location]
 		return value
 	}
@@ -117,10 +112,8 @@ func (us UrlStore) peek_store() Url {
 }
 
 func (us *UrlStore) advance_store() bool {
-	if us.FifoP.DataValid(us) {
-		ffp := us.FifoP.AdvanceTail(us)
-		us.FifoP = *ffp
-		us.data_valid = us.FifoP.DataValid(us)
+	if us.FifoP.DataValid() {
+		us.FifoP = us.FifoP.AdvanceTail()
 		return true
 	} else {
 		return false
@@ -133,15 +126,13 @@ func (us *UrlStore) urlWorker() {
 	var input_channel_closed bool
 	var tmp_val Url
 	for {
-		if us.FifoP.DataValid(us) {
+		if us.FifoP.DataValid() {
 			tmp_out_chan = us.PopChannel
 			tmp_val = us.peek_store() // Peek at what the current value is
 		} else {
 			tmp_out_chan = nil
 			if input_channel_closed == true {
-				//fmt.Println("Channel found closed")
 				close(us.PopChannel)
-				//return
 			}
 		}
 		select {
@@ -151,16 +142,15 @@ func (us *UrlStore) urlWorker() {
 				if us.debug {
 					fmt.Println("Queueing URL :", ind)
 				}
-				us.Lock()
+				//us.Lock()
 				us.InCount++
-				us.Unlock()
+				//us.Unlock()
 
 				// Put the data into the main store
 				us.add_store(ind)
 
 				// activate the pop channel
 				tmp_out_chan = us.PopChannel
-				us.data_valid = true
 			} else {
 				//chanel is closed
 				//fmt.Println("in_chan Channel is closed")
@@ -169,9 +159,9 @@ func (us *UrlStore) urlWorker() {
 			}
 		// If it is possible to write to us.PopChannel
 		case tmp_out_chan <- tmp_val:
-			us.Lock()
+			//us.Lock()
 			us.OutCount++
-			us.Unlock()
+			//us.Unlock()
 			if us.debug {
 				fmt.Println("DeQueueing URL", tmp_val)
 			}
@@ -187,7 +177,9 @@ func (us *UrlStore) urlWorker() {
 }
 
 func (us UrlStore) Close() {
-	//fmt.Println("Closing Push")
+	if us.debug {
+		fmt.Println("Closing Push")
+	}
 	close(us.PushChannel)
 }
 func (us UrlStore) Push(itm Url) {

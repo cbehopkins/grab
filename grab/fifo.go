@@ -1,27 +1,31 @@
 package grab
 
 import (
-	"log"
 	"fmt"
+	"log"
 )
 
 type FifoProto struct {
 	rp int
 	wp int
+	cap int
 }
-
+func (fp *FifoProto) SetCap (ini_cap int) {
+	fp.cap = ini_cap
+}
 type FifoInt interface {
 	// In order to function as a fifoable structure
 	// an origionating data type must implement the following methods
 	DataCap() int // The capacity of the underlying structure
 	DataGrow(a, b, c, d int)
 }
- func (fp FifoProto) String () string {
-	return fmt.Sprintf("Rd=%d,Wp=%d\n",fp.rp,fp.wp)
+
+func (fp FifoProto) String() string {
+	return fmt.Sprintf("Rd=%d,Wp=%d\n", fp.rp, fp.wp)
 }
-func (fp FifoProto) fifo_items(inter FifoInt) int {
+func (fp FifoProto) fifo_items() int {
 	// The number of items in the fifo
-	q_cap := inter.DataCap()
+	q_cap := fp.cap
 	rd_norm := fp.rp % q_cap
 	wr_norm := fp.wp % q_cap
 
@@ -37,56 +41,52 @@ func (fp FifoProto) fifo_items(inter FifoInt) int {
 	}
 	return 0
 }
-func (fp FifoProto) DataItems(inter FifoInt) int {
-	return fp.fifo_items(inter)
+func (fp FifoProto) DataItems() int {
+	return fp.fifo_items()
 }
-func (fp FifoProto) DataValid(inter FifoInt) bool {
+func (fp FifoProto) DataValid() bool {
 	// Canonically this is the point of the function
-	//return (fp.fifo_items(inter) >0)
-	return (fp.rp!=fp.wp)
+	//return (fp.fifo_items() >0)
+	return (fp.rp != fp.wp)
 }
 
-
-func (fp FifoProto) fifo_free(inter FifoInt) int {
+func (fp FifoProto) fifo_free() int {
 	// Simply the capacity of the data store - the number of items in it
-	return inter.DataCap() - fp.fifo_items(inter)
+	return fp.cap - fp.fifo_items()
 }
 
-func (fp FifoProto) AddHead(inter FifoInt) (int, *FifoProto) {
-	//write_pointer := fp.wp
-	//fp.wp++
-	//return write_pointer, &fp
+func (fp FifoProto) AddHead(inter FifoInt) (int, FifoProto) {
 	// add an item into the main store
-	location := fp.wp % inter.DataCap()
-	if fp.fifo_free(inter) > 0 {
+	location := fp.wp % fp.cap
+	if fp.fifo_free() > 0 {
 		fp.wp++
-		if fp.wp >= (inter.DataCap() << 1) {
+		if fp.wp >= (fp.cap << 1) {
 			fp.wp = 0
 		}
-	} else if fp.fifo_items(inter) < 0 {
+	} else if fp.fifo_items() < 0 {
 		log.Fatal("Error negative queue size")
 	} else {
-		fp = *fp.GrowStore(inter)
+		fp = fp.GrowStore(inter)
 		location = fp.wp
 		fp.wp++
 		//fmt.Println("After Grow:",fp)
 	}
-	return location, &fp
+	return location, fp
 }
-func (fp FifoProto) GetTail(inter FifoInt) int {
-	q_cap := inter.DataCap()
+func (fp FifoProto) GetTail() int {
+	q_cap := fp.cap
 	return fp.rp % q_cap
 }
-func (fp FifoProto) AdvanceTail(inter FifoInt) *FifoProto {
+func (fp FifoProto) AdvanceTail() FifoProto {
 	fp.rp++
-	if fp.rp >= (inter.DataCap() << 1) {
+	if fp.rp >= (fp.cap << 1) {
 		fp.rp = 0
 	}
 
-	return &fp
+	return fp
 }
 
-func (fp *FifoProto) GrowStore(inter FifoInt)  *FifoProto {
+func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 	debug := false
 	// Now we have it copy the new data into it
 	// Now we can make some assumptions. The only reasong we are here
@@ -95,7 +95,7 @@ func (fp *FifoProto) GrowStore(inter FifoInt)  *FifoProto {
 	if fp.rp == fp.wp {
 		log.Fatal("Stupid sod you're telling me to grow an empty queue")
 	}
-	q_cap := inter.DataCap()
+	q_cap := fp.cap
 	rd_norm := fp.rp % q_cap
 	wr_norm := fp.wp % q_cap
 	if rd_norm != wr_norm {
@@ -146,5 +146,6 @@ func (fp *FifoProto) GrowStore(inter FifoInt)  *FifoProto {
 	}
 	fp.rp = 0
 	fp.wp = q_cap
+	fp.cap = q_cap<<1
 	return fp
 }
