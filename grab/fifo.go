@@ -32,22 +32,42 @@ func (fp FifoProto) fifo_items (inter FifoInt) int {
         }
         return 0
 }
-
+func (fp FifoProto) DataItems (inter FifoInt) int {
+	return fp.fifo_items(inter)
+}
 func (fp FifoProto) fifo_free (inter FifoInt) int { 
 	// Simply the capacity of the data store - the number of items in it
 	return inter.DataCap() - fp.fifo_items(inter)
 }
 
-func (fp FifoProto) AddHead() (int, *FifoProto) {
-	write_pointer := fp.wp
-	fp.wp++
-	return write_pointer, &fp
+func (fp FifoProto) AddHead(inter FifoInt) (int, *FifoProto) {
+	//write_pointer := fp.wp
+	//fp.wp++
+	//return write_pointer, &fp
+        // add an item into the main store
+        location := fp.wp % inter.DataCap()
+        if fp.fifo_free(inter) > 0 {
+                fp.wp++
+                if fp.wp >= (inter.DataCap() << 1) {
+                        fp.wp = 0
+                }
+        } else if fp.fifo_items(inter) < 0 {
+                log.Fatal("Error negative queue size")
+        } else {
+                fp.GrowStore(inter)
+                fp.wp++
+        }
+	return location, &fp
 }
 func (fp FifoProto) GetTail() int {
 	return fp.rp
 }
-func (fp FifoProto) AdvanceTail() *FifoProto {
+func (fp FifoProto) AdvanceTail(inter FifoInt) *FifoProto {
 	fp.rp++
+        if fp.rp >= (inter.DataCap() << 1) {
+          fp.rp = 0
+        }
+	
 	return &fp
 }
 

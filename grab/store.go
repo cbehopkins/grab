@@ -91,7 +91,7 @@ func (us UrlStore) data_free() int {
 }
 func (us UrlStore) grow_store(a,b,c,d int) {
 	old_store := *us.data
-        store_capacity := us.data_cap()
+        store_capacity := us.DataCap()
         new_store := make([]Url, store_capacity<<1)
 
 	if a!=b {
@@ -169,6 +169,13 @@ func (us *UrlStore) grow_data() {
 
 // Now we do
 func (us *UrlStore) add_store(item Url) {
+	// This is the code we are aiming for:
+	// location, us.Fifo = us.Fifo.AddHead(us)
+	// data_store := *us.data
+	// data_store[location] = item
+	// us.data_valid = true
+
+
 	// add an item into the main store
 	if us.data_free() > 0 {
 		location := us.write_pointer % us.data_cap()
@@ -193,17 +200,29 @@ func (us *UrlStore) add_store(item Url) {
 	}
 	us.data_valid = true
 }
-func (us *UrlStore) peek_store() Url {
+// Temp Func
+func (us UrlStore) get_tail() int {
+	location := us.read_pointer % us.data_cap()
+	return location
+}
+func (us UrlStore) peek_store() Url {
 	data_store := *us.data
 	if us.data_items() > 0 {
-		location := us.read_pointer % us.data_cap()
+		location := us.get_tail()
 		value := data_store[location]
 		return value
 	}
 	return ""
-
 }
+
 func (us *UrlStore) advance_store() bool {
+	//if us.FifoP.FifoItems() >0 {
+	// us.FifoP = us.FifoP.AdvanceTail()
+	// us.data_valid = (us.FifoP.DataItems()>0)
+	// return true
+	// } else {
+	// return false
+	//
 	if us.data_items() > 0 {
 		us.read_pointer++
 		if us.read_pointer >= (us.data_cap() << 1) {
@@ -216,26 +235,9 @@ func (us *UrlStore) advance_store() bool {
 		return true
 	} else {
 		return false
-		//log.Fatalf("Tried to read an empty queue\nrp=%d,wp=%d,cap=%d\n", us.read_pointer, us.read_pointer, us.data_cap())
 	}
-
 }
 
-func (us *UrlStore) get_store() Url {
-	log.Printf("Called get_store %d\n", us.data_items())
-	data_store := *us.data
-
-	if us.data_items() > 0 {
-		location := us.read_pointer % us.data_cap()
-		value := data_store[location]
-		us.advance_store()
-		return value
-	} else {
-		log.Fatalf("Tried to read an empty queue\nrp=%d,wp=%d,cap=%d\n", us.read_pointer, us.read_pointer, us.data_cap())
-	}
-	return ""
-
-}
 func (us *UrlStore) urlWorker() {
 	var tmp_out_chan chan Url
 	in_chan := us.PushChannel
