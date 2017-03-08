@@ -2,7 +2,7 @@ package grab
 
 import (
 	"fmt"
-	//"log"
+	"log"
 	//"sync"
 )
 
@@ -56,7 +56,7 @@ func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 func (us UrlStore) String() string {
 	var ret_str string
 	ret_str = fmt.Sprintf("***Data Store***\n%v\n", *us.data)
-	ret_str += fmt.Sprintf("Capacity:%d\n", us.DataCap())
+	ret_str += fmt.Sprintf("Capacity:%d\n", us.data_cap())
 	ret_str += us.FifoP.String()
 	return ret_str
 }
@@ -66,14 +66,12 @@ func (us *UrlStore) SetDebug() {
 func (us UrlStore) data_cap() int {
 	return cap(*us.data)
 }
-func (us UrlStore) DataCap() int {
-	return us.data_cap()
-}
-
-func (us UrlStore) grow_store(a, b, c, d int) {
+func (us UrlStore) resize_store(a, b, c, d, new_capacity int) {
 	old_store := *us.data
-	store_capacity := us.DataCap()
-	new_store := make([]Url, store_capacity<<1)
+	if ((b-a)+(d-c))>new_capacity {
+		log.Fatal("New store is too small for existing capacity")
+	}
+	new_store := make([]Url, new_capacity)
 
 	if a != b {
 		copy(new_store, old_store[a:b])
@@ -85,13 +83,16 @@ func (us UrlStore) grow_store(a, b, c, d int) {
 }
 
 // To satisfty the FifoInt interface you need this:
-func (us UrlStore) DataGrow(a, b, c, d int) {
-	us.grow_store(a, b, c, d)
+func (us UrlStore) DataResize(a, b, c, d,new_capacity int) {
+	us.resize_store(a, b, c, d, new_capacity)
 }
 
 // Add an item to the store
 func (us *UrlStore) add_store(item Url) {
 	var location int
+
+	// To what location should we store the data we are going to add
+	// and update the modified pointers after this
 	location, us.FifoP = us.FifoP.AddHead(us)
 	data_store := *us.data
 	data_store[location] = item
@@ -103,17 +104,18 @@ func (us *UrlStore) add_store(item Url) {
 // Peek at the item in the store without modifying it
 func (us UrlStore) peek_store() Url {
 	data_store := *us.data
-	if us.FifoP.DataValid() {
-		location := us.FifoP.GetTail()
+	location,ok := us.FifoP.GetTail()
+	if ok {
 		value := data_store[location]
 		return value
+	} else {
+		return ""
 	}
-	return ""
 }
 
 func (us *UrlStore) advance_store() bool {
 	if us.FifoP.DataValid() {
-		us.FifoP = us.FifoP.AdvanceTail()
+		us.FifoP = us.FifoP.AdvanceTail(us)
 		return true
 	} else {
 		return false
