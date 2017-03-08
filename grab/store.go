@@ -13,7 +13,7 @@ import (
 // any algorithm that fundamentally 1 worker can create N more items
 type UrlStore struct {
 	sync.Mutex
-	data          []Url
+	data          *[]Url
 	PushChannel   UrlChannel
 	PopChannel    UrlChannel
 	enforce_order bool
@@ -32,7 +32,9 @@ type UrlStore struct {
 
 func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	itm := new(UrlStore)
-	itm.data = make([]Url, 8)
+	tmp_store := make([]Url, 8)
+	itm.data = &tmp_store
+	//itm.data = make([]Url, 8)
 	itm.PopChannel = make(chan Url, 2)
 	for _, in_if := range in_if_arr {
 		switch in_if.(type) {
@@ -61,14 +63,14 @@ func (us *UrlStore) SetDebug() {
 	us.debug = true
 }
 func (us UrlStore) data_cap() int {
-	return cap(us.data)
+	return cap(*us.data)
 }
 func (us UrlStore) DataCap() int {
         return us.data_cap()
 }
 
 func (us UrlStore) data_items() int {
-	q_cap := us.data_cap()
+	q_cap := us.DataCap()
 	rd_norm := us.read_pointer % q_cap
 	wr_norm := us.write_pointer % q_cap
 
@@ -87,18 +89,20 @@ func (us UrlStore) data_items() int {
 func (us UrlStore) data_free() int {
 	return us.data_cap() - us.data_items()
 }
-func (us *UrlStore) grow_store(a,b,c,d int) {
+func (us UrlStore) grow_store(a,b,c,d int) {
+	old_store := *us.data
         store_capacity := us.data_cap()
         new_store := make([]Url, store_capacity<<1)
+
 	if a!=b {
-		copy(new_store, us.data[a:b])
+		copy(new_store, old_store[a:b])
 	}
 	if (c!=d) {
-		copy(new_store[b-a:b],us.data[c:d])
+		copy(new_store[b-a:b],old_store[c:d])
 	}
-	us.data = new_store
+	*us.data = new_store
 }
-func (us *UrlStore) DataGrow(a,b,c,d int) {
+func (us UrlStore) DataGrow(a,b,c,d int) {
 	us.grow_store(a,b,c,d)
 }
 func (us *UrlStore) grow_data() {
@@ -154,7 +158,7 @@ func (us *UrlStore) grow_data() {
 			// i.e. we wrote some data in (and didn't wrap) and read some of that
 			// x,x,x,2,3,4,5,6,7,x,x
 			if us.debug {
-				fmt.Println("Simple Wp>Rp,", us.data[rd_norm:wr_norm])
+				fmt.Println("Simple Wp>Rp,")
 			}
 			us.grow_store(rd_norm,wr_norm,0,0)
 		}
@@ -169,7 +173,8 @@ func (us *UrlStore) add_store(item Url) {
 	if us.data_free() > 0 {
 		location := us.write_pointer % us.data_cap()
 		//fmt.Printf("Write to %d, WP=%d,cap=%d\n", location, us.write_pointer, us.data_cap())
-		us.data[location] = item
+		data_store := *us.data
+		data_store[location] = item
 		us.write_pointer++
 		if us.write_pointer >= (us.data_cap() << 1) {
 			us.write_pointer = 0
@@ -180,16 +185,19 @@ func (us *UrlStore) add_store(item Url) {
 		log.Fatal("Error negative queue size")
 	} else {
 		us.grow_data()
+		// GrowStore modifies the underlying structure, so pick it up again
+		data_store := *us.data
 
-		us.data[us.write_pointer] = item
+		data_store[us.write_pointer] = item
 		us.write_pointer++
 	}
 	us.data_valid = true
 }
 func (us *UrlStore) peek_store() Url {
+	data_store := *us.data
 	if us.data_items() > 0 {
 		location := us.read_pointer % us.data_cap()
-		value := us.data[location]
+		value := data_store[location]
 		return value
 	}
 	return ""
@@ -215,9 +223,11 @@ func (us *UrlStore) advance_store() bool {
 
 func (us *UrlStore) get_store() Url {
 	log.Printf("Called get_store %d\n", us.data_items())
+	data_store := *us.data
+
 	if us.data_items() > 0 {
 		location := us.read_pointer % us.data_cap()
-		value := us.data[location]
+		value := data_store[location]
 		us.advance_store()
 		return value
 	} else {
