@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // Test the jpeg for validity
@@ -88,16 +89,19 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 		fmt.Println("null fetch")
 		return
 	}
-
-	resp, err := http.Get(string(fetch_url))
+	timeout := time.Duration(5 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err := client.Get(string(fetch_url))
 	// TBD Add error handling here
 	if err != nil {
 		return
 	}
 	_ = DecodeHttpError(err)
 	defer resp.Body.Close()
-	_, err = io.Copy(out, resp.Body)
-	check(err)
+	_, _ = io.Copy(out, resp.Body)
+	//check(err)
 }
 func check_jpg(filename string) bool {
 	out, err := os.Open(filename)
@@ -185,11 +189,19 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 
 func (f Fetcher) fetch_try(fetch_url Url) bool {
 	array := strings.Split(string(fetch_url), "/")
+
 	var fn string
-	if len(array) > 0 {
+	if len(array) > 2 {
 		fn = array[len(array)-1]
+	} else {
+		return false
 	}
+	if strings.HasPrefix(string(fetch_url), "file") {
+		return false
+	}
+	
 	fn = strings.TrimLeft(fn, ".php?")
+	// logically there must be http:// so therefore length>2
 	dir_struct := array[2 : len(array)-1]
 	dir_str := strings.Join(dir_struct, "/")
 	dir_str = strings.Replace(dir_str, "//", "/", -1)
@@ -202,7 +214,9 @@ func (f Fetcher) fetch_try(fetch_url Url) bool {
 	fn = strings.Replace(fn, "?", "_", -1)
 	fn = strings.Replace(fn, "=", "_", -1)
 	potential_file_name := dir_str + "/" + fn
-
+	if strings.HasPrefix(potential_file_name, "/") {
+		return false
+	}
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
 		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
 		fetch_file(potential_file_name, dir_str, fetch_url)

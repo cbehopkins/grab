@@ -1,7 +1,7 @@
 package grab
 
 import (
-	"fmt"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -17,7 +17,7 @@ func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
 	itm.tc = make(ToC, num_tokens)
 	if delay > 0 {
 		itm.SetAutoFill()
-		go itm.token_source(delay, itm, name)
+		go itm.token_source(delay, name)
 	} else {
 		for i := 0; i < num_tokens; i++ {
 			itm.PutToken()
@@ -40,9 +40,12 @@ func (tc TokenChan) TryPutToken() {
 	select {
 	case tc.tc <- struct{}{}:
 	default:
+		if tc.autofill {
+			log.Fatal("Cannot return Token")
+		}
 	}
 }
-func (tc TokenChan) token_source(sleep int, token_chan TokenChan, action string) {
+func (tc TokenChan) token_source(sleep int, action string) {
 	r := rand.New(rand.NewSource(1))
 	for {
 		tc.tc <- struct{}{}
@@ -51,7 +54,7 @@ func (tc TokenChan) token_source(sleep int, token_chan TokenChan, action string)
 			time_to_sleep = time.Millisecond * time.Duration(r.Intn(sleep))
 		}
 		if action != "" {
-			fmt.Printf("It will be %s until next %s\n", time_to_sleep, action)
+		log.Printf("It will be %s until next %s\n", time_to_sleep, action)
 		}
 		time.Sleep(time_to_sleep)
 	}

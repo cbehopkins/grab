@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"time"
@@ -10,43 +11,27 @@ import (
 	"github.com/cheggaaa/pb"
 )
 
+func check(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
-	show_progress_bar = true
+	show_progress_bar = true 
 	load_seeds := true
 	drip_feed := false
 
 	// Channels
 	chUrls := *grab.NewUrlChannel() // URLS to crawl
+	chUrlsi := *grab.NewUrlChannel()
+	chan_fetch_pushi := *grab.NewUrlChannel()
+
 	fetch_url_store := grab.NewUrlStore()
 	chan_fetch_push := fetch_url_store.PushChannel
 	chan_fetch_pop := fetch_url_store.PopChannel
-
-	// Kick off the seed process (concurrently)
-	// Needs to be a gofunc as otherwise we get stuck here on channel send
-	// As the receiver isn't started yet
-	go func() {
-		for _, url := range seedUrls {
-			fmt.Println("Seeding :", url)
-			out_count.Add()
-			chUrls <- grab.Url(url)
-			//fmt.Println("Send succeeded")
-		}
-	}()
-
-	// Next, if they exist get the input fromt he seed files
-	if load_seeds {
-		out_count.Add()
-
-		go grab.LoadFile("in_fetch.txt", chan_fetch_push, &out_count)
-	}
-	if load_seeds {
-		out_count.Add()
-
-		go grab.LoadFile("in_urls.txt", chUrls, &out_count)
-	}
 
 	// We've two token channels
 	// This is our method of controlling the amount of traffic we generate
@@ -57,11 +42,11 @@ func main() {
 	var drip_crawl_interval int
 	var drip_fetch_interval int
 	if drip_feed {
-		drip_crawl_interval = 10000
-		drip_fetch_interval = 400
+		drip_crawl_interval = 1000
+		drip_fetch_interval = 1000
 	}
-	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 16, "") // Number of URL crawlers
-	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 64, "") // Number of jpgs being fetched
+	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 2, "crawl") // Number of URL crawlers
+	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 2, "fetch") // Number of jpgs being fetched
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
@@ -71,6 +56,59 @@ func main() {
 	urlx.SetDbgUrls(!show_progress_bar)
 	//urlx.SetAllInteresting(true)
 	urlx.Start()
+
+	// Kick off the seed process (concurrently)
+	// Needs to be a gofunc as otherwise we get stuck here on channel send
+	// As the receiver isn't started yet
+	go func() {
+		for _, urlt := range seedUrls {
+			fmt.Println("Seeding :", urlt)
+			out_count.Add()
+
+			ai, err := url.Parse(string(urlt))
+			check(err)
+			domain_i := ai.Host
+			// add it to the list of domains we can visit
+			_ = urlx.VisitedA(domain_i)
+
+			chUrls <- grab.Url(urlt)
+
+			//fmt.Println("Send succeeded")
+		}
+	}()
+
+	// Next, if they exist get the input fromt he seed files
+	if load_seeds {
+		out_count.Add()
+
+		go grab.LoadFile("in_fetch.txt", chan_fetch_pushi, &out_count)
+		go func() {
+			for itm := range chan_fetch_pushi {
+				ai, err := url.Parse(string(itm))
+				check(err)
+				domain_i := ai.Host
+				_ = urlx.VisitedA(domain_i)
+				chan_fetch_push <- itm
+			}
+
+		}()
+	}
+	if load_seeds {
+		out_count.Add()
+
+		go grab.LoadFile("in_urls.txt", chUrlsi, &out_count)
+		go func() {
+			for itm := range chUrlsi {
+				ai, err := url.Parse(string(itm))
+				check(err)
+				domain_i := ai.Host
+				_ = urlx.VisitedA(domain_i)
+				chUrls <- itm
+			}
+
+		}()
+	}
+
 	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan)
 	fetch_inst.DbgFile("out_fetch.txt")
 	fetch_inst.SetDbgUrls(!show_progress_bar)

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -90,17 +91,30 @@ func (ur UrlRx) crawl(
 	url_in Url, // The URL we are tasked with crawling
 	errored_urls UrlChannel, // Report errors here
 ) {
-	// Flag saying we should printout
-	print_urls := ur.DbgUrls
-	all_interesting := ur.AllInteresting
-	ch := ur.chUrls             // Any interesting URLs are sent here
-	fetch_chan := ur.chan_fetch // Any files to fetch are requested here
-	resp, err := http.Get(string(url_in))
+	// Make sure we delete the counter/marker
+	// on the tracker of the nummber of outstanding processes
 	defer ur.OutCount.Dec()
+	// And return the crawl token for re-use
+	defer ur.crawl_chan.PutToken()
+	print_urls := ur.DbgUrls
+
 	if print_urls {
 		fmt.Printf("Analyzing UR: %s\n", url_in)
 		defer fmt.Println("Done with URL:", url_in)
 	}
+	// Flag saying we should printout
+	ai, err := url.Parse(string(url_in))
+	check(err)
+	domain_i := ai.Host
+	// Add to the list of domains we have visited (and should visit again)
+	// this current URL
+	//_ = ur.VisitedA(domain_i)
+	timeout := time.Duration(5 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err := client.Get(string(url_in))
+
 	if err != nil {
 
 		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
@@ -112,8 +126,14 @@ func (ur UrlRx) crawl(
 	b := resp.Body
 	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
-	defer ur.crawl_chan.PutToken()
 	z := html.NewTokenizer(b)
+	ur.tokenhandle(z,string(url_in),domain_i)
+}
+func (ur UrlRx) tokenhandle (z *html.Tokenizer,url_in,domain_i string) {
+	print_urls := ur.DbgUrls
+	ch := ur.chUrls             // Any interesting URLs are sent here
+	all_interesting := ur.AllInteresting
+	fetch_chan := ur.chan_fetch // Any files to fetch are requested here
 	for {
 		tt := z.Next()
 
@@ -140,35 +160,42 @@ func (ur UrlRx) crawl(
 			base, err := url.Parse(string(url_in))
 			check(err)
 			u, err := url.Parse(linked_url)
-			check(err)
+			if err != nil {
+				continue
+			}
 			linked_url_ut := base.ResolveReference(u)
 			linked_url_string := linked_url_ut.String()
 			linked_url = linked_url_string
 			if print_urls {
-				fmt.Println("Resolved URL to:", linked_url)
+				//fmt.Println("Resolved URL to:", linked_url)
 			}
 
 			is_jpg := strings.Contains(linked_url, ".jpg")
 			if is_jpg {
 				ur.OutCount.Add()
 				if print_urls {
-					fmt.Printf("Found jpg:%s\n", linked_url)
+					//fmt.Printf("Found jpg:%s\n", linked_url)
 				}
 				fetch_chan <- Url(linked_url)
 			} else {
-				arrayi := strings.Split(string(url_in), "/")
-				arrayj := strings.Split(string(linked_url), "/")
-				domain_i := arrayi[2]
-				domain_j := arrayj[2]
-				if all_interesting || (domain_i == domain_j) {
+
+				aj, err := url.Parse(string(linked_url))
+				check(err)
+				//arrayi := strings.Split(string(url_in), "/")
+				//arrayj := strings.Split(string(linked_url), "/")
+				//domain_i := arrayi[2]
+				//domain_j := arrayj[2]
+
+				domain_j := aj.Host
+				if all_interesting || ur.VisitedQ(domain_j) || (domain_i == domain_j) {
 					if print_urls {
-						fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
+						//fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
 					}
 					ur.OutCount.Add()
 					ch <- Url(linked_url)
 				} else {
 					if print_urls {
-						fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
+						//fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
 					}
 				}
 			}

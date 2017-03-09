@@ -4,7 +4,29 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 )
+type DomVisit struct {
+	sync.Mutex
+	 domains_visited map[string]struct{}
+}
+func NewDomVisit () *DomVisit {
+	var itm *DomVisit
+	itm = new(DomVisit)
+	itm.domains_visited = make(map[string]struct{})
+	return itm
+}
+func (dv *DomVisit) Exist (str string) bool {
+	dv.Lock()
+	_,ok := dv.domains_visited[str]
+	dv.Unlock()
+	return ok
+}
+func (dv *DomVisit) Add (str string)  {
+	dv.Lock()
+	dv.domains_visited[str] = struct{}{}
+	dv.Unlock()
+}
 
 type UrlRx struct {
 	// URLs come in on this channel
@@ -19,9 +41,10 @@ type UrlRx struct {
 	// We need a place to store infinitly many Urls waiting to be crawled
 	UrlStore *UrlStore
 	// Is the debug fiel in use/need closing
-	crawl_active bool
-	file         *os.File
-	DbgUrls      bool
+	crawl_active    bool
+	file            *os.File
+	DbgUrls         bool
+	Domv *DomVisit
 	// Mark all urls(Not just those in the current domain) as interesting
 	AllInteresting bool
 }
@@ -37,7 +60,26 @@ func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCoun
 	// Tell the UrlStore to take input from the channel our seed Urls come in on
 	itm.UrlStore = NewUrlStore(chUrls)
 	itm.DbgUrls = true
+	itm.Domv =  NewDomVisit ()
 	return itm
+}
+func (ur UrlRx) VisitedQ(url_in string) bool {
+	ok := ur.Domv.Exist(url_in)
+	if ok {
+		return true
+	} else {
+		return false
+	}
+}
+func (ur UrlRx) VisitedA(url_in string) bool {
+	ok := ur.Domv.Exist(url_in)
+	if ok {
+		return true
+	} else {
+		fmt.Println("New Authorised Domain:", url_in)
+		ur.Domv.Add(url_in)
+		return false
+	}
 }
 func (ur UrlRx) Start() {
 	go ur.urlRxWorker()
