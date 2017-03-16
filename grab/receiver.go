@@ -125,7 +125,7 @@ func (ur UrlRx) urlRxWorker() {
 			//fmt.Println("This url needs crawling")
 			crawled_urls[url] = struct{}{}
 			//fmt.Println("Getting a crawl token")
-			ur.crawl_chan.GetToken()
+			ur.crawl_chan.GetToken(getBase(string(url)))
 			//fmt.Println("Crawl token rx for:", url)
 			go ur.crawl(url, err_url_chan)
 			if ur.crawl_active {

@@ -85,7 +85,11 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 		s, e = Readln(r)
 	}
 }
-
+func getBase (urls string) string {
+        ai, err := url.Parse(urls)
+        check(err)
+        return ai.Host
+}
 // Extract all http** links from a given webpage
 func (ur UrlRx) crawl(
 	url_in Url, // The URL we are tasked with crawling
@@ -95,7 +99,7 @@ func (ur UrlRx) crawl(
 	// on the tracker of the nummber of outstanding processes
 	defer ur.OutCount.Dec()
 	// And return the crawl token for re-use
-	defer ur.crawl_chan.PutToken()
+	defer ur.crawl_chan.PutToken(getBase(string( url_in)))
 	print_urls := ur.DbgUrls
 
 	if print_urls {
@@ -181,10 +185,6 @@ func (ur UrlRx) tokenhandle (z *html.Tokenizer,url_in,domain_i string) {
 
 				aj, err := url.Parse(string(linked_url))
 				check(err)
-				//arrayi := strings.Split(string(url_in), "/")
-				//arrayj := strings.Split(string(linked_url), "/")
-				//domain_i := arrayi[2]
-				//domain_j := arrayj[2]
 
 				domain_j := aj.Host
 				if all_interesting || ur.VisitedQ(domain_j) || (domain_i == domain_j) {

@@ -267,13 +267,13 @@ func (f Fetcher) FetchReceiver() {
 			// Two tokens are needed to proceed
 			// The first is to make sure in no circumstances do we have nore than N trying to process stuff
 			// i.e. that there are not too many things happening at once
-			fetch_sim_chan.GetToken()
+			fetch_sim_chan.GetToken(getBase(string(fetch_url)))
 
 			// The second token is rate limiting making sure we don't make a request too frequently
-			f.fetch_token_chan.GetToken()
+			f.fetch_token_chan.GetToken(getBase(string(fetch_url)))
 			go func() {
 				// When we're done then always return the simultaneous limit token
-				defer fetch_sim_chan.PutToken()
+				defer fetch_sim_chan.PutToken(getBase(string(fetch_url)))
 				var used_network bool
 				if f.run_download {
 					if f.dbg_urls {
@@ -289,10 +289,10 @@ func (f Fetcher) FetchReceiver() {
 					//fmt.Println("Not used fetch token, returning")
 					// Tries to put the token if there is space available
 					// otherwise doesn't do anything - avoids locking
-					f.fetch_token_chan.TryPutToken()
+					f.fetch_token_chan.TryPutToken(getBase(string(fetch_url)))
 				} else {
 					// PutToken puts it back if in the right mode
-					f.fetch_token_chan.PutToken()
+					f.fetch_token_chan.PutToken(getBase(string(fetch_url)))
 				}
 				f.out_count.Dec()
 			}()

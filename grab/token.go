@@ -20,7 +20,7 @@ func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
 		go itm.token_source(delay, name)
 	} else {
 		for i := 0; i < num_tokens; i++ {
-			itm.PutToken()
+			itm.PutToken("")
 		}
 	}
 	return &itm
@@ -28,15 +28,15 @@ func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
 func (tc *TokenChan) SetAutoFill() {
 	tc.autofill = true
 }
-func (tc TokenChan) GetToken() {
+func (tc TokenChan) GetToken(basename string) {
 	<-tc.tc
 }
-func (tc TokenChan) PutToken() {
+func (tc TokenChan) PutToken(basename string) {
 	if !tc.autofill {
-		tc.TryPutToken()
+		tc.TryPutToken(basename)
 	}
 }
-func (tc TokenChan) TryPutToken() {
+func (tc TokenChan) TryPutToken(basename string) {
 	select {
 	case tc.tc <- struct{}{}:
 	default:
