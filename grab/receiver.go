@@ -5,24 +5,27 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 )
+
 type DomVisit struct {
 	sync.Mutex
-	 domains_visited map[string]struct{}
+	domains_visited map[string]struct{}
 }
-func NewDomVisit () *DomVisit {
+
+func NewDomVisit() *DomVisit {
 	var itm *DomVisit
 	itm = new(DomVisit)
 	itm.domains_visited = make(map[string]struct{})
 	return itm
 }
-func (dv *DomVisit) Exist (str string) bool {
+func (dv *DomVisit) Exist(str string) bool {
 	dv.Lock()
-	_,ok := dv.domains_visited[str]
+	_, ok := dv.domains_visited[str]
 	dv.Unlock()
 	return ok
 }
-func (dv *DomVisit) Add (str string)  {
+func (dv *DomVisit) Add(str string) {
 	dv.Lock()
 	dv.domains_visited[str] = struct{}{}
 	dv.Unlock()
@@ -37,19 +40,19 @@ type UrlRx struct {
 	// WaitGroup to say we are busy/when we have finished
 	OutCount *OutCounter
 	// Our way of limiting our throughput - Number of Crawls happening at once
-	crawl_chan TokenChan
+	crawl_chan *TokenChan
 	// We need a place to store infinitly many Urls waiting to be crawled
 	UrlStore *UrlStore
 	// Is the debug fiel in use/need closing
-	crawl_active    bool
-	file            *os.File
-	DbgUrls         bool
-	Domv *DomVisit
+	crawl_active bool
+	file         *os.File
+	DbgUrls      bool
+	Domv         *DomVisit
 	// Mark all urls(Not just those in the current domain) as interesting
 	AllInteresting bool
 }
 
-func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan TokenChan) *UrlRx {
+func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCounter, crawl_chan *TokenChan) *UrlRx {
 	itm := new(UrlRx)
 	// The seed URLs come in from here
 	// and are sent to the UrlStore
@@ -60,7 +63,7 @@ func NewUrlReceiver(chUrls UrlChannel, chan_fetch UrlChannel, out_count *OutCoun
 	// Tell the UrlStore to take input from the channel our seed Urls come in on
 	itm.UrlStore = NewUrlStore(chUrls)
 	itm.DbgUrls = true
-	itm.Domv =  NewDomVisit ()
+	itm.Domv = NewDomVisit()
 	return itm
 }
 func (ur UrlRx) VisitedQ(url_in string) bool {
@@ -76,7 +79,7 @@ func (ur UrlRx) VisitedA(url_in string) bool {
 	if ok {
 		return true
 	} else {
-		fmt.Println("New Authorised Domain:", url_in)
+		//fmt.Println("New Authorised Domain:", url_in)
 		ur.Domv.Add(url_in)
 		return false
 	}
@@ -101,44 +104,102 @@ func (ur *UrlRx) SetDbgUrls(vary bool) {
 func (ur *UrlRx) SetAllInteresting(vary bool) {
 	ur.AllInteresting = vary
 }
+
+type UrlCache struct {
+	sync.Mutex
+	uc map[Url]time.Time
+}
+
+func NewUrlCache() *UrlCache {
+	itm := new(UrlCache)
+	itm.uc = make(map[Url]time.Time)
+	go itm.shrinker()
+	return itm
+}
+func (uc *UrlCache) shrink() {
+	uc.Lock()
+	ct := time.Now()
+	to_delete := make(map[Url]struct{})
+	for key, rct := range uc.uc {
+		// If the current time - last time the url was accessed
+		// is > 5 minutes then delete that Url
+
+		if (ct.Sub(rct)) > (5 * time.Minute) {
+			to_delete[key] = struct{}{}
+		}
+	}
+
+	for key, _ := range to_delete {
+		delete(uc.uc, key)
+	}
+	uc.Unlock()
+}
+func (uc *UrlCache) shrinker() {
+
+	for {
+		// Tidy things up
+		time.AfterFunc(10*time.Minute, uc.shrink)
+	}
+}
+func (uc *UrlCache) Query(url Url) bool {
+	uc.Lock()
+	_, ok := uc.uc[url]
+	// Update to say we have accessed it
+	if ok {
+		uc.uc[url] = time.Now()
+	}
+	uc.Unlock()
+	return ok
+}
+func (uc *UrlCache) Add(url Url) {
+	uc.Lock()
+	uc.uc[url] = time.Now()
+	uc.Unlock()
+}
 func (ur UrlRx) urlRxWorker() {
-	crawled_urls := make(map[Url]struct{}) // URLS we've crawled already so no need to revisit
+	crawled_urls := NewUrlCache() // URLS we've crawled already so no need to revisit
 	// It's bad news if the chUrls blocks as then:
 	// the crawl func can't add new URLS
 	// So it stops mid crawl
 	// Yet new crawls are still started
 	// Somewhere we need an infinite bufer to absorb all the incoming URLs
 	// This could be on the stack of crawl function instances, or:
-	errored_urls := make(map[Url]bool)
 	err_url_chan := make(UrlChannel)
 	go func() {
-		for bob := range err_url_chan {
-			errored_urls[bob] = true
+		for _ = range err_url_chan {
 		}
 	}()
 	for url, ok := ur.UrlStore.Pop(); ok; url, ok = ur.UrlStore.Pop() {
-		_, ok := crawled_urls[url]
+		ok := crawled_urls.Query(url)
 		if !ok {
-			if ur.DbgUrls {
-				fmt.Println("Receive URL to crawl", url)
-			}
+			//if ur.DbgUrls {
+			//	fmt.Println("Receive URL to crawl", url)
+			//}
 			//fmt.Println("This url needs crawling")
-			crawled_urls[url] = struct{}{}
-			//fmt.Println("Getting a crawl token")
-			ur.crawl_chan.GetToken(getBase(string(url)))
-			//fmt.Println("Crawl token rx for:", url)
-			go ur.crawl(url, err_url_chan)
-			if ur.crawl_active {
-				fmt.Fprintf(ur.file, "%s\n", string(url))
+			token_got := getBase(string(url))
+
+			crawled_urls.Add(url)
+			// Annoyingly there is a tendancy for URLs for one site to clump together
+			// So we peruse through the list until we find a Url we can immediatly use
+			if ur.crawl_chan.TryGetToken(token_got) {
+				//fmt.Println("Crawl token rx for:", token_got)
+				go ur.crawl(url, err_url_chan, token_got)
+				if ur.crawl_active {
+					fmt.Fprintf(ur.file, "%s\n", string(url))
+				}
+			} else {
+				// We could not immediatly get a token for this
+				// put it back on the queue
+				ur.chUrls <- url
+				// and wait a little while before starting up again
+				// to stop us using 100% of cpu
+				time.Sleep(time.Duration(10) * time.Millisecond)
 			}
 		} else {
 			ur.OutCount.Dec()
 		}
 	}
 	close(err_url_chan)
-	for bob, _ := range errored_urls {
-		fmt.Println("Errored URL:", bob)
-	}
 	if ur.crawl_active {
 		defer ur.file.Close()
 	}

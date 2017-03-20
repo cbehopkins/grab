@@ -6,17 +6,19 @@ import (
 )
 
 type FifoProto struct {
-	rp int
-	wp int
+	rp  int
+	wp  int
 	cap int
 }
-func (fp *FifoProto) SetCap (ini_cap int) {
+
+func (fp *FifoProto) SetCap(ini_cap int) {
 	fp.cap = ini_cap
 }
+
 type FifoInt interface {
 	// In order to function as a fifoable structure
 	// an origionating data type must implement the following methods
-	DataResize(a, b, c, d,new_capacity int)
+	DataResize(a, b, c, d, new_capacity int)
 }
 
 func (fp FifoProto) String() string {
@@ -74,7 +76,7 @@ func (fp FifoProto) AddHead(inter FifoInt) (int, FifoProto) {
 }
 func (fp FifoProto) GetTail() (int, bool) {
 	q_cap := fp.cap
-	return fp.rp % q_cap, fp.rp!=fp.wp
+	return fp.rp % q_cap, fp.rp != fp.wp
 }
 func (fp FifoProto) AdvanceTail(inter FifoInt) FifoProto {
 	fp.rp++
@@ -111,7 +113,7 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Rp>Wp")
 			}
-			inter.DataResize(rd_norm, q_cap, 0, wr_norm,q_cap<<1)
+			inter.DataResize(rd_norm, q_cap, 0, wr_norm, q_cap<<1)
 		} else {
 			// Data starts at read pointer and goes on until the write pointer
 			// How is this possible?
@@ -121,7 +123,7 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 
 				log.Printf("Cap=%d\nWP=%d,RP=%d\nnWP=%d,nRP=%d\n", q_cap, fp.wp, fp.rp, wr_norm, rd_norm)
 			}
-			inter.DataResize(rd_norm, wr_norm, 0, 0,q_cap<<1)
+			inter.DataResize(rd_norm, wr_norm, 0, 0, q_cap<<1)
 		}
 	} else /*write pointer is larger*/ {
 		if fp.wp >= q_cap {
@@ -134,7 +136,7 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Complex Wp>Rp")
 			}
-			inter.DataResize(rd_norm, q_cap, 0, wr_norm,q_cap<<1)
+			inter.DataResize(rd_norm, q_cap, 0, wr_norm, q_cap<<1)
 		} else {
 			// there is data that starts at the read pointer and goes on until the write pointer
 			// i.e. we wrote some data in (and didn't wrap) and read some of that
@@ -142,11 +144,11 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Simple Wp>Rp,")
 			}
-			inter.DataResize(rd_norm, wr_norm, 0, 0,q_cap<<1)
+			inter.DataResize(rd_norm, wr_norm, 0, 0, q_cap<<1)
 		}
 	}
 	fp.rp = 0
 	fp.wp = q_cap
-	fp.cap = q_cap<<1
+	fp.cap = q_cap << 1
 	return fp
 }

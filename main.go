@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"os"
+	"os/signal"
 	"runtime"
 	"time"
 
@@ -16,11 +18,33 @@ func check(err error) {
 		panic(err)
 	}
 }
+
+func cleanup(filename string, chani grab.UrlChannel, read_count int) {
+	// Read from the channel until the channel drains and we empty the queue
+	if filename != "" {
+		ffile, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			log.Fatal("Cannot create file", err)
+		}
+		defer ffile.Close()
+		f_read := 0
+		for f_url := range chani {
+			fmt.Fprintf(ffile, "%s\n", string(f_url))
+			if read_count > 0 {
+				if f_read > read_count {
+					return
+				}
+				f_read++
+			}
+		}
+	}
+}
+
 func main() {
 	seedUrls := os.Args[1:]
 	var out_count grab.OutCounter
 	var show_progress_bar bool
-	show_progress_bar = true 
+	show_progress_bar = true
 	load_seeds := true
 	drip_feed := false
 
@@ -45,13 +69,13 @@ func main() {
 		drip_crawl_interval = 1000
 		drip_fetch_interval = 1000
 	}
-	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 2, "crawl") // Number of URL crawlers
-	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 2, "fetch") // Number of jpgs being fetched
+	crawl_token_chan := *grab.NewTokenChan(drip_crawl_interval, 2, "crawl")  // Number of URL crawlers
+	fetch_token_chan := *grab.NewTokenChan(drip_fetch_interval, 20, "fetch") // Number of jpgs being fetched
 
 	// This is actually the Crawler that takes URLS and spits out
 	// jpg files to fetch
 	// And feeds itself new URLs on the chUrls
-	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, crawl_token_chan)
+	urlx := grab.NewUrlReceiver(chUrls, chan_fetch_push, &out_count, &crawl_token_chan)
 	urlx.DbgFile("out_urls.txt")
 	urlx.SetDbgUrls(!show_progress_bar)
 	//urlx.SetAllInteresting(true)
@@ -109,7 +133,7 @@ func main() {
 		}()
 	}
 
-	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, fetch_token_chan)
+	fetch_inst := grab.NewFetcher(chan_fetch_pop, &out_count, &fetch_token_chan)
 	fetch_inst.DbgFile("out_fetch.txt")
 	fetch_inst.SetDbgUrls(!show_progress_bar)
 	fetch_inst.SetTestJpg(false)
@@ -143,7 +167,7 @@ func main() {
 		// Start a routine that will occasionally update them
 		go func() {
 			for {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(10000 * time.Millisecond)
 				current_go_procs := runtime.NumGoroutine()
 				if max_procs_seen < current_go_procs {
 					max_procs_seen = current_go_procs
@@ -165,6 +189,27 @@ func main() {
 		defer pool.Stop()
 
 	}
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	go func() {
+		ctrlc_attempts := 0
+		for _ = range signalChan {
+			fmt.Printf("\nReceived an interrupt, stopping services...\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+			if ctrlc_attempts == 0 {
+				num_to_drain := urlx.UrlStore.Count()/2
+				 fmt.Printf("\nDraining%d\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",num_to_drain)
+				go cleanup("unproc_url.txt", urlx.UrlStore.PopChannel, num_to_drain)
+				ctrlc_attempts++
+			} else if ctrlc_attempts == 1 {
+				go cleanup("unproc_url.txt", urlx.UrlStore.PopChannel, 0)
+				ctrlc_attempts++
+			} else {
+				os.Exit(1)
+			}
+		}
+	}()
+
 	fmt.Println("Waitng for out_count")
 	out_count.Wait()
 	close(chUrls)

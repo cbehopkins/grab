@@ -85,21 +85,23 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 		s, e = Readln(r)
 	}
 }
-func getBase (urls string) string {
-        ai, err := url.Parse(urls)
-        check(err)
-        return ai.Host
+func getBase(urls string) string {
+	ai, err := url.Parse(urls)
+	check(err)
+	return ai.Host
 }
+
 // Extract all http** links from a given webpage
-func (ur UrlRx) crawl(
+func (ur *UrlRx) crawl(
 	url_in Url, // The URL we are tasked with crawling
 	errored_urls UrlChannel, // Report errors here
+	token_name string,
 ) {
 	// Make sure we delete the counter/marker
 	// on the tracker of the nummber of outstanding processes
 	defer ur.OutCount.Dec()
 	// And return the crawl token for re-use
-	defer ur.crawl_chan.PutToken(getBase(string( url_in)))
+	defer ur.crawl_chan.PutToken(token_name)
 	print_urls := ur.DbgUrls
 
 	if print_urls {
@@ -121,7 +123,7 @@ func (ur UrlRx) crawl(
 
 	if err != nil {
 
-		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
+		//fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
 		DecodeHttpError(err)
 		errored_urls <- url_in
 		return
@@ -131,11 +133,11 @@ func (ur UrlRx) crawl(
 	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
 	z := html.NewTokenizer(b)
-	ur.tokenhandle(z,string(url_in),domain_i)
+	ur.tokenhandle(z, string(url_in), domain_i)
 }
-func (ur UrlRx) tokenhandle (z *html.Tokenizer,url_in,domain_i string) {
+func (ur *UrlRx) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 	print_urls := ur.DbgUrls
-	ch := ur.chUrls             // Any interesting URLs are sent here
+	ch := ur.chUrls // Any interesting URLs are sent here
 	all_interesting := ur.AllInteresting
 	fetch_chan := ur.chan_fetch // Any files to fetch are requested here
 	for {

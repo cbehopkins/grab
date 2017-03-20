@@ -86,7 +86,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	defer out.Close()
 
 	if fetch_url == "" {
-		fmt.Println("null fetch")
+		//fmt.Println("null fetch")
 		return
 	}
 	timeout := time.Duration(5 * time.Second)
@@ -142,13 +142,13 @@ type Fetcher struct {
 	// Effectively a Waitgroup to allow us to know when we are busy
 	out_count *OutCounter
 	// Our way of managing how many fetches we have running at once
-	fetch_token_chan TokenChan
+	fetch_token_chan *TokenChan
 	// If the file already exists should we load it in to check if it is valid?
 	test_jpg bool
 	dbg_urls bool
 }
 
-func NewFetcher(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan TokenChan) *Fetcher {
+func NewFetcher(chan_fetch_pop UrlChannel, out_count *OutCounter, fetch_token_chan *TokenChan) *Fetcher {
 	itm := new(Fetcher)
 	itm.run_download = true
 	itm.chan_fetch_pop = chan_fetch_pop
@@ -199,7 +199,7 @@ func (f Fetcher) fetch_try(fetch_url Url) bool {
 	if strings.HasPrefix(string(fetch_url), "file") {
 		return false
 	}
-	
+
 	fn = strings.TrimLeft(fn, ".php?")
 	// logically there must be http:// so therefore length>2
 	dir_struct := array[2 : len(array)-1]
@@ -252,7 +252,7 @@ func (f *Fetcher) SetDbgUrls(vary bool) {
 }
 func (f Fetcher) FetchReceiver() {
 
-	fetch_sim_chan := *NewTokenChan(0, 8, "")
+	//fetch_sim_chan := *NewTokenChan(0, 8, "")
 	if f.factive {
 		defer f.file.Close()
 	}
@@ -267,35 +267,35 @@ func (f Fetcher) FetchReceiver() {
 			// Two tokens are needed to proceed
 			// The first is to make sure in no circumstances do we have nore than N trying to process stuff
 			// i.e. that there are not too many things happening at once
-			fetch_sim_chan.GetToken(getBase(string(fetch_url)))
+			//fetch_sim_chan.GetToken(getBase(string(fetch_url)))
 
 			// The second token is rate limiting making sure we don't make a request too frequently
 			f.fetch_token_chan.GetToken(getBase(string(fetch_url)))
-			go func() {
+			go func(f_url Url) {
 				// When we're done then always return the simultaneous limit token
-				defer fetch_sim_chan.PutToken(getBase(string(fetch_url)))
+				//defer fetch_sim_chan.PutToken(getBase(string(f_url)))
 				var used_network bool
 				if f.run_download {
 					if f.dbg_urls {
-						fmt.Printf("FetchReceiver Fetching %s\n", fetch_url)
+						//	fmt.Printf("FetchReceiver Fetching %s\n", f_url)
 					}
-					used_network = f.Fetch(fetch_url)
+					used_network = f.Fetch(f_url)
 				}
 				if f.factive {
-					fmt.Fprintf(f.file, "%s\n", string(fetch_url))
+					fmt.Fprintf(f.file, "%s\n", string(f_url))
 				}
 				// If we have not used the network then return the Rate lmit token
 				if !used_network {
 					//fmt.Println("Not used fetch token, returning")
 					// Tries to put the token if there is space available
 					// otherwise doesn't do anything - avoids locking
-					f.fetch_token_chan.TryPutToken(getBase(string(fetch_url)))
+					f.fetch_token_chan.TryPutToken(getBase(string(f_url)))
 				} else {
 					// PutToken puts it back if in the right mode
-					f.fetch_token_chan.PutToken(getBase(string(fetch_url)))
+					f.fetch_token_chan.PutToken(getBase(string(f_url)))
 				}
 				f.out_count.Dec()
-			}()
+			}(fetch_url)
 		} else {
 			f.out_count.Dec()
 		}

@@ -68,7 +68,7 @@ func (us UrlStore) data_cap() int {
 }
 func (us UrlStore) resize_store(a, b, c, d, new_capacity int) {
 	old_store := *us.data
-	if ((b-a)+(d-c))>new_capacity {
+	if ((b - a) + (d - c)) > new_capacity {
 		log.Fatal("New store is too small for existing capacity")
 	}
 	new_store := make([]Url, new_capacity)
@@ -83,7 +83,7 @@ func (us UrlStore) resize_store(a, b, c, d, new_capacity int) {
 }
 
 // To satisfty the FifoInt interface you need this:
-func (us UrlStore) DataResize(a, b, c, d,new_capacity int) {
+func (us UrlStore) DataResize(a, b, c, d, new_capacity int) {
 	us.resize_store(a, b, c, d, new_capacity)
 }
 
@@ -104,7 +104,7 @@ func (us *UrlStore) add_store(item Url) {
 // Peek at the item in the store without modifying it
 func (us UrlStore) peek_store() Url {
 	data_store := *us.data
-	location,ok := us.FifoP.GetTail()
+	location, ok := us.FifoP.GetTail()
 	if ok {
 		value := data_store[location]
 		return value
@@ -203,4 +203,9 @@ func (us UrlStore) InputCount() int {
 }
 func (us UrlStore) OutputCount() int {
 	return us.OutCount + len(us.PopChannel)
+}
+
+
+func (us UrlStore) Count() int {
+	return us.InputCount() - us.OutputCount()
 }
