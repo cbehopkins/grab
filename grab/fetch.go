@@ -117,6 +117,8 @@ func check_jpg(filename string) bool {
 		switch err.Error() {
 		case "invalid JPEG format: short Huffman data":
 			return false
+		case "invalid JPEG format: missing SOI marker":
+			return false
 		default:
 			fmt.Printf("Unknown jpeg Error Text type:%T, Value %v\n", err, err)
 			panic(err)
@@ -174,68 +176,19 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 	if strings.HasSuffix(string(fetch_url), "/") {
 		fetch_url_htm := fetch_url + "index.htm"
 		fmt.Printf("Trying to fetch %s with htm extension\n", fetch_url_htm)
-		if f.fetch_try(fetch_url_htm) {
+		if FetchW(fetch_url_htm, f.test_jpg) {
 			return true
 		} else {
 			// Try again with the .html extension
 			fetch_url_htm += "l"
 			fmt.Printf("That clearly failed, Trying to fetch %s with html extension\n", fetch_url_htm)
-			return f.fetch_try(fetch_url_htm)
+			return FetchW(fetch_url_htm, f.test_jpg)
 		}
 
 	}
-	return f.fetch_try(fetch_url)
+	return FetchW(fetch_url, f.test_jpg)
 }
 
-func (f Fetcher) fetch_try(fetch_url Url) bool {
-	array := strings.Split(string(fetch_url), "/")
-
-	var fn string
-	if len(array) > 2 {
-		fn = array[len(array)-1]
-	} else {
-		return false
-	}
-	if strings.HasPrefix(string(fetch_url), "file") {
-		return false
-	}
-
-	fn = strings.TrimLeft(fn, ".php?")
-	// logically there must be http:// so therefore length>2
-	dir_struct := array[2 : len(array)-1]
-	dir_str := strings.Join(dir_struct, "/")
-	dir_str = strings.Replace(dir_str, "//", "/", -1)
-	dir_str = strings.Replace(dir_str, "%", "_", -1)
-	dir_str = strings.Replace(dir_str, "&", "_", -1)
-	dir_str = strings.Replace(dir_str, "?", "_", -1)
-	dir_str = strings.Replace(dir_str, "=", "_", -1)
-	fn = strings.Replace(fn, "%", "_", -1)
-	fn = strings.Replace(fn, "&", "_", -1)
-	fn = strings.Replace(fn, "?", "_", -1)
-	fn = strings.Replace(fn, "=", "_", -1)
-	potential_file_name := dir_str + "/" + fn
-	if strings.HasPrefix(potential_file_name, "/") {
-		return false
-	}
-	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
-		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
-		fetch_file(potential_file_name, dir_str, fetch_url)
-		return true
-	} else {
-		if !f.test_jpg {
-			//fmt.Println("skipping downloading", potential_file_name)
-			return false
-		}
-		good_file := check_jpg(potential_file_name)
-		if good_file {
-			return false
-		} else {
-			//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
-			fetch_file(potential_file_name, dir_str, fetch_url)
-			return true
-		}
-	}
-}
 func (f *Fetcher) DbgFile(fetch_file string) {
 	if fetch_file != "" {
 		var err error
@@ -270,7 +223,7 @@ func (f Fetcher) FetchReceiver() {
 			//fetch_sim_chan.GetToken(getBase(string(fetch_url)))
 
 			// The second token is rate limiting making sure we don't make a request too frequently
-			f.fetch_token_chan.GetToken(getBase(string(fetch_url)))
+			f.fetch_token_chan.GetToken(GetBase(string(fetch_url)))
 			go func(f_url Url) {
 				// When we're done then always return the simultaneous limit token
 				//defer fetch_sim_chan.PutToken(getBase(string(f_url)))
@@ -289,10 +242,10 @@ func (f Fetcher) FetchReceiver() {
 					//fmt.Println("Not used fetch token, returning")
 					// Tries to put the token if there is space available
 					// otherwise doesn't do anything - avoids locking
-					f.fetch_token_chan.TryPutToken(getBase(string(f_url)))
+					f.fetch_token_chan.TryPutToken(GetBase(string(f_url)))
 				} else {
 					// PutToken puts it back if in the right mode
-					f.fetch_token_chan.PutToken(getBase(string(f_url)))
+					f.fetch_token_chan.PutToken(GetBase(string(f_url)))
 				}
 				f.out_count.Dec()
 			}(fetch_url)

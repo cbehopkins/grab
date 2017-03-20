@@ -7,7 +7,7 @@ import (
 )
 
 func TestCountBasic0(t *testing.T) {
-	var tc OutCounter
+	tc := NewOutCounter()
 	tc.Add()
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -18,7 +18,7 @@ func TestCountBasic0(t *testing.T) {
 	log.Println("Done")
 }
 func TestCountBasic1(t *testing.T) {
-	var tc OutCounter
+	tc := NewOutCounter()
 	tc.Add()
 	go func() {
 		tc.Dec()
@@ -28,7 +28,7 @@ func TestCountBasic1(t *testing.T) {
 	log.Println("Done")
 }
 func TestCountBasic2(t *testing.T) {
-	var tc OutCounter
+	tc := NewOutCounter()
 	tc.Add()
 	tc.Dec()
 	tc.Add()

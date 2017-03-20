@@ -42,7 +42,7 @@ func cleanup(filename string, chani grab.UrlChannel, read_count int) {
 
 func main() {
 	seedUrls := os.Args[1:]
-	var out_count grab.OutCounter
+	out_count := grab.NewOutCounter()
 	var show_progress_bar bool
 	show_progress_bar = true
 	load_seeds := true
@@ -93,7 +93,7 @@ func main() {
 			check(err)
 			domain_i := ai.Host
 			// add it to the list of domains we can visit
-			_ = urlx.VisitedA(domain_i)
+			_ = urlx.Domv.VisitedA(domain_i)
 
 			chUrls <- grab.Url(urlt)
 
@@ -101,7 +101,7 @@ func main() {
 		}
 	}()
 
-	// Next, if they exist get the input fromt he seed files
+	// Next, if they exist get the input from the seed files
 	if load_seeds {
 		out_count.Add()
 
@@ -111,7 +111,7 @@ func main() {
 				ai, err := url.Parse(string(itm))
 				check(err)
 				domain_i := ai.Host
-				_ = urlx.VisitedA(domain_i)
+				_ = urlx.Domv.VisitedA(domain_i)
 				chan_fetch_push <- itm
 			}
 
@@ -126,7 +126,7 @@ func main() {
 				ai, err := url.Parse(string(itm))
 				check(err)
 				domain_i := ai.Host
-				_ = urlx.VisitedA(domain_i)
+				_ = urlx.Domv.VisitedA(domain_i)
 				chUrls <- itm
 			}
 
@@ -197,8 +197,8 @@ func main() {
 		for _ = range signalChan {
 			fmt.Printf("\nReceived an interrupt, stopping services...\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 			if ctrlc_attempts == 0 {
-				num_to_drain := urlx.UrlStore.Count()/2
-				 fmt.Printf("\nDraining%d\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",num_to_drain)
+				num_to_drain := urlx.UrlStore.Count() / 2
+				fmt.Printf("\nDraining%d\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n", num_to_drain)
 				go cleanup("unproc_url.txt", urlx.UrlStore.PopChannel, num_to_drain)
 				ctrlc_attempts++
 			} else if ctrlc_attempts == 1 {

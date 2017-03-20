@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"strings"
+	"time"
 
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
-	"time"
 
 	"golang.org/x/net/html"
 )
@@ -58,7 +58,9 @@ func Readln(r *bufio.Reader) (string, error) {
 }
 
 func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
-	defer counter.Dec()
+	if counter != nil {
+		defer counter.Dec()
+	}
 	if filename == "" {
 		return
 	}
@@ -84,25 +86,34 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 		the_chan <- Url(s)
 		s, e = Readln(r)
 	}
+	if counter == nil {
+		close(the_chan)
+	}
 }
-func getBase(urls string) string {
+func GetBase(urls string) string {
 	ai, err := url.Parse(urls)
 	check(err)
 	return ai.Host
 }
 
 // Extract all http** links from a given webpage
-func (ur *UrlRx) crawl(
+func GrabT(
 	url_in Url, // The URL we are tasked with crawling
-	errored_urls UrlChannel, // Report errors here
 	token_name string,
+	all_interesting, print_urls bool,
+	oc Occer,
+	dv DomVisitI,
+	ch,
+	fetch_chan chan Url,
+	crawl_chan *TokenChan,
 ) {
 	// Make sure we delete the counter/marker
 	// on the tracker of the nummber of outstanding processes
-	defer ur.OutCount.Dec()
+	if oc != nil {
+		defer oc.Dec()
+	}
 	// And return the crawl token for re-use
-	defer ur.crawl_chan.PutToken(token_name)
-	print_urls := ur.DbgUrls
+	defer crawl_chan.PutToken(token_name)
 
 	if print_urls {
 		fmt.Printf("Analyzing UR: %s\n", url_in)
@@ -125,7 +136,6 @@ func (ur *UrlRx) crawl(
 
 		//fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
 		DecodeHttpError(err)
-		errored_urls <- url_in
 		return
 	}
 
@@ -133,13 +143,21 @@ func (ur *UrlRx) crawl(
 	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
 	z := html.NewTokenizer(b)
-	ur.tokenhandle(z, string(url_in), domain_i)
+	tokenhandle(z, string(url_in), domain_i,
+		all_interesting, print_urls,
+		oc,
+		dv,
+		ch,
+		fetch_chan)
 }
-func (ur *UrlRx) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
-	print_urls := ur.DbgUrls
-	ch := ur.chUrls // Any interesting URLs are sent here
-	all_interesting := ur.AllInteresting
-	fetch_chan := ur.chan_fetch // Any files to fetch are requested here
+
+func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
+	all_interesting, print_urls bool,
+	oc Occer,
+	dv DomVisitI,
+	ch,
+	fetch_chan chan Url) {
+
 	for {
 		tt := z.Next()
 
@@ -178,7 +196,9 @@ func (ur *UrlRx) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 
 			is_jpg := strings.Contains(linked_url, ".jpg")
 			if is_jpg {
-				ur.OutCount.Add()
+				if oc != nil {
+					oc.Add()
+				}
 				if print_urls {
 					//fmt.Printf("Found jpg:%s\n", linked_url)
 				}
@@ -189,11 +209,13 @@ func (ur *UrlRx) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 				check(err)
 
 				domain_j := aj.Host
-				if all_interesting || ur.VisitedQ(domain_j) || (domain_i == domain_j) {
+				if all_interesting || dv.VisitedQ(domain_j) || (domain_i == domain_j) {
 					if print_urls {
 						//fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
 					}
-					ur.OutCount.Add()
+					if oc != nil {
+						oc.Add()
+					}
 					ch <- Url(linked_url)
 				} else {
 					if print_urls {
@@ -202,6 +224,56 @@ func (ur *UrlRx) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 				}
 			}
 			//}
+		}
+	}
+}
+
+func FetchW(fetch_url Url, test_jpg bool) bool {
+	array := strings.Split(string(fetch_url), "/")
+
+	var fn string
+	if len(array) > 2 {
+		fn = array[len(array)-1]
+	} else {
+		return false
+	}
+	if strings.HasPrefix(string(fetch_url), "file") {
+		return false
+	}
+
+	fn = strings.TrimLeft(fn, ".php?")
+	// logically there must be http:// so therefore length>2
+	dir_struct := array[2 : len(array)-1]
+	dir_str := strings.Join(dir_struct, "/")
+	dir_str = strings.Replace(dir_str, "//", "/", -1)
+	dir_str = strings.Replace(dir_str, "%", "_", -1)
+	dir_str = strings.Replace(dir_str, "&", "_", -1)
+	dir_str = strings.Replace(dir_str, "?", "_", -1)
+	dir_str = strings.Replace(dir_str, "=", "_", -1)
+	fn = strings.Replace(fn, "%", "_", -1)
+	fn = strings.Replace(fn, "&", "_", -1)
+	fn = strings.Replace(fn, "?", "_", -1)
+	fn = strings.Replace(fn, "=", "_", -1)
+	potential_file_name := dir_str + "/" + fn
+	if strings.HasPrefix(potential_file_name, "/") {
+		return false
+	}
+	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
+		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
+		fetch_file(potential_file_name, dir_str, fetch_url)
+		return true
+	} else {
+		if !test_jpg {
+			//fmt.Println("skipping downloading", potential_file_name)
+			return false
+		}
+		good_file := check_jpg(potential_file_name)
+		if good_file {
+			return false
+		} else {
+			//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+			fetch_file(potential_file_name, dir_str, fetch_url)
+			return true
 		}
 	}
 }
