@@ -1,11 +1,12 @@
 package grab
 
 import (
-	"github.com/steveyen/gkvlite"
 	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/steveyen/gkvlite"
 )
 
 // Disk Store of int to string map
@@ -23,48 +24,81 @@ func (ds *DkStore) Sync() {
 }
 func (ds *DkStore) Close() {
 	ds.st.Flush()
-	ds.st.Close()
+	//ds.st.Close()
 	ds.f.Sync()
 	ds.f.Close()
 }
 func newStore(filename string, overwrite bool) (*os.File, *gkvlite.Store) {
 	var f *os.File
+	st := new(gkvlite.Store)
+	var err error
 	// Remember to close the file later
-	if _, err := os.Stat(filename); os.IsNotExist(err) || overwrite {
-		// If the file does not exiast already
-		f, err = os.Create(filename)
-		check(err)
-	} else {
-		// If the file already exists
-		f, err = os.Open(filename)
-		check(err)
-	}
 
-	itm := new(gkvlite.Store)
-	var ok error
-	itm, ok = gkvlite.NewStore(f)
-	check(ok)
-	return f, itm
+	// If the file does not exiast already
+	f, err = os.Create(filename)
+	check(err)
+	st, err = gkvlite.NewStore(f)
+	check(err)
+
+	return f, st
 }
 func NewDkStore(filename string, overwrite bool) *DkStore {
 	itm := new(DkStore)
-	f, st := newStore(filename, overwrite)
-	itm.st = st
-	itm.f = f
-	itm.is = itm.st.SetCollection("int_string", nil)
-	return itm
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		// Doesn't exist? Happy days, create it
+		f, st := newStore(filename, overwrite)
+		itm.st = st
+		itm.f = f
+		itm.is = itm.st.SetCollection("int_string", nil)
+		return itm
+	} else {
+		t_itm := new(DkStore)
+		new_filename := filename + "_tmp"
+		err = os.Rename(filename, new_filename)
+		check(err)
+
+		t_f, err := os.Open(new_filename)
+		check(err)
+		f, err := os.Create(filename)
+		check(err)
+
+		t_st, err := gkvlite.NewStore(t_f)
+		check(err)
+		st, err := gkvlite.NewStore(f)
+		check(err)
+
+		itm.f = f
+		itm.st = st
+		t_itm.f = t_f
+		t_itm.st = t_st
+
+		itm.is = itm.st.SetCollection("int_string", nil)
+		t_itm.is = t_itm.st.SetCollection("int_string", nil)
+		for v := range t_itm.GetStringKeys() {
+			itm.SetAny(v, "")
+		}
+		t_itm.Close()
+		return itm
+
+	}
 }
 
-func (st *DkStore) Compact() {
+func (st *DkStore) Compact(filename string) {
 	// Copy st.st to a new store
 	// and update accordingly
 	new_filename := "/tmp/new.gkvlite"
 	f, err := os.Create(new_filename)
 	check(err)
-	new_st, err := st.st.CopyTo(f, 20000)
+	_, err = st.st.CopyTo(f, 20000)
 	check(err)
-	st.st = new_st
-
+	st.st.Close()
+	f.Close()
+	err = os.Rename(new_filename, filename)
+	check(err)
+	f, err = os.Open(filename)
+	check(err)
+	st.st, err = gkvlite.NewStore(f)
+	check(err)
 }
 
 type ByteAble interface {
@@ -208,13 +242,15 @@ func (st *DkStore) GetAnyKeys() (ret_chan chan []byte) {
 	go func() {
 		min_itm, err := st.is.MinItem(true)
 		check(err)
-		st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
-			// This visitor callback will be invoked with every item
-			// If we want to stop visiting, return false;
-			// otherwise return true to keep visiting.
-			ret_chan <- i.Key
-			return true
-		})
+		if min_itm != nil {
+			st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+				// This visitor callback will be invoked with every item
+				// If we want to stop visiting, return false;
+				// otherwise return true to keep visiting.
+				ret_chan <- i.Key
+				return true
+			})
+		}
 		close(ret_chan)
 	}()
 	return ret_chan
@@ -285,27 +321,27 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 }
 
 func (st *DkStore) Size() int {
-	//size := 0
+	size := 0
 	if st.is == nil {
 		// The collection has not been set up yet
 		return 0
 	}
-	//min_itm, err := st.is.MinItem(true)
-	//check(err)
-	//if min_itm == nil {
-	// empty list if no minimum
-	//	return size
-	//}
-	//st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
-	// This visitor callback will be invoked with every item
-	// If we want to stop visiting, return false;
-	// otherwise return true to keep visiting.
-	//	size++
-	// Immediatly stops for performance
-	//	return false
-	//})
-
-	numItems, _, err := st.is.GetTotals()
+	min_itm, err := st.is.MinItem(true)
 	check(err)
-	return int(numItems)
+	if min_itm == nil {
+		//mpty list if no minimum
+		return size
+	}
+	st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+		// This visitor callback will be invoked with every item
+		// If we want to stop visiting, return false;
+		// otherwise return true to keep visiting.
+		size++
+		//mmediatly stops for performance
+		return false
+	})
+	return size
+	//numItems, _, err := st.is.GetTotals()
+	//check(err)
+	//return int(numItems)
 }

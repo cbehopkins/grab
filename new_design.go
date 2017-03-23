@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/cbehopkins/grab/grab"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
+
+	"github.com/cbehopkins/grab/grab"
 )
 
 func check(err error) {
@@ -56,7 +56,10 @@ func Grab(urs grab.Url, new_url_chan chan grab.Url, fetch_chan chan grab.Url,
 			out_count.Dec()
 		}()
 		return true
+	} else {
+		out_count.Dec()
 	}
+
 	return false
 }
 
@@ -66,6 +69,7 @@ func Fetch(urf grab.Url, token_got string, fetch_tc *grab.TokenChan, out_count *
 	out_count.Dec()
 }
 func main() {
+	var shutdown_in_progress sync.Mutex
 	wg := grab.NewOutCounter()
 	// A fetch channel that goes away and writes intersting things to disk
 	fetch_url_store := grab.NewUrlStore()
@@ -75,14 +79,18 @@ func main() {
 	grab_closer := make(chan struct{})
 	var fetch_wg sync.WaitGroup
 
-	visited_urls := grab.NewUrlMap("/tmp/visited.gkvlite", false)
+	visited_fname := "/tmp/visited.gkvlite"
+	var visited_urls *grab.UrlMap
+
+	visited_urls = grab.NewUrlMap(visited_fname, true)
+
 	unvisit_urls := grab.NewUrlMap("/tmp/unvisit.gkvlite", true)
 
 	// urls read from a file and command line
 	src_url_chan := make(chan grab.Url)
 
 	// Read from anything that adds to the new_url_chan channel
-	wg.Add()	// one for runChan, one for LoadFile
+	wg.Add() // one for runChan, one for LoadFile
 	wg.Add()
 	go runChan(src_url_chan, visited_urls, unvisit_urls, wg, "")
 	chUrlsi := *grab.NewUrlChannel()
@@ -103,7 +111,7 @@ func main() {
 	}()
 	go func() {
 		fmt.Println("Seeding Fetch")
-		grab.LoadFile("in_fetch.txt", chan_fetch_push, nil,false,false)
+		grab.LoadFile("in_fetch.txt", chan_fetch_push, nil, false, false)
 		fmt.Println("Fetch Seeded")
 		wg.Dec()
 	}()
@@ -115,11 +123,11 @@ func main() {
 	fetch_wg.Add(1)
 
 	go func() {
-		
+
 		fetch_tk_rep := grab.NewTokenChan(0, 10, "fetch")
 		is_closed := false
 		out_count := grab.NewOutCounter()
-		out_count.Add()	// Nonesense here is to initialise it properly
+		out_count.Add() // Nonesense here is to initialise it properly
 		out_count.Dec()
 		for {
 			select {
@@ -144,15 +152,17 @@ func main() {
 					// Get it as we have the token
 					out_count.Add()
 					go Fetch(v, token_get, fetch_tk_rep, out_count)
-				} else if !is_closed {
+				} else {
 					// Return the URL to the waiting list
 					chan_fetch_push <- v
+					<-time.After(100 * time.Millisecond)
 				}
-			case _, ok := <-can_closer:
-				is_closed = true
-				if ok {
+			case <-can_closer:
+				if !is_closed {
 					close(chan_fetch_push)
+					is_closed = true
 				}
+
 			}
 		}
 	}()
@@ -169,26 +179,39 @@ func main() {
 				wgt := grab.NewOutCounter()
 				wgt.Add()
 				out_count := grab.NewOutCounter()
+				out_count.Add()
+				out_count.Dec()
 				// Create the worker to sort any new Urls into the  two bins
 				go runChan(tmp_chan, visited_urls, unvisit_urls, wgt, "")
 				fmt.Println("Lets see who to visit")
-				//for urv := range unvisit_urls.VisitMissing(grab_tk_rep)
+				// Create a channel of URLs that are missing from grab_tk_rep
 				missing_chan := unvisit_urls.VisitMissing(grab_tk_rep)
 				var is_closed bool
 				for !is_closed {
 					select {
 					case <-grab_closer:
 						is_closed = true
+						fmt.Println("Grab Closer detected, shutting down grab process")
+						out_count.Wait()
+						close(tmp_chan)
+						fmt.Println("Waiting for runChan to finish adding")
+						wgt.Wait()
+						fmt.Println("Grab closer complete")
+						grab_wg.Done()
+						return
+
 					case urv, ok := <-missing_chan:
 						if !ok {
 							is_closed = true
 						} else {
-							out_count.Add()
 							//fmt.Println("Maybe:", urv)
+							out_count.Add()
+							//fmt.Println("Now")
 							if visited_urls.Exist(urv) {
 								// If we've already visited it then nothing to do
-								unvisit_urls.Delete(urv)
+								//unvisit_urls.Delete(urv)
 								out_count.Dec()
+								//fmt.Println("Deleted:",urv)
 							} else {
 								// grab the Url urv
 								// Send any new urls onto tmp_chan
@@ -202,18 +225,23 @@ func main() {
 									// This fetch the URL and look for what to do
 									visited_urls.Set(urv)
 									unvisit_urls.Delete(urv)
+									//fmt.Println("Grab Started",urv)
 								} else {
-									out_count.Dec()
+									//fmt.Println("Grab Aborted",urv)
 								}
 							}
+							//fmt.Println("MaybeD:", urv)
 						}
 					}
 				}
+				fmt.Println("Waiting for Grabs to finish after Visit")
 				out_count.Wait()
+				fmt.Println("Waiting for runChan to finish adding")
 				close(tmp_chan)
 				// Wait for runChan to finish adding thing from the tmp chan to the
 				// appropriate maps
 				wgt.Wait()
+				fmt.Println("runChan has finished")
 
 			} else {
 				grab_wg.Done()
@@ -227,61 +255,49 @@ func main() {
 	signal.Notify(signalChan, os.Interrupt)
 
 	go func() {
+		cc_cnt := 0
 		for _ = range signalChan {
-			var ccwg sync.WaitGroup
-			ccwg.Add(5)
-			fmt.Println("Ctrl-C Detected, flush and close")
-			go func() {
-				unvisit_urls.Flush()
-				unvisit_urls.Sync()
-				ccwg.Done()
-			}()
-			go func() {
-				visited_urls.Flush()
-				visited_urls.Sync()
-				ccwg.Done()
-			}()
-			go func() {
-				can_closer <- struct{}{}
-				fmt.Println("Push Closed")
-				close(can_closer)
-				ccwg.Done()
-			}()
-			go func() {
-				grab_closer <- struct{}{}
-				fmt.Println("Grab Closed")
-				close(grab_closer)
-				ccwg.Done()
-			}()
-			go func() {
-				grab.SaveFile("in_fetch.txt", chan_fetch_pop, nil)
-				fmt.Println("in_fetch saved")
-				fetch_wg.Wait()
-				fmt.Println("Fetch Complete")
-				ccwg.Done()
-			}()
-			ccwg.Wait()
-			ccwg.Add(2)
-			go func() {
-				unvisit_urls.Close()
-				ccwg.Done()
-			}()
-			go func() {
-				visited_urls.Close()
-				ccwg.Done()
-			}()
-			ccwg.Wait()
-			os.Exit(0)
+			cc_cnt++
+			if cc_cnt == 1 {
+				shutdown_in_progress.Lock()
+				go func() {
+					defer shutdown_in_progress.Unlock()
+					//					var ccwg sync.WaitGroup
+					fmt.Println("Ctrl-C Detected, flush and close")
+					close(grab_closer)
+					grab_wg.Wait() // Once we've closed it make sure it is closed
+					fmt.Println("Grab Closed")
+					close(can_closer)
+					grab.SaveFile("in_fetch.txt", chan_fetch_pop, nil)
+					fmt.Println("in_fetch saved")
+					fetch_wg.Wait()
+					fmt.Println("Fetch Complete")
+					fmt.Println("Persistance check passed")
+					unvisit_urls.Close()
+					visited_urls.Close()
+
+					fmt.Println("Reload Passed")
+					fmt.Println("All Complete")
+
+					os.Exit(0)
+				}()
+			} else {
+				os.Exit(1)
+			}
 		}
 	}()
 	grab_wg.Wait()
-	fmt.Println("Closing Push Channel")
-	can_closer <- struct{}{}
-	fmt.Println("Push Closed")
-	close(can_closer)
-	fmt.Println("Waiting for Fetch to close")
-	fetch_wg.Wait()
 
+	shutdown_in_progress.Lock()
+	defer shutdown_in_progress.Unlock()
+	close(grab_closer)
+	grab_wg.Wait() // Once we've closed it make sure it is closed
+	fmt.Println("Grab Closed")
+	close(can_closer)
+	grab.SaveFile("in_fetch.txt", chan_fetch_pop, nil)
+	fmt.Println("in_fetch saved")
+	fetch_wg.Wait()
+	fmt.Println("Fetch Complete")
 	unvisit_urls.Close()
 	visited_urls.Close()
 }

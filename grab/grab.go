@@ -250,6 +250,8 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 }
 
 func FetchW(fetch_url Url, test_jpg bool) bool {
+	// We retun true if we have used network bandwidth.
+	// If we have not then it's okay to jump straight onto the next file
 	array := strings.Split(string(fetch_url), "/")
 
 	var fn string
@@ -280,14 +282,18 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 		return false
 	}
 	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
+		// For a file that doesn't already exist, then just fetch it
 		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
 		fetch_file(potential_file_name, dir_str, fetch_url)
 		return true
 	} else {
+		// For a file that does already exist
 		if !test_jpg {
+			// We're not testing all the jpgs for goodness
 			//fmt.Println("skipping downloading", potential_file_name)
 			return false
 		}
+		// Check if it is a corrupted file. If it is, then fetch again
 		good_file := check_jpg(potential_file_name)
 		if good_file {
 			return false

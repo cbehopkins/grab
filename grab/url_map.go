@@ -23,7 +23,7 @@ func NewUrlMap(filename string, overwrite bool) *UrlMap {
 	itm.use_disk = use_disk
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
-		go itm.flusher()
+		//go itm.flusher()
 	} else {
 		itm.mp = make(map[Url]struct{})
 	}
@@ -37,16 +37,20 @@ func (um *UrlMap) Flush() {
 
 }
 func (um *UrlMap) Sync() {
-	um.disk_lock.Lock()
+	um.Lock()
 	um.dkst.Sync()
-	um.disk_lock.Unlock()
+	um.Unlock()
 
 }
 func (um *UrlMap) Close() {
-	um.disk_lock.Lock()
-	um.dkst.Sync()
+	// Close is a special case that operates on
+	// both the collection and the disk itself
+	// so we need both locks
+	um.Flush()
+	um.Sync()
+	um.Lock()
 	um.dkst.Close()
-	um.disk_lock.Unlock()
+	um.Unlock()
 
 }
 
