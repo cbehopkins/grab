@@ -68,7 +68,6 @@ func (tc *TokenChan) TryGetToken(basename string) bool {
 		tc.open_tokens[basename] = tc.open_tokens[basename] + 1
 		return true
 	}
-	return true
 }
 
 func (tc *TokenChan) PutToken(basename string) {
@@ -100,4 +99,12 @@ func (tc *TokenChan) PutToken(basename string) {
 }
 func (tc *TokenChan) TryPutToken(basename string) {
 	tc.PutToken(basename)
+}
+
+func (tc *TokenChan) UrlExist(urx string) bool {
+	basename := GetBase(urx)
+	tc.Lock()
+	_, ok := tc.open_tokens[basename]
+	tc.Unlock()
+	return ok
 }

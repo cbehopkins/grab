@@ -205,7 +205,6 @@ func (us UrlStore) OutputCount() int {
 	return us.OutCount + len(us.PopChannel)
 }
 
-
 func (us UrlStore) Count() int {
 	return us.InputCount() - us.OutputCount()
 }

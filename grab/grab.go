@@ -57,7 +57,7 @@ func Readln(r *bufio.Reader) (string, error) {
 	return string(ln), err
 }
 
-func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
+func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_chan, inc_count bool) {
 	if counter != nil {
 		defer counter.Dec()
 	}
@@ -76,18 +76,34 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter) {
 			return
 		}
 	}
+	defer f.Close()
 	r := bufio.NewReader(f)
 	s, e := Readln(r)
 	for e == nil {
 		//fmt.Println("Fast adding ", s)
-		if counter != nil {
+		if inc_count {
 			counter.Add()
 		}
 		the_chan <- Url(s)
 		s, e = Readln(r)
 	}
-	if counter == nil {
+	if close_chan {
 		close(the_chan)
+	}
+}
+func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
+	if counter != nil {
+		defer counter.Dec()
+	}
+	if filename == "" {
+		return
+	}
+	f, err := os.Create(filename)
+	check(err)
+	defer f.Close()
+	for v := range the_chan {
+		fmt.Fprintf(f, "%s\n", v)
+
 	}
 }
 func GetBase(urls string) string {
@@ -157,9 +173,10 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 	dv DomVisitI,
 	ch,
 	fetch_chan chan Url) {
-
 	for {
 		tt := z.Next()
+
+		//fmt.Println("Processing token")
 
 		switch {
 		case tt == html.ErrorToken:
@@ -167,7 +184,7 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 			return
 		case tt == html.StartTagToken:
 			t := z.Token()
-
+			//fmt.Println("Start Token")
 			// Check if the token is an <a> tag
 			isAnchor := t.Data == "a"
 			if !isAnchor {
@@ -202,7 +219,9 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 				if print_urls {
 					//fmt.Printf("Found jpg:%s\n", linked_url)
 				}
+				//fmt.Println("sending to fetch")
 				fetch_chan <- Url(linked_url)
+				//fmt.Println("sent")
 			} else {
 
 				aj, err := url.Parse(string(linked_url))
@@ -216,7 +235,9 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 					if oc != nil {
 						oc.Add()
 					}
+					//fmt.Printf("Send %s grab\n",linked_url)
 					ch <- Url(linked_url)
+					//fmt.Println("Sent %s to grab\n",linked_url)
 				} else {
 					if print_urls {
 						//fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
@@ -224,7 +245,7 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 				}
 			}
 			//}
-		}
+		} // End switch
 	}
 }
 

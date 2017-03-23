@@ -125,6 +125,8 @@ func check_jpg(filename string) bool {
 		}
 	default:
 		switch err.Error() {
+		case "unexpected EOF":
+			return false
 		case "EOF":
 			return false
 		default:

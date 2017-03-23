@@ -2,12 +2,176 @@ package grab
 
 import (
 	"log"
+	"math/rand"
 	"testing"
+	"time"
 )
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const (
+	letterIdxBits = 6                    // 6 bits to represent a letter index
+	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+)
+
+var src = rand.NewSource(time.Now().UnixNano())
+
+func RandStringBytesMaskImprSrc(n int) string {
+	b := make([]byte, n)
+	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
+	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = src.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			b[i] = letterBytes[idx]
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+
+	return string(b)
+}
+
+func TestDiskPersist0(t *testing.T) {
+	max_str_len := 256
+	num_entries := 100000
+	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	backup_hash := make(map[string]struct{})
+
+	// Create some random entries of varing lengths
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		dkst.SetAny(tst_string, "")
+		backup_hash[tst_string] = struct{}{}
+	}
+	dkst.Flush()
+	for v, _ := range backup_hash {
+		if !dkst.Exist(v) {
+			log.Fatal("Error, missing key", v)
+		}
+	}
+	for v := range dkst.GetStringKeys() {
+		_, ok := backup_hash[v]
+		if !ok {
+			log.Fatal("Error, extra key", v)
+		}
+	}
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		_, ok := backup_hash[tst_string]
+		if !ok {
+			// make sure if doesn't exist in backup_hash
+			// then it doesn't in the store
+			if dkst.Exist(tst_string) {
+				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
+			}
+		} else {
+			// try again
+			i--
+		}
+	}
+	dkst.Sync()
+	dkst.Close()
+	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
+
+	dkst1 := NewDkStore("/tmp/test.gkvlite", false)
+	for v, _ := range backup_hash {
+		if !dkst1.Exist(v) {
+			log.Fatal("Error, missing key", v)
+		}
+	}
+	log.Println("Checking if the persistant is also persistant in missing items")
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		_, ok := backup_hash[tst_string]
+		if !ok {
+			// make sure if doesn't exist in backup_hash
+			// then it doesn't in the store
+			if dkst1.Exist(tst_string) {
+				log.Fatalf("%s is in dkst1, but not in bakup\n", tst_string)
+			}
+		} else {
+			// try again
+			i--
+		}
+	}
+}
+func TestDiskPersist1(t *testing.T) {
+	max_str_len := 256
+	num_entries := 100000
+	dkst := NewUrlMap("/tmp/test.gkvlite", true)
+	backup_hash := make(map[string]struct{})
+
+	// Create some random entries of varing lengths
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		dkst.Set(Url(tst_string))
+		backup_hash[tst_string] = struct{}{}
+	}
+	for v, _ := range backup_hash {
+		if !dkst.Exist(Url(v)) {
+			log.Fatal("Error, missing key", v)
+		}
+	}
+	for v := range dkst.VisitAll() {
+		_, ok := backup_hash[string(v)]
+		if !ok {
+			log.Fatal("Error, extra key", v)
+		}
+	}
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		_, ok := backup_hash[tst_string]
+		if !ok {
+			// make sure if doesn't exist in backup_hash
+			// then it doesn't in the store
+			if dkst.Exist(Url(tst_string)) {
+				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
+			}
+		} else {
+			// try again
+			i--
+		}
+	}
+
+	// Close it all off, make sure it is on the disk
+	dkst.Close()
+	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
+
+	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
+	for v, _ := range backup_hash {
+		if !dkst1.Exist(Url(v)) {
+			log.Fatal("Error, missing key", v)
+		}
+	}
+	log.Println("Checking if the persistant is also persistant in missing items")
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		_, ok := backup_hash[tst_string]
+		if !ok {
+			// make sure if doesn't exist in backup_hash
+			// then it doesn't in the store
+			if dkst1.Exist(Url(tst_string)) {
+				log.Fatalf("%s is in dkst1, but not in bakup\n", tst_string)
+			}
+		} else {
+			// try again
+			i--
+		}
+	}
+}
 
 func TestDiskStore0(t *testing.T) {
 
-	dkst := NewDkStore("/tmp/test.gkvlite")
+	dkst := NewDkStore("/tmp/test.gkvlite", true)
 	dkst.SetAny(23, "Hello")
 	dkst.SetAny(25, "Goodbye")
 	dkst.Flush()
@@ -21,44 +185,42 @@ func TestDiskStore0(t *testing.T) {
 	dkst.Close()
 }
 
-
 func TestDiskStore1(t *testing.T) {
 
-        dkst := NewDkStore("/tmp/test.gkvlite")
-        dkst.SetAny("Hello1",23)
-        dkst.SetAny("Goodbye1",25)
-        dkst.Flush()
-        log.Println("We say:", dkst.GetInt("Hello1"))
-        log.Println("They say:", dkst.GetInt("Goodbye1"))
+	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	dkst.SetAny("Hello1", 23)
+	dkst.SetAny("Goodbye1", 25)
+	dkst.Flush()
+	log.Println("We say:", dkst.GetInt("Hello1"))
+	log.Println("They say:", dkst.GetInt("Goodbye1"))
 
-        key_chan := dkst.GetAnyKeys()
-        for key := range key_chan {
-                log.Println("The collection contains:", string(key))
-        }
+	key_chan := dkst.GetAnyKeys()
+	for key := range key_chan {
+		log.Println("The collection contains:", string(key))
+	}
 	dkst.Close()
 }
 
 func TestDiskStore2(t *testing.T) {
 
-        dkst := NewDkStore("/tmp/test.gkvlite")
-	defer dkst.Close()	
+	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	defer dkst.Close()
 
 	// Let's pretend to have some urls
 	var url_0 Url
 	var url_1 Url
 	var url_2 Url
 	url_0 = "http://here.com"
-	url_1 = "http://there.com"	
+	url_1 = "http://there.com"
 	url_2 = "http://nowhere.com"
-	if dkst.Size() >0 {
+	if dkst.Size() > 0 {
 		log.Fatal("Bigger than zero")
 	}
 	dkst.SetAny(url_0, "")
 	dkst.SetAny(url_1, "")
-	if dkst.Size() ==0 {
+	if dkst.Size() == 0 {
 		log.Fatal("Size is zero")
 	}
-
 
 	if !dkst.Exist(url_0) {
 		log.Fatal("0 does not exist")
@@ -71,17 +233,16 @@ func TestDiskStore2(t *testing.T) {
 	}
 	dkst.Flush()
 	key_chan := dkst.GetAnyKeys()
-        for key := range key_chan {
-                log.Println("The collection contains:", string(key))
-        }
+	for key := range key_chan {
+		log.Println("The collection contains:", string(key))
+	}
 
 	// Delete returns true if suceeds
 	_ = dkst.Delete(url_0)
 	_ = dkst.Delete(url_1)
 
-	if dkst.Size() >0 {
-                log.Fatal("Bigger than zero after delete")
-        }
-
+	if dkst.Size() > 0 {
+		log.Fatal("Bigger than zero after delete")
+	}
 
 }

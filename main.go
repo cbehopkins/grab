@@ -105,7 +105,7 @@ func main() {
 	if load_seeds {
 		out_count.Add()
 
-		go grab.LoadFile("in_fetch.txt", chan_fetch_pushi, &out_count)
+		go grab.LoadFile("in_fetch.txt", chan_fetch_pushi, &out_count,true,true)
 		go func() {
 			for itm := range chan_fetch_pushi {
 				ai, err := url.Parse(string(itm))
@@ -120,7 +120,7 @@ func main() {
 	if load_seeds {
 		out_count.Add()
 
-		go grab.LoadFile("in_urls.txt", chUrlsi, &out_count)
+		go grab.LoadFile("in_urls.txt", chUrlsi, &out_count,true,true)
 		go func() {
 			for itm := range chUrlsi {
 				ai, err := url.Parse(string(itm))
