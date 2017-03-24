@@ -281,12 +281,7 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	if strings.HasPrefix(potential_file_name, "/") {
 		return false
 	}
-	if _, err := os.Stat(potential_file_name); os.IsNotExist(err) {
-		// For a file that doesn't already exist, then just fetch it
-		//fmt.Printf("Fetch Fetching %s, fn:%s\n", fetch_url, fn)
-		fetch_file(potential_file_name, dir_str, fetch_url)
-		return true
-	} else {
+	if _, err := os.Stat(potential_file_name); !os.IsNotExist(err) {
 		// For a file that does already exist
 		if !test_jpg {
 			// We're not testing all the jpgs for goodness
@@ -297,10 +292,12 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 		good_file := check_jpg(potential_file_name)
 		if good_file {
 			return false
-		} else {
-			//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
-			fetch_file(potential_file_name, dir_str, fetch_url)
-			return true
 		}
 	}
+	
+	// For a file that doesn't already exist, then just fetch it
+	
+	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+	fetch_file(potential_file_name, dir_str, fetch_url)
+	return true
 }

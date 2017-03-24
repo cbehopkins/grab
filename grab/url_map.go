@@ -23,7 +23,7 @@ func NewUrlMap(filename string, overwrite bool) *UrlMap {
 	itm.use_disk = use_disk
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
-		//go itm.flusher()
+		go itm.flusher()
 	} else {
 		itm.mp = make(map[Url]struct{})
 	}
@@ -62,6 +62,7 @@ func (um *UrlMap) flusher() {
 	}
 }
 func (um *UrlMap) Exist(key Url) bool {
+	//fmt.Println("Exist lock for:", key)
 	um.RLock()
 	var ok bool
 	if um.use_disk {
@@ -70,10 +71,11 @@ func (um *UrlMap) Exist(key Url) bool {
 		_, ok = um.mp[key]
 	}
 	um.RUnlock()
+	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
 func (um *UrlMap) Set(key Url) {
-	//fmt.Println("Get lock for:",key)
+	//fmt.Println("Get lock for:", key)
 	um.Lock()
 	//fmt.Println("Got Lock")
 	if um.use_disk {
@@ -82,7 +84,7 @@ func (um *UrlMap) Set(key Url) {
 		um.mp[key] = struct{}{}
 	}
 	um.Unlock()
-	//fmt.Println("Lock Returned for:",key)
+	//fmt.Println("Lock Returned for:", key)
 }
 func (um *UrlMap) Check(key Url) bool {
 	// Be 100% sure things work as we expect!
@@ -182,9 +184,9 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 	//fmt.Println("Called Visit")
 
 	go func() {
-		//fmt.Println("Grabbing Lock")
+		//fmt.Println("Grabbing Lock VM")
 		um.RLock()
-		//fmt.Println("Got Lock")
+		//fmt.Println("Got Lock VM")
 		if um.use_disk {
 			// Get up to 100 things that aren't on the TokenChan
 			string_array := um.dkst.GetMissing(100, refr)

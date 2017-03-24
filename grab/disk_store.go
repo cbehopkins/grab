@@ -44,7 +44,7 @@ func newStore(filename string, overwrite bool) (*os.File, *gkvlite.Store) {
 }
 func NewDkStore(filename string, overwrite bool) *DkStore {
 	itm := new(DkStore)
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
+	if _, err := os.Stat(filename); overwrite || os.IsNotExist(err) {
 		// Doesn't exist? Happy days, create it
 		f, st := newStore(filename, overwrite)
 		itm.st = st

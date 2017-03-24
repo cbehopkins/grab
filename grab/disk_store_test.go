@@ -33,6 +33,70 @@ func RandStringBytesMaskImprSrc(n int) string {
 
 	return string(b)
 }
+func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
+        for v, _ := range backup_hash {
+                if !dkst.Exist(Url(v)) {
+                        log.Fatal("Error, missing key from disk", v)
+                }
+        }
+        for v := range dkst.VisitAll() {
+                _, ok := backup_hash[string(v)]
+                if !ok {
+                        log.Fatal("Error, extra key in disk", v)
+                }
+        }
+        // Try some random entries and see if there is one in one but not the other
+        // Yes I know this should never happen. That's the point.
+        // (next I will write a test for 1!=2)
+        for i := 0; i < num_entries; i++ {
+                str_len := rand.Int31n(int32(max_str_len)) + 1
+                tst_string := RandStringBytesMaskImprSrc(int(str_len))
+                _, ok := backup_hash[tst_string]
+                if !ok {
+                        // make sure if doesn't exist in backup_hash
+                        // then it doesn't in the store
+                        if dkst.Exist(Url(tst_string)) {
+                                log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
+                        }
+                } else {
+                        // try again
+                        i--
+                }
+        }
+}
+
+func (dkst *DkStore) checkStore(backup_hash map[string]struct{},  num_entries, max_str_len int) {
+
+        for v, _ := range backup_hash {
+                if !dkst.Exist(v) {
+                        log.Fatal("Error, missing key from disk", v)
+                }
+        }
+        for v := range dkst.GetStringKeys() {
+                _, ok := backup_hash[v]
+                if !ok {
+                        log.Fatal("Error, extra key in disk", v)
+                }
+        }
+	// Try some random entries and see if there is one in one but not the other
+	// Yes I know this should never happen. That's the point.
+	// (next I will write a test for 1!=2)
+        for i := 0; i < num_entries; i++ {
+                str_len := rand.Int31n(int32(max_str_len)) + 1
+                tst_string := RandStringBytesMaskImprSrc(int(str_len))
+                _, ok := backup_hash[tst_string]
+                if !ok {
+                        // make sure if doesn't exist in backup_hash
+                        // then it doesn't in the store
+                        if dkst.Exist(tst_string) {
+                                log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
+                        }
+                } else {
+                        // try again
+                        i--
+                }
+        }
+}
 
 func TestDiskPersist0(t *testing.T) {
 	max_str_len := 256
@@ -47,59 +111,15 @@ func TestDiskPersist0(t *testing.T) {
 		dkst.SetAny(tst_string, "")
 		backup_hash[tst_string] = struct{}{}
 	}
-	//dkst.Flush()
-	for v, _ := range backup_hash {
-		if !dkst.Exist(v) {
-			log.Fatal("Error, missing key", v)
-		}
-	}
-	for v := range dkst.GetStringKeys() {
-		_, ok := backup_hash[v]
-		if !ok {
-			log.Fatal("Error, extra key", v)
-		}
-	}
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		_, ok := backup_hash[tst_string]
-		if !ok {
-			// make sure if doesn't exist in backup_hash
-			// then it doesn't in the store
-			if dkst.Exist(tst_string) {
-				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
-			}
-		} else {
-			// try again
-			i--
-		}
-	}
-	//dkst.Sync()
+	dkst.Flush()
+	dkst.checkStore(backup_hash, num_entries, max_str_len)
+
+	dkst.Sync()
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
 	dkst1 := NewDkStore("/tmp/test.gkvlite", false)
-	for v, _ := range backup_hash {
-		if !dkst1.Exist(v) {
-			log.Fatal("Error, missing key", v)
-		}
-	}
-	log.Println("Checking if the persistant is also persistant in missing items")
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		_, ok := backup_hash[tst_string]
-		if !ok {
-			// make sure if doesn't exist in backup_hash
-			// then it doesn't in the store
-			if dkst1.Exist(tst_string) {
-				log.Fatalf("%s is in dkst1, but not in bakup\n", tst_string)
-			}
-		} else {
-			// try again
-			i--
-		}
-	}
+	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 }
 func TestDiskPersist1(t *testing.T) {
 	max_str_len := 256
@@ -114,59 +134,16 @@ func TestDiskPersist1(t *testing.T) {
 		dkst.Set(Url(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
-	for v, _ := range backup_hash {
-		if !dkst.Exist(Url(v)) {
-			log.Fatal("Error, missing key", v)
-		}
-	}
-	for v := range dkst.VisitAll() {
-		_, ok := backup_hash[string(v)]
-		if !ok {
-			log.Fatal("Error, extra key", v)
-		}
-	}
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		_, ok := backup_hash[tst_string]
-		if !ok {
-			// make sure if doesn't exist in backup_hash
-			// then it doesn't in the store
-			if dkst.Exist(Url(tst_string)) {
-				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
-			}
-		} else {
-			// try again
-			i--
-		}
-	}
+	dkst.checkStore(backup_hash, num_entries, max_str_len)
 
 	// Close it all off, make sure it is on the disk
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
 	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
-	for v, _ := range backup_hash {
-		if !dkst1.Exist(Url(v)) {
-			log.Fatal("Error, missing key", v)
-		}
-	}
-	log.Println("Checking if the persistant is also persistant in missing items")
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		_, ok := backup_hash[tst_string]
-		if !ok {
-			// make sure if doesn't exist in backup_hash
-			// then it doesn't in the store
-			if dkst1.Exist(Url(tst_string)) {
-				log.Fatalf("%s is in dkst1, but not in bakup\n", tst_string)
-			}
-		} else {
-			// try again
-			i--
-		}
-	}
+	dkst1.checkStore(backup_hash, num_entries, max_str_len)
+	dkst1.Close()
+
 }
 func TestDiskPersist2(t *testing.T) {
 	max_str_len := 256
@@ -181,59 +158,15 @@ func TestDiskPersist2(t *testing.T) {
 		dkst.Set(Url(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
-	for v, _ := range backup_hash {
-		if !dkst.Exist(Url(v)) {
-			log.Fatal("Error, missing key", v)
-		}
-	}
-	for v := range dkst.VisitAll() {
-		_, ok := backup_hash[string(v)]
-		if !ok {
-			log.Fatal("Error, extra key", v)
-		}
-	}
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		_, ok := backup_hash[tst_string]
-		if !ok {
-			// make sure if doesn't exist in backup_hash
-			// then it doesn't in the store
-			if dkst.Exist(Url(tst_string)) {
-				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
-			}
-		} else {
-			// try again
-			i--
-		}
-	}
+	dkst.checkStore(backup_hash, num_entries, max_str_len)
+
 
 	// Close it all off, make sure it is on the disk
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
 	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
-	for v, _ := range backup_hash {
-		if !dkst1.Exist(Url(v)) {
-			log.Fatal("Error, missing key", v)
-		}
-	}
-	log.Println("Checking if the persistant is also persistant in missing items")
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		_, ok := backup_hash[tst_string]
-		if !ok {
-			// make sure if doesn't exist in backup_hash
-			// then it doesn't in the store
-			if dkst1.Exist(Url(tst_string)) {
-				log.Fatalf("%s is in dkst1, but not in bakup\n", tst_string)
-			}
-		} else {
-			// try again
-			i--
-		}
-	}
+	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 
 	// Create some more random entries of varing lengths
 	for i := 0; i < num_entries; i++ {
@@ -242,23 +175,12 @@ func TestDiskPersist2(t *testing.T) {
 		dkst1.Set(Url(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
-	for v, _ := range backup_hash {
-		if !dkst1.Exist(Url(v)) {
-			log.Fatal("Error, missing added key in dkst1", v)
-		}
-	}
+	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 
 	dkst1.Close()
-
 	// This should work,
-	// However there seems to be a bug with gkvlite or my understanding of its features
-
 	dkst2 := NewUrlMap("/tmp/test.gkvlite", false)
-	for v, _ := range backup_hash {
-		if !dkst2.Exist(Url(v)) {
-			log.Fatal("Error, missing key in dkst2", v)
-		}
-	}
+	dkst2.checkStore(backup_hash, num_entries, max_str_len)
 	dkst2.Close()
 }
 
