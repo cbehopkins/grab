@@ -34,68 +34,68 @@ func RandStringBytesMaskImprSrc(n int) string {
 	return string(b)
 }
 func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
-        for v, _ := range backup_hash {
-                if !dkst.Exist(Url(v)) {
-                        log.Fatal("Error, missing key from disk", v)
-                }
-        }
-        for v := range dkst.VisitAll() {
-                _, ok := backup_hash[string(v)]
-                if !ok {
-                        log.Fatal("Error, extra key in disk", v)
-                }
-        }
-        // Try some random entries and see if there is one in one but not the other
-        // Yes I know this should never happen. That's the point.
-        // (next I will write a test for 1!=2)
-        for i := 0; i < num_entries; i++ {
-                str_len := rand.Int31n(int32(max_str_len)) + 1
-                tst_string := RandStringBytesMaskImprSrc(int(str_len))
-                _, ok := backup_hash[tst_string]
-                if !ok {
-                        // make sure if doesn't exist in backup_hash
-                        // then it doesn't in the store
-                        if dkst.Exist(Url(tst_string)) {
-                                log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
-                        }
-                } else {
-                        // try again
-                        i--
-                }
-        }
-}
-
-func (dkst *DkStore) checkStore(backup_hash map[string]struct{},  num_entries, max_str_len int) {
-
-        for v, _ := range backup_hash {
-                if !dkst.Exist(v) {
-                        log.Fatal("Error, missing key from disk", v)
-                }
-        }
-        for v := range dkst.GetStringKeys() {
-                _, ok := backup_hash[v]
-                if !ok {
-                        log.Fatal("Error, extra key in disk", v)
-                }
-        }
+	for v, _ := range backup_hash {
+		if !dkst.Exist(Url(v)) {
+			log.Fatal("Error, missing key from disk", v)
+		}
+	}
+	for v := range dkst.VisitAll() {
+		_, ok := backup_hash[string(v)]
+		if !ok {
+			log.Fatal("Error, extra key in disk", v)
+		}
+	}
 	// Try some random entries and see if there is one in one but not the other
 	// Yes I know this should never happen. That's the point.
 	// (next I will write a test for 1!=2)
-        for i := 0; i < num_entries; i++ {
-                str_len := rand.Int31n(int32(max_str_len)) + 1
-                tst_string := RandStringBytesMaskImprSrc(int(str_len))
-                _, ok := backup_hash[tst_string]
-                if !ok {
-                        // make sure if doesn't exist in backup_hash
-                        // then it doesn't in the store
-                        if dkst.Exist(tst_string) {
-                                log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
-                        }
-                } else {
-                        // try again
-                        i--
-                }
-        }
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		_, ok := backup_hash[tst_string]
+		if !ok {
+			// make sure if doesn't exist in backup_hash
+			// then it doesn't in the store
+			if dkst.Exist(Url(tst_string)) {
+				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
+			}
+		} else {
+			// try again
+			i--
+		}
+	}
+}
+
+func (dkst *DkStore) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
+
+	for v, _ := range backup_hash {
+		if !dkst.Exist(v) {
+			log.Fatal("Error, missing key from disk", v)
+		}
+	}
+	for v := range dkst.GetStringKeys() {
+		_, ok := backup_hash[v]
+		if !ok {
+			log.Fatal("Error, extra key in disk", v)
+		}
+	}
+	// Try some random entries and see if there is one in one but not the other
+	// Yes I know this should never happen. That's the point.
+	// (next I will write a test for 1!=2)
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		_, ok := backup_hash[tst_string]
+		if !ok {
+			// make sure if doesn't exist in backup_hash
+			// then it doesn't in the store
+			if dkst.Exist(tst_string) {
+				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
+			}
+		} else {
+			// try again
+			i--
+		}
+	}
 }
 
 func TestDiskPersist0(t *testing.T) {
@@ -159,7 +159,6 @@ func TestDiskPersist2(t *testing.T) {
 		backup_hash[tst_string] = struct{}{}
 	}
 	dkst.checkStore(backup_hash, num_entries, max_str_len)
-
 
 	// Close it all off, make sure it is on the disk
 	dkst.Close()

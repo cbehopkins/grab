@@ -10,13 +10,12 @@ import (
 // One multi-Fetcher does all files!
 type MultiFetch struct {
 	sync.Mutex
-	InChan     chan Url      // Write Urls to here
+	InChan         chan Url // Write Urls to here
 	in_chan_closed bool
-	scram_chan chan struct{} // Simply close this channel to scram to filename
-	fifo       *UrlStore     // stored here
-	ff_map     map[string]*UrlStore
-	filename   string
-	
+	scram_chan     chan struct{} // Simply close this channel to scram to filename
+	fifo           *UrlStore     // stored here
+	ff_map         map[string]*UrlStore
+	filename       string
 }
 
 func NewMultiFetch() *MultiFetch {
@@ -40,20 +39,20 @@ func (mf *MultiFetch) Scram() {
 	fmt.Println("Scram Requested")
 	mf.Lock()
 	if !mf.in_chan_closed {
-	close(mf.InChan)
-	mf.in_chan_closed =  true
+		close(mf.InChan)
+		mf.in_chan_closed = true
 	}
 	close(mf.scram_chan)
 	mf.Unlock()
 }
 func (mf *MultiFetch) Close() {
 	if !mf.in_chan_closed {
-	close(mf.InChan)
-mf.in_chan_closed =  true
-        }
+		close(mf.InChan)
+		mf.in_chan_closed = true
+	}
 }
 
-func (mf *MultiFetch) single_worker(ic chan Url) {
+func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI) {
 
 	scram_in_progres := false
 	wt := NewWkTok(2)
@@ -76,43 +75,46 @@ func (mf *MultiFetch) single_worker(ic chan Url) {
 				// any tokens to finish
 				return
 			}
-			wt.GetTok()
-			tchan := make (chan struct{})
-			go func() {
-				// Fetch returns true if it has used the network
-				if FetchW(urf, false) {
-					time.Sleep(500 * time.Millisecond)
-				}
-				tchan <- struct{}{}
-			}()
+			basename := GetBase(string(urf))
+			if dv.VisitedQ(basename) {
+				wt.GetTok()
+				tchan := make(chan struct{})
+				go func() {
+					// Fetch returns true if it has used the network
+					if FetchW(urf, false) {
+						time.Sleep(500 * time.Millisecond)
+					}
+					tchan <- struct{}{}
+				}()
 				// Implement a timeout on the Fetch Work
 				select {
-					case <- tchan:
-					case <- time.After(10*time.Second):
-						log.Fatal("We needed to use the timeout case, this is bad!")
+				case <-tchan:
+				case <-time.After(10 * time.Second):
+					log.Fatal("We needed to use the timeout case, this is bad!")
 				}
 				// If not used network then return the token immediatly
 				wt.PutTok()
+			}
 		}
 	}
 	wt.Wait()
 }
-func (mf *MultiFetch) Worker(filename string) {
+func (mf *MultiFetch) Worker(dv DomVisitI) {
 	var wg sync.WaitGroup
-	if filename != "" {
+	if mf.filename != "" {
 		wg.Add(1)
 		go func() {
-			LoadFile(filename, mf.fifo.PushChannel, nil, false, false)
+			LoadFile(mf.filename, mf.fifo.PushChannel, nil, false, false)
 			wg.Done()
 		}()
 	}
 	wg.Wait()
 
 	if true {
-		mf.single_worker(mf.fifo.PopChannel)
+		mf.single_worker(mf.fifo.PopChannel, dv)
 	} else {
 		// TBD Try this
-		mf.dispatch()
+		mf.dispatch(dv)
 	}
 
 }
@@ -120,7 +122,7 @@ func (mf *MultiFetch) scram() {
 	SaveFile(mf.filename, mf.fifo.PopChannel, nil)
 	fmt.Println("Fetch saved")
 }
-func (mf *MultiFetch) dispatch() {
+func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// here we read from in chan
 	oc := NewOutCounter()
 	for urli := range mf.InChan {
@@ -134,7 +136,7 @@ func (mf *MultiFetch) dispatch() {
 			ff = NewUrlStore()
 			mf.ff_map[basename] = ff
 			go func() {
-				mf.single_worker(ff.PopChannel)
+				mf.single_worker(ff.PopChannel, dv)
 				oc.Dec()
 			}()
 		}

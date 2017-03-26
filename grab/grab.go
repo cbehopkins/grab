@@ -150,7 +150,7 @@ func GrabT(
 
 	if err != nil {
 
-		//fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
+		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
 		DecodeHttpError(err)
 		return
 	}
@@ -210,6 +210,9 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 			if print_urls {
 				//fmt.Println("Resolved URL to:", linked_url)
 			}
+			aj, err := url.Parse(string(linked_url))
+			check(err)
+			domain_j := aj.Host
 
 			is_jpg := strings.Contains(linked_url, ".jpg")
 			if is_jpg {
@@ -220,14 +223,12 @@ func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
 					//fmt.Printf("Found jpg:%s\n", linked_url)
 				}
 				//fmt.Println("sending to fetch")
-				fetch_chan <- Url(linked_url)
-				//fmt.Println("sent")
+				if all_interesting || dv.VisitedQ(domain_j) {
+					fetch_chan <- Url(linked_url)
+					//fmt.Println("sent")
+				}
 			} else {
 
-				aj, err := url.Parse(string(linked_url))
-				check(err)
-
-				domain_j := aj.Host
 				if all_interesting || dv.VisitedQ(domain_j) || (domain_i == domain_j) {
 					if print_urls {
 						//fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
@@ -294,9 +295,9 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 			return false
 		}
 	}
-	
+
 	// For a file that doesn't already exist, then just fetch it
-	
+
 	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
 	fetch_file(potential_file_name, dir_str, fetch_url)
 	return true

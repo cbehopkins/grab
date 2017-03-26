@@ -1,8 +1,8 @@
 package main
 
 import (
-	"log"
 	"fmt"
+	//"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -65,11 +65,6 @@ func Grab(urs grab.Url, new_url_chan chan grab.Url, fetch_chan chan grab.Url,
 	return false
 }
 
-func Fetch(urf grab.Url, token_got string, fetch_tc *grab.TokenChan, out_count *grab.OutCounter) {
-	grab.FetchW(urf, false)
-	fetch_tc.PutToken(token_got)
-	out_count.Dec()
-}
 func main() {
 	var shutdown_in_progress sync.Mutex
 	var wg sync.WaitGroup
@@ -120,7 +115,8 @@ func main() {
 	fetch_wg.Add(1)
 
 	go func() {
-		multi_fetch.Worker(fetch_fn)
+		multi_fetch.SetFileName(fetch_fn)
+		multi_fetch.Worker( dmv)
 		fetch_wg.Done()
 
 	}()
@@ -172,14 +168,6 @@ func main() {
 								//fmt.Println("Deleted:",urv)
 							} else {
 
-							var urt grab.Url
-							urt = "http://18teenerotic.com/4986-voluptuous-nubile-with-a-big-juicy-ass-gets-frisky-in-her-be/"
-							if string(urt) == string(urv) {
-								log.Fatal("Test String Failed",urt)
-							}
-
-
-
 								// grab the Url urv
 								// Send any new urls onto tmp_chan
 								// and anything we should fetch goes on fetch_chan
@@ -230,7 +218,7 @@ func main() {
 				shutdown_in_progress.Lock()
 				go func() {
 					fmt.Println("Ctrl-C Detected, flush and close")
-					if (!grab_closer_closed) {
+					if !grab_closer_closed {
 						close(grab_closer)
 						grab_closer_closed = true
 					}
@@ -242,7 +230,7 @@ func main() {
 					unvisit_urls.Close()
 					visited_urls.Close()
 					shutdown_in_progress.Unlock()
-					
+
 					fmt.Println("Reload Passed")
 					fmt.Println("All Complete")
 
@@ -255,10 +243,10 @@ func main() {
 	}()
 	grab_wg.Wait()
 	shutdown_in_progress.Lock()
-	if (!grab_closer_closed) {
-                                                close(grab_closer)
-                                                grab_closer_closed = true
-                                       }
+	if !grab_closer_closed {
+		close(grab_closer)
+		grab_closer_closed = true
+	}
 	shutdown_in_progress.Unlock()
 	grab_wg.Wait() // Once we've closed it make sure it is closed
 	fmt.Println("Grab Closed")
