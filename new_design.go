@@ -35,29 +35,36 @@ func runChan(input_chan <-chan grab.Url, visited_urls, unvisit_urls *grab.UrlMap
 	//fmt.Println("runChan Done")
 	wg.Done()
 }
-func Grab(urs grab.Url, new_url_chan chan grab.Url, fetch_chan chan grab.Url,
-	out_count *grab.OutCounter,
-	dv grab.DomVisitI, crawl_chan *grab.TokenChan) bool {
+func Grab(urs grab.Url, hm *grab.Hamster, out_count *grab.OutCounter, crawl_chan *grab.TokenChan) bool {
 
 	token_got := grab.GetBase(string(urs))
 
 	if crawl_chan.TryGetToken(token_got) {
 		fmt.Println("Grab:", urs)
-		go func() {
-			grab.GrabT(urs, // The URL we are tasked with crawling
+		if !hm.Shallow() {
+			go func() {
+				// Before we can send this, we need to take a copy of hm
+				// so that we can parrallelise this
+				hmp := hm.Copy()
+				hmp.GrabT(urs, // The URL we are tasked with crawling
+					token_got,
+					crawl_chan,
+				)
+				//fmt.Println("Grabbed:", urs)
+				// we don't want GrabT doing this as in
+				// None Nil mode it will also add, which
+				//we don't want for this design
+				out_count.Dec()
+			}()
+			return true
+		} else {
+			hm.GrabT(urs, // The URL we are tasked with crawling
 				token_got,
-				false, // all interesting
-				false, // print_urls
-				nil,
-				dv,
-				new_url_chan,
-				fetch_chan,
 				crawl_chan,
 			)
-			//fmt.Println("Grabbed:", urs)
 			out_count.Dec()
-		}()
-		return true
+			hm.ClearShallow()
+		}
 	} else {
 		out_count.Dec()
 	}
@@ -68,17 +75,26 @@ func Grab(urs grab.Url, new_url_chan chan grab.Url, fetch_chan chan grab.Url,
 func main() {
 	var shutdown_in_progress sync.Mutex
 	var wg sync.WaitGroup
-	// A fetch channel that goes away and writes intersting things to disk
-	multi_fetch := grab.NewMultiFetch()
-	chan_fetch_push := multi_fetch.InChan
-
-	grab_closer := make(chan struct{})
-	var fetch_wg sync.WaitGroup
+	multiple_fetchers := true
+	promiscuous := true
+	shallow := false
+	all_interesting := false
+	debug := false
+	num_p_fetch := 2
 
 	visited_fname := "/tmp/visited.gkvlite"
 	unvisit_fname := "/tmp/unvisit.gkvlite"
 	url_fn := "in_urls.txt"
 	fetch_fn := "in_fetch.txt"
+	bad_url_fn := "bad_urls.txt"
+
+	// A fetch channel that goes away and writes intersting things to disk
+	multi_fetch := grab.NewMultiFetch(multiple_fetchers)
+	chan_fetch_push := multi_fetch.InChan
+
+	grab_closer := make(chan struct{})
+	var fetch_wg sync.WaitGroup
+
 	var visited_urls *grab.UrlMap
 	var unvisit_urls *grab.UrlMap
 	// Open the maps and do not overwrite any we find
@@ -89,20 +105,33 @@ func main() {
 	src_url_chan := make(chan grab.Url)
 
 	// Read from anything that adds to the new_url_chan channel
-	wg.Add(1) // one for runChan, one for LoadFile
+	wg.Add(1) // one for runChan
 	go runChan(src_url_chan, visited_urls, unvisit_urls, &wg, "")
 	chUrlsi := *grab.NewUrlChannel()
+	chUrlsb := *grab.NewUrlChannel()
 
 	fmt.Println("Seeding URLs")
+	// Close the channel but don't add to the (unsupplied) counter
 	go grab.LoadFile(url_fn, chUrlsi, nil, true, false)
+	go grab.LoadFile(bad_url_fn, chUrlsb, nil, true, false)
 	dmv := grab.NewDomVisit()
+	wg.Add(1) // one for badUrls
+	go func() {
+		for itm := range chUrlsb {
+			dmv.AddBad(string(itm))
+		}
+		wg.Done()
+	}()
+
 	go func() {
 		for itm := range chUrlsi {
 			//fmt.Println("SeedURL:", itm)
 
 			domain_i := grab.GetBase(string(itm))
-			_ = dmv.VisitedA(domain_i)
-			src_url_chan <- itm
+			if domain_i != "" {
+				_ = dmv.VisitedA(domain_i)
+				src_url_chan <- itm
+			}
 		}
 		close(src_url_chan)
 
@@ -116,15 +145,23 @@ func main() {
 
 	go func() {
 		multi_fetch.SetFileName(fetch_fn)
-		multi_fetch.Worker( dmv)
+		multi_fetch.Worker(dmv)
 		fetch_wg.Done()
 
 	}()
 	var grab_wg sync.WaitGroup
 	grab_wg.Add(1)
 	// So here we want to pop things off the unvisited map
+	hm := grab.NewHamster(
+		promiscuous,
+		shallow,
+		all_interesting,
+		debug, // Print Urls
+	)
+	hm.SetDv(dmv)
+	hm.SetFetchCh(chan_fetch_push)
 	go func() {
-		grab_tk_rep := grab.NewTokenChan(0, 10, "grab")
+		grab_tk_rep := grab.NewTokenChan(0, num_p_fetch, "grab")
 
 		for {
 			unvisited_urls := unvisit_urls.Size()
@@ -135,6 +172,7 @@ func main() {
 				out_count := grab.NewOutCounter()
 				out_count.Add()
 				out_count.Dec()
+				hm.SetGrabCh(tmp_chan)
 				// Create the worker to sort any new Urls into the  two bins
 				go runChan(tmp_chan, visited_urls, unvisit_urls, &wgt, "")
 				//fmt.Println("Lets see who to visit")
@@ -171,9 +209,8 @@ func main() {
 								// grab the Url urv
 								// Send any new urls onto tmp_chan
 								// and anything we should fetch goes on fetch_chan
-								if Grab(urv, tmp_chan, chan_fetch_push,
-									out_count,
-									dmv, grab_tk_rep) {
+								if Grab(urv, hm, out_count,
+									grab_tk_rep) {
 									// If we sucessfully grab this (get a token etc)
 									// then delete it fro the store
 									//One we haven't visited we need to run a grab on
@@ -218,15 +255,27 @@ func main() {
 				shutdown_in_progress.Lock()
 				go func() {
 					fmt.Println("Ctrl-C Detected, flush and close")
+					var closeing_wg sync.WaitGroup
+					closeing_wg.Add(1)
+					go func() {
+						unvisit_urls.Sync()
+						visited_urls.Sync()
+						unvisit_urls.Flush()
+						visited_urls.Flush()
+						closeing_wg.Done()
+					}()
 					if !grab_closer_closed {
 						close(grab_closer)
 						grab_closer_closed = true
 					}
+					// This should happen very quickly as
+					// it merely has to finish the current spawning of a go process
 					grab_wg.Wait() // Once we've closed it make sure it is closed
 					fmt.Println("Grab Closed")
 					multi_fetch.Scram()
 					fetch_wg.Wait()
 					fmt.Println("Fetch Complete")
+					closeing_wg.Wait()
 					unvisit_urls.Close()
 					visited_urls.Close()
 					shutdown_in_progress.Unlock()

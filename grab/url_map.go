@@ -189,7 +189,7 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 		//fmt.Println("Got Lock VM")
 		if um.use_disk {
 			// Get up to 100 things that aren't on the TokenChan
-			string_array := um.dkst.GetMissing(100, refr)
+			string_array := um.dkst.GetMissing(100000, refr)
 			um.RUnlock()
 			for _, v := range string_array {
 				//fmt.Println("Visit Url:", v)

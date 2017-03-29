@@ -16,13 +16,15 @@ type MultiFetch struct {
 	fifo           *UrlStore     // stored here
 	ff_map         map[string]*UrlStore
 	filename       string
+	multi_mode     bool
 }
 
-func NewMultiFetch() *MultiFetch {
+func NewMultiFetch(mm bool) *MultiFetch {
 	itm := new(MultiFetch)
 	itm.fifo = NewUrlStore()
 	itm.ff_map = make(map[string]*UrlStore)
-	if true {
+	itm.multi_mode = mm
+	if !mm {
 		itm.InChan = itm.fifo.PushChannel
 	} else {
 		itm.InChan = make(chan Url)
@@ -73,6 +75,7 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI) {
 				// This is a closed channel
 				// so all we have to do is wait for
 				// any tokens to finish
+				wt.Wait()
 				return
 			}
 			basename := GetBase(string(urf))
@@ -97,7 +100,6 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI) {
 			}
 		}
 	}
-	wt.Wait()
 }
 func (mf *MultiFetch) Worker(dv DomVisitI) {
 	var wg sync.WaitGroup
@@ -110,7 +112,7 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 	}
 	wg.Wait()
 
-	if true {
+	if !mf.multi_mode {
 		mf.single_worker(mf.fifo.PopChannel, dv)
 	} else {
 		// TBD Try this

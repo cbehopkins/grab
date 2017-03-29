@@ -3,16 +3,10 @@ package grab
 import (
 	"bufio"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"strings"
-	"time"
-
-	"net/http"
+	"golang.org/x/net/html"
 	"net/url"
 	"os"
-
-	"golang.org/x/net/html"
+	"strings"
 )
 
 type Url string
@@ -61,6 +55,9 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_cha
 	if counter != nil {
 		defer counter.Dec()
 	}
+	if close_chan {
+		defer close(the_chan)
+	}
 	if filename == "" {
 		return
 	}
@@ -87,9 +84,6 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_cha
 		the_chan <- Url(s)
 		s, e = Readln(r)
 	}
-	if close_chan {
-		close(the_chan)
-	}
 }
 func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
 	if counter != nil {
@@ -109,147 +103,23 @@ func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
 func GetBase(urls string) string {
 	ai, err := url.Parse(urls)
 	check(err)
-	return ai.Host
+	hn := ai.Hostname()
+	if hn == "http" || hn == "nats" || strings.Contains(hn, "+document.location.host+") {
+		return ""
+	} else {
+		return hn
+	}
 }
 
 // Extract all http** links from a given webpage
 func GrabT(
 	url_in Url, // The URL we are tasked with crawling
 	token_name string,
-	all_interesting, print_urls bool,
-	oc Occer,
-	dv DomVisitI,
-	ch,
-	fetch_chan chan Url,
+	hm *Hamster,
 	crawl_chan *TokenChan,
 ) {
-	// Make sure we delete the counter/marker
-	// on the tracker of the nummber of outstanding processes
-	if oc != nil {
-		defer oc.Dec()
-	}
-	// And return the crawl token for re-use
-	defer crawl_chan.PutToken(token_name)
-
-	if print_urls {
-		fmt.Printf("Analyzing UR: %s\n", url_in)
-		defer fmt.Println("Done with URL:", url_in)
-	}
-	// Flag saying we should printout
-	ai, err := url.Parse(string(url_in))
-	check(err)
-	domain_i := ai.Host
-	// Add to the list of domains we have visited (and should visit again)
-	// this current URL
-	//_ = ur.VisitedA(domain_i)
-	timeout := time.Duration(5 * time.Second)
-	client := http.Client{
-		Timeout: timeout,
-	}
-	resp, err := client.Get(string(url_in))
-
-	if err != nil {
-
-		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
-		DecodeHttpError(err)
-		return
-	}
-
-	b := resp.Body
-	defer b.Close() // Defer close to after discard
-	defer io.Copy(ioutil.Discard, b)
-	z := html.NewTokenizer(b)
-	tokenhandle(z, string(url_in), domain_i,
-		all_interesting, print_urls,
-		oc,
-		dv,
-		ch,
-		fetch_chan)
+	hm.GrabT(url_in, token_name, crawl_chan)
 }
-
-func tokenhandle(z *html.Tokenizer, url_in, domain_i string,
-	all_interesting, print_urls bool,
-	oc Occer,
-	dv DomVisitI,
-	ch,
-	fetch_chan chan Url) {
-	for {
-		tt := z.Next()
-
-		//fmt.Println("Processing token")
-
-		switch {
-		case tt == html.ErrorToken:
-			// End of the document, we're done
-			return
-		case tt == html.StartTagToken:
-			t := z.Token()
-			//fmt.Println("Start Token")
-			// Check if the token is an <a> tag
-			isAnchor := t.Data == "a"
-			if !isAnchor {
-				continue
-			}
-
-			// Extract the href value, if there is one
-			ok, linked_url := getHref(t)
-			if !ok {
-				continue
-			}
-
-			// I need to get this into an absolute URL again
-			base, err := url.Parse(string(url_in))
-			check(err)
-			u, err := url.Parse(linked_url)
-			if err != nil {
-				continue
-			}
-			linked_url_ut := base.ResolveReference(u)
-			linked_url_string := linked_url_ut.String()
-			linked_url = linked_url_string
-			if print_urls {
-				//fmt.Println("Resolved URL to:", linked_url)
-			}
-			aj, err := url.Parse(string(linked_url))
-			check(err)
-			domain_j := aj.Host
-
-			is_jpg := strings.Contains(linked_url, ".jpg")
-			if is_jpg {
-				if oc != nil {
-					oc.Add()
-				}
-				if print_urls {
-					//fmt.Printf("Found jpg:%s\n", linked_url)
-				}
-				//fmt.Println("sending to fetch")
-				if all_interesting || dv.VisitedQ(domain_j) {
-					fetch_chan <- Url(linked_url)
-					//fmt.Println("sent")
-				}
-			} else {
-
-				if all_interesting || dv.VisitedQ(domain_j) || (domain_i == domain_j) {
-					if print_urls {
-						//fmt.Printf("Interesting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
-					}
-					if oc != nil {
-						oc.Add()
-					}
-					//fmt.Printf("Send %s grab\n",linked_url)
-					ch <- Url(linked_url)
-					//fmt.Println("Sent %s to grab\n",linked_url)
-				} else {
-					if print_urls {
-						//fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
-					}
-				}
-			}
-			//}
-		} // End switch
-	}
-}
-
 func FetchW(fetch_url Url, test_jpg bool) bool {
 	// We retun true if we have used network bandwidth.
 	// If we have not then it's okay to jump straight onto the next file
@@ -297,7 +167,6 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	}
 
 	// For a file that doesn't already exist, then just fetch it
-
 	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
 	fetch_file(potential_file_name, dir_str, fetch_url)
 	return true

@@ -72,6 +72,14 @@ func (ur UrlRx) urlRxWorker() {
 	// Yet new crawls are still started
 	// Somewhere we need an infinite bufer to absorb all the incoming URLs
 	// This could be on the stack of crawl function instances, or:
+	hm := NewHamster(true, // Promiscuous
+		false, // Shallow
+		ur.AllInteresting,
+		ur.DbgUrls)
+	hm.SetDv(ur.Domv)
+	hm.SetFetchCh(ur.chan_fetch)
+	hm.SetOc(ur.OutCount)
+	hm.SetGrabCh(ur.chUrls)
 
 	for urly, ok := ur.UrlStore.Pop(); ok; urly, ok = ur.UrlStore.Pop() {
 		ok := crawled_urls.Query(urly)
@@ -87,12 +95,7 @@ func (ur UrlRx) urlRxWorker() {
 			// So we peruse through the list until we find a Url we can immediatly use
 			if ur.crawl_chan.TryGetToken(token_got) {
 				//fmt.Println("Crawl token rx for:", token_got)
-				go GrabT(urly, token_got,
-					ur.AllInteresting, ur.DbgUrls,
-					ur.OutCount,
-					ur.Domv,
-					ur.chUrls,
-					ur.chan_fetch,
+				go hm.GrabT(urly, token_got,
 					ur.crawl_chan,
 				)
 				if ur.crawl_active {
