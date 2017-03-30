@@ -27,9 +27,11 @@ func (tc *TokenChan) SetAutoFill() {
 
 func (tc *TokenChan) qToken(basename string) bool {
 	cnt, ok := tc.open_tokens[basename]
+	// Return true until there is a token available
+	//log.Printf("Token %s, cnt %d, ok %v",basename, cnt,ok)
 	if ok && (cnt >= tc.max_cnt) {
 		// If we have reached the limit
-		return false
+		return true
 	}
 	return ok
 }

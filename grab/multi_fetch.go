@@ -87,7 +87,7 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 				wt.Wait()
 				return
 			}
-			basename := GetBase(string(urf))
+			basename := urf.Base()
 			if basename != "" && dv.VisitedQ(basename) {
 				wt.GetTok()
 				go func() {
@@ -164,7 +164,7 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	oc.Dec()
 	for urli := range mf.InChan {
 		// work out what the basename of the fetch is
-		basename := GetBase(string(urli))
+		basename := urli.Base()
 		// Check to see if there is an entry for this basename already
 		ff, ok := mf.ff_map[basename]
 		// Create one if needed

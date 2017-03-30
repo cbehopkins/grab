@@ -34,7 +34,9 @@ func (dv DomVisit) Exist(str string) bool {
 	return ok
 }
 func base_it(str string) string {
-	if str == "" {return ""}
+	if str == "" {
+		return ""
+	}
 	// This MUST only have the basename passed to it
 	re := regexp.MustCompile("([a-zA-Z0-9_\\-\\.]*?)([a-zA-Z0-9_\\-]+\\.\\w+)/?$")
 	t1 := re.FindStringSubmatch(str)

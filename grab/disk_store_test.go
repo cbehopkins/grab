@@ -35,12 +35,12 @@ func RandStringBytesMaskImprSrc(n int) string {
 }
 func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
 	for v, _ := range backup_hash {
-		if !dkst.Exist(Url(v)) {
+		if !dkst.Exist(NewUrl(v)) {
 			log.Fatal("Error, missing key from disk", v)
 		}
 	}
 	for v := range dkst.VisitAll() {
-		_, ok := backup_hash[string(v)]
+		_, ok := backup_hash[v.Url()]
 		if !ok {
 			log.Fatal("Error, extra key in disk", v)
 		}
@@ -55,7 +55,7 @@ func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max
 		if !ok {
 			// make sure if doesn't exist in backup_hash
 			// then it doesn't in the store
-			if dkst.Exist(Url(tst_string)) {
+			if dkst.Exist(NewUrl(tst_string)) {
 				log.Fatalf("%s is in dkst, but not in bakup\n", tst_string)
 			}
 		} else {
@@ -123,7 +123,7 @@ func TestDiskPersist0(t *testing.T) {
 }
 func TestDiskPersist1(t *testing.T) {
 	max_str_len := 256
-	num_entries := 100000
+	num_entries := 1000
 	dkst := NewUrlMap("/tmp/test.gkvlite", true)
 	backup_hash := make(map[string]struct{})
 
@@ -131,7 +131,7 @@ func TestDiskPersist1(t *testing.T) {
 	for i := 0; i < num_entries; i++ {
 		str_len := rand.Int31n(int32(max_str_len)) + 1
 		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		dkst.Set(Url(tst_string))
+		dkst.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
 	dkst.checkStore(backup_hash, num_entries, max_str_len)
@@ -155,7 +155,7 @@ func TestDiskPersist2(t *testing.T) {
 	for i := 0; i < num_entries; i++ {
 		str_len := rand.Int31n(int32(max_str_len)) + 1
 		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		dkst.Set(Url(tst_string))
+		dkst.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
 	dkst.checkStore(backup_hash, num_entries, max_str_len)
@@ -171,7 +171,7 @@ func TestDiskPersist2(t *testing.T) {
 	for i := 0; i < num_entries; i++ {
 		str_len := rand.Int31n(int32(max_str_len)) + 1
 		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		dkst1.Set(Url(tst_string))
+		dkst1.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
@@ -224,9 +224,9 @@ func TestDiskStore2(t *testing.T) {
 	var url_0 Url
 	var url_1 Url
 	var url_2 Url
-	url_0 = "http://here.com"
-	url_1 = "http://there.com"
-	url_2 = "http://nowhere.com"
+	url_0 = NewUrl("http://here.com")
+	url_1 = NewUrl("http://there.com")
+	url_2 = NewUrl("http://nowhere.com")
 	if dkst.Size() > 0 {
 		log.Fatal("Bigger than zero")
 	}

@@ -88,7 +88,7 @@ func (ur UrlRx) urlRxWorker() {
 			//	fmt.Println("Receive URL to crawl", url)
 			//}
 			//fmt.Println("This url needs crawling")
-			token_got := GetBase(string(urly))
+			token_got := urly.Base()
 
 			crawled_urls.Add(urly)
 			// Annoyingly there is a tendancy for URLs for one site to clump together
@@ -99,7 +99,7 @@ func (ur UrlRx) urlRxWorker() {
 					ur.crawl_chan,
 				)
 				if ur.crawl_active {
-					fmt.Fprintf(ur.file, "%s\n", string(urly))
+					fmt.Fprintf(ur.file, "%s\n", urly.Url())
 				}
 			} else {
 				// We could not immediatly get a token for this

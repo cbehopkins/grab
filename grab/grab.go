@@ -74,7 +74,7 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_cha
 		if inc_count {
 			counter.Add()
 		}
-		the_chan <- Url(s)
+		the_chan <- NewUrl(s)
 		s, e = Readln(r)
 	}
 }
@@ -116,7 +116,7 @@ func GrabT(
 func FetchW(fetch_url Url, test_jpg bool) bool {
 	// We retun true if we have used network bandwidth.
 	// If we have not then it's okay to jump straight onto the next file
-	array := strings.Split(string(fetch_url), "/")
+	array := strings.Split(fetch_url.Url(), "/")
 
 	var fn string
 	if len(array) > 2 {
@@ -124,7 +124,7 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	} else {
 		return false
 	}
-	if strings.HasPrefix(string(fetch_url), "file") {
+	if strings.HasPrefix(fetch_url.Url(), "file") {
 		return false
 	}
 

@@ -123,7 +123,7 @@ func toBa(st interface{}) []byte {
 	return bs
 }
 func (v Url) ToBa() []byte {
-	return []byte(v)
+	return []byte(v.Url())
 }
 func (st *DkStore) SetAny(key, val interface{}) {
 	key_bs := toBa(key)

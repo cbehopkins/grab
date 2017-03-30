@@ -93,7 +93,7 @@ func (hm *Hamster) GrabT(
 	}
 	// And return the crawl token for re-use
 	defer crawl_chan.PutToken(token_name)
-	if !hm.dv.GoodUrl(string(url_in)) {
+	if !hm.dv.GoodUrl(url_in.Url()) {
 		fmt.Printf("%s is not a Good Url\n", url_in)
 		return
 	}
@@ -103,7 +103,7 @@ func (hm *Hamster) GrabT(
 	defer fmt.Println("Done with URL:", url_in)
 	//}
 	// Flag saying we should printout
-	ai, err := url.Parse(string(url_in))
+	ai, err := url.Parse(url_in.Url())
 	check(err)
 	domain_i := ai.Host
 	// Add to the list of domains we have visited (and should visit again)
@@ -115,10 +115,10 @@ func (hm *Hamster) GrabT(
 	}
 
 	fmt.Println("Getting:", url_in)
-	resp, err := client.Get(string(url_in))
+	resp, err := client.Get(url_in.Url())
 
 	if err != nil {
-		fmt.Println("ERROR: Failed to crawl \"" + url_in + "\"")
+		fmt.Println("ERROR: Failed to crawl \"" + url_in.Url() + "\"")
 		DecodeHttpError(err)
 		return
 	}
@@ -127,12 +127,12 @@ func (hm *Hamster) GrabT(
 	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
 	z := html.NewTokenizer(b)
-	hm.tokenhandle(z, string(url_in), domain_i)
+	hm.tokenhandle(z, url_in.Url(), domain_i)
 
 }
 func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 	// I need to get this into an absolute URL again
-	base, err := url.Parse(string(url_in))
+	base, err := url.Parse(url_in)
 	check(err)
 	u, err := url.Parse(linked_url)
 	if err != nil {
@@ -165,7 +165,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 		}
 		//fmt.Println("sending to fetch")
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			hm.fetch_chan <- Url(linked_url)
+			hm.fetch_chan <- NewUrl(linked_url)
 			//fmt.Println("sent")
 		}
 
@@ -181,14 +181,14 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 		}
 		fmt.Println("MPG found:", linked_url)
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			hm.fetch_chan <- Url(linked_url)
+			hm.fetch_chan <- NewUrl(linked_url)
 			//fmt.Println("sent", linked_url)
 		}
 	default:
 		if hm.promiscuous || hm.shallow {
 			if hm.all_interesting || hm.dv.VisitedQ(domain_j) || (domain_i == domain_j) {
 				if hm.print_urls {
-				fmt.Printf("Interesting url, %s, %s, %s, %s\n", domain_i, domain_j, linked_url, url_in)
+					fmt.Printf("Interesting url, %s, %s, %s, %s\n", domain_i, domain_j, linked_url, url_in)
 				}
 				if !hm.dv.GoodUrl(url_in) {
 					return
@@ -197,7 +197,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 					hm.oc.Add()
 				}
 				//fmt.Printf("Send %s grab\n", linked_url)
-				hm.grab_ch <- Url(linked_url)
+				hm.grab_ch <- NewUrl(linked_url)
 				//fmt.Println("Sent %s to grab\n",linked_url)
 
 				if hm.print_urls {
@@ -226,7 +226,7 @@ func (hm *Hamster) anchorProc(t html.Token,
 
 }
 func resolveUrl(url_in string) string {
-	base, err := url.Parse(string(url_in))
+	base, err := url.Parse(url_in)
 	if err != nil {
 		return ""
 	}

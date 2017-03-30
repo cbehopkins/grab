@@ -122,7 +122,7 @@ func (um *UrlMap) VisitAll() chan Url {
 		if um.use_disk {
 			for v := range um.dkst.GetStringKeys() {
 				//fmt.Println("Visit Url:", v)
-				ret_chan <- Url(v)
+				ret_chan <- NewUrl(v)
 			}
 			um.RUnlock()
 
@@ -157,7 +157,7 @@ func (um *UrlMap) Visit() chan Url {
 			um.RUnlock()
 			for _, v := range string_array {
 				//fmt.Println("Visit Url:", v)
-				ret_chan <- Url(v)
+				ret_chan <- NewUrl(v)
 			}
 
 		} else {
@@ -193,7 +193,7 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 			um.RUnlock()
 			for _, v := range string_array {
 				//fmt.Println("Visit Url:", v)
-				ret_chan <- Url(v)
+				ret_chan <- NewUrl(v)
 			}
 
 		} else {

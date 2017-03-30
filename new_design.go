@@ -38,7 +38,7 @@ func runChan(input_chan <-chan grab.Url, visited_urls, unvisit_urls *grab.UrlMap
 }
 func Grab(urs grab.Url, hm *grab.Hamster, out_count *grab.OutCounter, crawl_chan *grab.TokenChan) bool {
 
-	token_got := grab.GetBase(string(urs))
+	token_got := grab.GetBase(urs.Url())
 
 	if crawl_chan.TryGetToken(token_got) {
 		fmt.Println("Grab:", urs)
@@ -126,7 +126,7 @@ func main() {
 	wg.Add(1) // one for badUrls
 	go func() {
 		for itm := range chUrlsb {
-			dmv.AddBad(string(itm))
+			dmv.AddBad(itm.Url())
 		}
 		wg.Done()
 	}()
@@ -140,7 +140,7 @@ func main() {
 		for itm := range chUrlsi {
 			fmt.Println("SeedURL:", itm)
 
-			domain_i := grab.GetBase(string(itm))
+			domain_i := grab.GetBase(itm.Url())
 			if domain_i != "" {
 				_ = dmv.VisitedA(domain_i)
 				if shallow {

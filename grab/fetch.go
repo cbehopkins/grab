@@ -85,7 +85,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 
 	defer out.Close()
 
-	if fetch_url == "" {
+	if fetch_url.Url() == "" {
 		//fmt.Println("null fetch")
 		return
 	}
@@ -93,7 +93,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	client := http.Client{
 		Timeout: timeout,
 	}
-	resp, err := client.Get(string(fetch_url))
+	resp, err := client.Get(fetch_url.Url())
 	// TBD Add error handling here
 	if err != nil {
 		return
@@ -173,16 +173,16 @@ func (f *Fetcher) SetRunDownload(vary bool) {
 }
 func (f Fetcher) Fetch(fetch_url Url) bool {
 
-	n_url := strings.Replace(string(fetch_url), "\n", "", -1)
-	fetch_url = Url(n_url)
-	if strings.HasSuffix(string(fetch_url), "/") {
-		fetch_url_htm := fetch_url + "index.htm"
+	n_url := strings.Replace(fetch_url.Url(), "\n", "", -1)
+	fetch_url = NewUrl(n_url)
+	if strings.HasSuffix(fetch_url.Url(), "/") {
+		fetch_url_htm := NewUrl(fetch_url.Url() + "index.htm")
 		fmt.Printf("Trying to fetch %s with htm extension\n", fetch_url_htm)
 		if FetchW(fetch_url_htm, f.test_jpg) {
 			return true
 		} else {
 			// Try again with the .html extension
-			fetch_url_htm += "l"
+			fetch_url_htm = NewUrl(fetch_url_htm.Url() + "l")
 			fmt.Printf("That clearly failed, Trying to fetch %s with html extension\n", fetch_url_htm)
 			return FetchW(fetch_url_htm, f.test_jpg)
 		}
@@ -221,10 +221,10 @@ func (f Fetcher) FetchReceiver() {
 			// Two tokens are needed to proceed
 			// The first is to make sure in no circumstances do we have nore than N trying to process stuff
 			// i.e. that there are not too many things happening at once
-			//fetch_sim_chan.GetToken(getBase(string(fetch_url)))
+			//fetch_sim_chan.GetToken(getBase(fetch_url.Url()))
 
 			// The second token is rate limiting making sure we don't make a request too frequently
-			f.fetch_token_chan.GetToken(GetBase(string(fetch_url)))
+			f.fetch_token_chan.GetToken(fetch_url.Base())
 			go func(f_url Url) {
 				// When we're done then always return the simultaneous limit token
 				//defer fetch_sim_chan.PutToken(getBase(string(f_url)))
@@ -236,17 +236,17 @@ func (f Fetcher) FetchReceiver() {
 					used_network = f.Fetch(f_url)
 				}
 				if f.factive {
-					fmt.Fprintf(f.file, "%s\n", string(f_url))
+					fmt.Fprintf(f.file, "%s\n", f_url.Url())
 				}
 				// If we have not used the network then return the Rate lmit token
 				if !used_network {
 					//fmt.Println("Not used fetch token, returning")
 					// Tries to put the token if there is space available
 					// otherwise doesn't do anything - avoids locking
-					f.fetch_token_chan.TryPutToken(GetBase(string(f_url)))
+					f.fetch_token_chan.TryPutToken(f_url.Base())
 				} else {
 					// PutToken puts it back if in the right mode
-					f.fetch_token_chan.PutToken(GetBase(string(f_url)))
+					f.fetch_token_chan.PutToken(f_url.Base())
 				}
 				f.out_count.Dec()
 			}(fetch_url)

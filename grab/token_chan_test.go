@@ -148,7 +148,7 @@ func TestTok5(t *testing.T) {
 func TestTok6(t *testing.T) {
 	var wg sync.WaitGroup
 	domains := []string{"bob", "fred", "steve", "wibble"}
-	locks := make([]int, 4)
+	locks := make([]int, len(domains))
 
 	tks := NewTokenChan(0, 0, "")
 	for i := 0; i < 100; i++ {
@@ -157,11 +157,11 @@ func TestTok6(t *testing.T) {
 			rand_tok := rand.Intn(4)
 			token_act := domains[rand_tok]
 			tks.GetToken(token_act)
-			log.Println("Got another token for ", token_act)
+			//log.Println("Got a token for ", token_act)
 			if locks[rand_tok] == 0 {
 				locks[rand_tok] = 1
 			} else {
-				log.Fatal("Bugger, someone else messed with it while we had the lock")
+				log.Fatal("Bugger, We've been given the lock for someone else's data")
 			}
 			yourTime := rand.Int31n(1000)
 			time.Sleep(time.Duration(yourTime) * time.Millisecond)
@@ -173,7 +173,7 @@ func TestTok6(t *testing.T) {
 			}
 
 			tks.PutToken(token_act)
-			log.Println("Returned ", token_act)
+			//log.Println("Returned ", token_act)
 			wg.Done()
 		}()
 	}

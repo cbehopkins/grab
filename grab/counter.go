@@ -54,7 +54,7 @@ func (oc OutCounter) Dec() {
 	}
 	oc.op.sm.Unlock()
 }
-func (oc OutCounter) initDc () {
+func (oc OutCounter) initDc() {
 	if oc.op.DoneChan == nil {
 		tc := make(chan struct{})
 		oc.op.DoneChan = tc

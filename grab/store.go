@@ -109,7 +109,7 @@ func (us UrlStore) peek_store() Url {
 		value := data_store[location]
 		return value
 	} else {
-		return ""
+		return NewUrl("")
 	}
 }
 
