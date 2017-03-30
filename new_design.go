@@ -38,7 +38,7 @@ func runChan(input_chan <-chan grab.Url, visited_urls, unvisit_urls *grab.UrlMap
 }
 func Grab(urs grab.Url, hm *grab.Hamster, out_count *grab.OutCounter, crawl_chan *grab.TokenChan) bool {
 
-	token_got := grab.GetBase(urs.Url())
+	token_got := urs.Base()
 
 	if crawl_chan.TryGetToken(token_got) {
 		fmt.Println("Grab:", urs)
@@ -134,19 +134,19 @@ func main() {
 	go func() {
 		var grab_tk_rep *grab.TokenChan
 		if shallow {
-		grab_tk_rep = grab.NewTokenChan(0, num_p_fetch, "shallow")
-		hm.SetGrabCh(src_url_chan)
+			grab_tk_rep = grab.NewTokenChan(0, num_p_fetch, "shallow")
+			hm.SetGrabCh(src_url_chan)
 		}
 		for itm := range chUrlsi {
 			fmt.Println("SeedURL:", itm)
 
-			domain_i := grab.GetBase(itm.Url())
+			domain_i := itm.Base()
 			if domain_i != "" {
 				_ = dmv.VisitedA(domain_i)
 				if shallow {
 					// For shallow - thoroughly crawl all the seeds
 					// But once that's done, switch shallow off
-					hm.GrabT(itm, // The URL we are tasked with crawling	
+					hm.GrabT(itm, // The URL we are tasked with crawling
 						"",
 						grab_tk_rep,
 					)

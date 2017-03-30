@@ -2,6 +2,7 @@ package grab
 
 type Url struct {
 	url string
+	title string
 }
 
 func NewUrl(ur string) (ret Url) {
@@ -24,4 +25,10 @@ func (u Url) String() string {
 }
 func (u Url) Base() string {
 	return GetBase(u.Url())
+}
+func (u *Url) SetTitle (tt string) {
+	u.title = tt
+}
+func (u Url) GetTitle() string {
+	return u.title
 }

@@ -89,7 +89,7 @@ func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
 	check(err)
 	defer f.Close()
 	for v := range the_chan {
-		fmt.Fprintf(f, "%s\n", v)
+		fmt.Fprintf(f, "%s\n", v.Url())
 
 	}
 }
@@ -141,10 +141,19 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	fn = strings.Replace(fn, "&", "_", -1)
 	fn = strings.Replace(fn, "?", "_", -1)
 	fn = strings.Replace(fn, "=", "_", -1)
+	
 	re := regexp.MustCompile("(.*\\.jpg)(.*)")
 	t1 := re.FindStringSubmatch(fn)
 	if len(t1) > 1 {
 		fn = t1[1]
+	}
+	page_title := fetch_url.GetTitle()
+	if page_title != "" {
+		page_title= strings.Replace(page_title, "/", "_", -1)
+		if strings.HasSuffix(fn, ".mp4") {
+			fn = page_title + ".mp4"
+			fmt.Println("Title set, so set filename to:",fn)
+		}
 	}
 	potential_file_name := dir_str + "/" + fn
 	if strings.HasPrefix(potential_file_name, "/") {
