@@ -3,20 +3,13 @@ package grab
 import (
 	"bufio"
 	"fmt"
-	"golang.org/x/net/html"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
+
+	"golang.org/x/net/html"
 )
-
-type Url string
-type UrlChannel chan Url
-
-func NewUrlChannel() *UrlChannel {
-	var itm UrlChannel
-	itm = make(UrlChannel)
-	return &itm
-}
 
 func check(err error) {
 	if err != nil {
@@ -148,6 +141,11 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	fn = strings.Replace(fn, "&", "_", -1)
 	fn = strings.Replace(fn, "?", "_", -1)
 	fn = strings.Replace(fn, "=", "_", -1)
+	re := regexp.MustCompile("(.*\\.jpg)(.*)")
+	t1 := re.FindStringSubmatch(fn)
+	if len(t1) > 1 {
+		fn = t1[1]
+	}
 	potential_file_name := dir_str + "/" + fn
 	if strings.HasPrefix(potential_file_name, "/") {
 		return false

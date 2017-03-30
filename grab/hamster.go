@@ -98,10 +98,10 @@ func (hm *Hamster) GrabT(
 		return
 	}
 
-	if hm.print_urls {
-		fmt.Printf("Analyzing %v,UR: %s\n", hm.shallow, url_in)
-		defer fmt.Println("Done with URL:", url_in)
-	}
+	//if hm.print_urls {
+	fmt.Printf("Analyzing UR: %s\n", url_in)
+	defer fmt.Println("Done with URL:", url_in)
+	//}
 	// Flag saying we should printout
 	ai, err := url.Parse(string(url_in))
 	check(err)
@@ -113,6 +113,8 @@ func (hm *Hamster) GrabT(
 	client := http.Client{
 		Timeout: timeout,
 	}
+
+	fmt.Println("Getting:", url_in)
 	resp, err := client.Get(string(url_in))
 
 	if err != nil {
@@ -126,9 +128,7 @@ func (hm *Hamster) GrabT(
 	defer io.Copy(ioutil.Discard, b)
 	z := html.NewTokenizer(b)
 	hm.tokenhandle(z, string(url_in), domain_i)
-	// After we have done the first page, then turn off shallow
-	// i.e. fetch no new Urls
-	hm.shallow = false
+
 }
 func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 	// I need to get this into an absolute URL again
@@ -136,15 +136,17 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 	check(err)
 	u, err := url.Parse(linked_url)
 	if err != nil {
+		fmt.Println("Unable to parse url,", u)
 		return
 	}
 	linked_url_string := base.ResolveReference(u).String()
 	linked_url = linked_url_string
-	if hm.print_urls {
-		fmt.Println("Resolved URL to:", linked_url)
-	}
+	//if hm.print_urls {
+	//fmt.Println("Resolved URL to:", linked_url)
+	//}
 	domain_j := GetBase(linked_url)
 	if domain_j == "" {
+		//fmt.Println("Unable to get base,", linked_url)
 		return
 	}
 
@@ -177,15 +179,16 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 		if is_avi {
 			linked_url = strings.TrimLeft(linked_url, ".avi")
 		}
+		fmt.Println("MPG found:", linked_url)
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
 			hm.fetch_chan <- Url(linked_url)
-			fmt.Println("sent", linked_url)
+			//fmt.Println("sent", linked_url)
 		}
 	default:
 		if hm.promiscuous || hm.shallow {
 			if hm.all_interesting || hm.dv.VisitedQ(domain_j) || (domain_i == domain_j) {
 				if hm.print_urls {
-					fmt.Printf("Interesting url, %s, %s, %s, %s\n", domain_i, domain_j, linked_url, url_in)
+				fmt.Printf("Interesting url, %s, %s, %s, %s\n", domain_i, domain_j, linked_url, url_in)
 				}
 				if !hm.dv.GoodUrl(url_in) {
 					return
@@ -193,7 +196,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string) {
 				if hm.oc != nil {
 					hm.oc.Add()
 				}
-				//fmt.Printf("Send %s grab\n",linked_url)
+				//fmt.Printf("Send %s grab\n", linked_url)
 				hm.grab_ch <- Url(linked_url)
 				//fmt.Println("Sent %s to grab\n",linked_url)
 
@@ -212,6 +215,7 @@ func (hm *Hamster) anchorProc(t html.Token,
 
 	// Extract the href value, if there is one
 	ok, linked_url := getHref(t)
+	//fmt.Println("Found a linked url:", linked_url)
 	if !ok {
 		return
 	}

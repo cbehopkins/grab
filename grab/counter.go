@@ -48,19 +48,19 @@ func (oc OutCounter) Dec() {
 	}
 	oc.op.Count--
 	if oc.op.Count == 0 {
-		if oc.op.DoneChan == nil {
-			tc := make(chan struct{})
-			oc.op.DoneChan = tc
-		}
+		oc.initDc()
 		oc.op.closed = true
 		close(oc.op.DoneChan)
 	}
 	oc.op.sm.Unlock()
 }
-func (oc OutCounter) Wait() {
+func (oc OutCounter) initDc () {
 	if oc.op.DoneChan == nil {
 		tc := make(chan struct{})
 		oc.op.DoneChan = tc
 	}
+}
+func (oc OutCounter) Wait() {
+	oc.initDc()
 	<-oc.op.DoneChan
 }

@@ -89,7 +89,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 		//fmt.Println("null fetch")
 		return
 	}
-	timeout := time.Duration(5 * time.Second)
+	timeout := time.Duration(10 * time.Minute)
 	client := http.Client{
 		Timeout: timeout,
 	}
@@ -186,7 +186,6 @@ func (f Fetcher) Fetch(fetch_url Url) bool {
 			fmt.Printf("That clearly failed, Trying to fetch %s with html extension\n", fetch_url_htm)
 			return FetchW(fetch_url_htm, f.test_jpg)
 		}
-
 	}
 	return FetchW(fetch_url, f.test_jpg)
 }
