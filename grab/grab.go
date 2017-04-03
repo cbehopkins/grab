@@ -2,6 +2,7 @@ package grab
 
 import (
 	"bufio"
+	"encoding/gob"
 	"fmt"
 	"net/url"
 	"os"
@@ -90,11 +91,71 @@ func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
 	defer f.Close()
 	for v := range the_chan {
 		fmt.Fprintf(f, "%s\n", v.Url())
+	}
+}
+func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan, inc_count bool) {
+	if counter != nil {
+		defer counter.Dec()
+	}
+	if close_chan {
+		defer close(the_chan)
+	}
+	if filename == "" {
+		return
+	}
+	f, err := os.Open(filename)
+	if err == os.ErrNotExist {
+		return
+	} else if err != nil {
+		if os.IsNotExist(err) {
+			return
+		} else {
+			fmt.Printf("error opening file: %T\n", err)
+			os.Exit(1)
+			return
+		}
+	}
+	defer os.Remove(filename)
+	defer f.Close()
+	fi, err := f.Stat()
+	check(err)
+	if fi.Size() > 1 {
+		fmt.Println("Opened filename:%s,%d", filename, fi.Size())
+		buff := make([]Url, 0)
+		dec := gob.NewDecoder(f)
+		err = dec.Decode(&buff)
+		check(err)
+		for _, v := range buff {
+			the_chan <- v
+		}
 
 	}
 }
+func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
+	if counter != nil {
+		defer counter.Dec()
+	}
+	if filename == "" {
+		return
+	}
+	f, err := os.Create(filename)
+	check(err)
+	defer f.Close()
+	buff := make([]Url, 0)
+	fmt.Println("Start bufferring")
+	for v := range the_chan {
+		buff = append(buff, v)
+	}
+	fmt.Println("Finished buffering")
+	enc := gob.NewEncoder(f)
+	err = enc.Encode(buff)
+	fmt.Println("Finished gobbing")
+	check(err)
+}
 func GetBase(urls string) string {
-	ai, err := url.Parse(urls)
+	var ai *url.URL
+	var err error
+	ai, err = url.Parse(urls)
 	check(err)
 	hn := ai.Hostname()
 	if hn == "http" || hn == "nats" || strings.Contains(hn, "+document.location.host+") {
@@ -137,11 +198,7 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	dir_str = strings.Replace(dir_str, "&", "_", -1)
 	dir_str = strings.Replace(dir_str, "?", "_", -1)
 	dir_str = strings.Replace(dir_str, "=", "_", -1)
-	fn = strings.Replace(fn, "%", "_", -1)
-	fn = strings.Replace(fn, "&", "_", -1)
-	fn = strings.Replace(fn, "?", "_", -1)
-	fn = strings.Replace(fn, "=", "_", -1)
-	
+
 	re := regexp.MustCompile("(.*\\.jpg)(.*)")
 	t1 := re.FindStringSubmatch(fn)
 	if len(t1) > 1 {
@@ -149,12 +206,20 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	}
 	page_title := fetch_url.GetTitle()
 	if page_title != "" {
-		page_title= strings.Replace(page_title, "/", "_", -1)
+		page_title = strings.Replace(page_title, "/", "_", -1)
 		if strings.HasSuffix(fn, ".mp4") {
 			fn = page_title + ".mp4"
-			fmt.Println("Title set, so set filename to:",fn)
+			fmt.Println("Title set, so set filename to:", fn)
 		}
 	}
+	fn = strings.Replace(fn, "%", "_", -1)
+	fn = strings.Replace(fn, "&", "_", -1)
+	fn = strings.Replace(fn, "?", "_", -1)
+	fn = strings.Replace(fn, "=", "_", -1)
+	fn = strings.Replace(fn, "\"", "_", -1)
+	fn = strings.Replace(fn, "'", "_", -1)
+	fn = strings.Replace(fn, "!", "_", -1)
+	fn = strings.Replace(fn, ",", "_", -1)
 	potential_file_name := dir_str + "/" + fn
 	if strings.HasPrefix(potential_file_name, "/") {
 		return false

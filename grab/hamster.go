@@ -98,10 +98,10 @@ func (hm *Hamster) GrabT(
 		return
 	}
 
-	//if hm.print_urls {
-	fmt.Printf("Analyzing UR: %s\n", url_in)
-	defer fmt.Println("Done with URL:", url_in)
-	//}
+	if hm.print_urls {
+		fmt.Printf("Analyzing UR: %s\n", url_in)
+		defer fmt.Println("Done with URL:", url_in)
+	}
 	// Flag saying we should printout
 	domain_i := url_in.Base()
 	// Add to the list of domains we have visited (and should visit again)
@@ -112,7 +112,7 @@ func (hm *Hamster) GrabT(
 		Timeout: timeout,
 	}
 
-	fmt.Println("Getting:", url_in)
+	//fmt.Println("Getting:", url_in)
 	resp, err := client.Get(url_in.Url())
 
 	if err != nil {
@@ -124,11 +124,12 @@ func (hm *Hamster) GrabT(
 	b := resp.Body
 	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
+	//fmt.Println("Tokenizing:",url_in)
 	z := html.NewTokenizer(b)
 	hm.tokenhandle(z, url_in.Url(), domain_i)
-
+	//fmt.Println("Tokenized:",url_in)
 }
-func (hm *Hamster) urlProc(linked_url, url_in, domain_i string,title_text string) {
+func (hm *Hamster) urlProc(linked_url, url_in, domain_i string, title_text string) {
 	// I need to get this into an absolute URL again
 	base, err := url.Parse(url_in)
 	check(err)
@@ -168,21 +169,12 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string,title_text string
 		}
 
 	case is_mpg, is_mp4, is_avi:
-		//if is_mpg {
-		//	linked_url = strings.TrimLeft(linked_url, ".mpg")
-		//}
-		//if is_mp4 {
-		//	linked_url = strings.TrimLeft(linked_url, ".mp4")
-		//}
-		//if is_avi {
-		//	linked_url = strings.TrimLeft(linked_url, ".avi")
-		//}
-		fmt.Println("MPG found:", linked_url)
+		//fmt.Println("MPG found:", linked_url)
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
 			tmp_ur := NewUrl(linked_url)
 			tmp_ur.SetTitle(title_text)
 			hm.fetch_chan <- tmp_ur
-			//fmt.Println("sent", linked_url)
+			fmt.Println("sent", linked_url)
 		}
 	default:
 		if hm.promiscuous || hm.shallow {
@@ -211,19 +203,19 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string,title_text string
 }
 func (hm *Hamster) anchorProc(t html.Token,
 	url_in string,
-	domain_i string,title_text string) {
+	domain_i string, title_text string) {
 
 	// Extract the href value, if there is one
 	ok, linked_url := getHref(t)
 	//fmt.Println("Found a linked url:", linked_url)
+	//defer fmt.Println("Finsihed with linked url:", linked_url)
 	if !ok {
 		return
 	}
 	if linked_url == "" {
 		return
 	}
-	hm.urlProc(linked_url, url_in, domain_i,title_text)
-
+	hm.urlProc(linked_url, url_in, domain_i, title_text)
 }
 func resolveUrl(url_in string) string {
 	base, err := url.Parse(url_in)
@@ -235,7 +227,7 @@ func resolveUrl(url_in string) string {
 func (hm *Hamster) scriptProc(t html.Token,
 	script_text string,
 	url_in string,
-	domain_i string,title_text string) {
+	domain_i string, title_text string) {
 
 	if strings.Contains(script_text, "http") {
 		re := regexp.MustCompile("'http.*'")
@@ -250,7 +242,7 @@ func (hm *Hamster) scriptProc(t html.Token,
 				linked_url := resolveUrl(t1[1])
 				if linked_url != "" {
 					//fmt.Println("URL:", linked_url)
-					hm.urlProc(linked_url, url_in, domain_i,title_text)
+					hm.urlProc(linked_url, url_in, domain_i, title_text)
 				}
 			}
 		}
@@ -276,8 +268,9 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 			// Check if the token is an <a> tag
 			isAnchor := t.Data == "a"
 			isScript := t.Data == "script"
-			isTitle  := t.Data == "title"
+			isTitle := t.Data == "title"
 			if isAnchor {
+				//fmt.Println("Found A")
 				hm.anchorProc(
 					t,
 					url_in,
@@ -285,6 +278,7 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 					title_text)
 			} // end Anchor processing
 			if isScript {
+				//fmt.Println("Found S")
 				curr_tok := t
 				next_token := z.Next()
 				if next_token == html.TextToken {
@@ -300,13 +294,14 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 				}
 			}
 			if isTitle {
+				//fmt.Println("Found T")
 				//curr_tok := t
-                                next_token := z.Next()
-                                if next_token == html.TextToken {
-                                n_t := z.Token()
-                                title_text = n_t.Data
+				next_token := z.Next()
+				if next_token == html.TextToken {
+					n_t := z.Token()
+					title_text = n_t.Data
 
-				//fmt.Println("The title of the webpage is:", title_text)
+					//fmt.Println("The title of the webpage is:", title_text)
 				}
 			}
 		} // End switch

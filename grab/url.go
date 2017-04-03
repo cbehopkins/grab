@@ -1,12 +1,12 @@
 package grab
 
 type Url struct {
-	url string
-	title string
+	UrlS  string
+	Title string
 }
 
 func NewUrl(ur string) (ret Url) {
-	ret.url = ur
+	ret.UrlS = ur
 	return ret
 }
 
@@ -18,7 +18,7 @@ func NewUrlChannel() *UrlChannel {
 	return &itm
 }
 func (u Url) Url() string {
-	return u.url
+	return u.UrlS
 }
 func (u Url) String() string {
 	return u.Url()
@@ -26,9 +26,9 @@ func (u Url) String() string {
 func (u Url) Base() string {
 	return GetBase(u.Url())
 }
-func (u *Url) SetTitle (tt string) {
-	u.title = tt
+func (u *Url) SetTitle(tt string) {
+	u.Title = tt
 }
 func (u Url) GetTitle() string {
-	return u.title
+	return u.Title
 }

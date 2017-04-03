@@ -45,7 +45,7 @@ func base_it(str string) string {
 		base = t1[2]
 	} else {
 		fmt.Printf("DomVisit Failed to parse:\"%s\"\n%v\n", str, t1)
-		panic(str)
+		//panic(str)
 	}
 	return base
 }

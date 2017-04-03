@@ -24,7 +24,8 @@ func (ds *DkStore) Sync() {
 }
 func (ds *DkStore) Close() {
 	ds.st.Flush()
-	//ds.st.Close()
+	// REVISIT - does this work?
+	ds.st.Close()
 	ds.f.Sync()
 	ds.f.Close()
 }

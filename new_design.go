@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	//"log"
 	"os"
@@ -73,19 +74,29 @@ func Grab(urs grab.Url, hm *grab.Hamster, out_count *grab.OutCounter, crawl_chan
 }
 
 func main() {
+	var mulflg = flag.Bool("multi", true, "Use multiple Fetchers")
+	var prflg = flag.Bool("prom", false, "Promiscuously Fetch everything allowed")
+	var intrflg = flag.Bool("interest", false, "All Links found are Interesting - Super promiscuous mode")
+	var dbgflg = flag.Bool("dbg", false, "Debug Mode")
+	flag.Parse()
+
 	var shutdown_in_progress sync.Mutex
 	var wg sync.WaitGroup
-	multiple_fetchers := true
-	promiscuous := false
+	multiple_fetchers := *mulflg
+	promiscuous := *prflg
+	if promiscuous {
+		fmt.Printf("*\n*\n*\n*\n*\n*\nPromiscuous mode activated*\n*\n*\n*\n*\n*\n\n")
+		<-time.After(5 * time.Second)
+	}
 	shallow := !promiscuous
-	all_interesting := false
-	debug := false
+	all_interesting := *intrflg
+	debug := *dbgflg
 	num_p_fetch := 4
 
 	visited_fname := "/tmp/visited.gkvlite"
 	unvisit_fname := "/tmp/unvisit.gkvlite"
 	url_fn := "in_urls.txt"
-	fetch_fn := "in_fetch.txt"
+	fetch_fn := "gob_fetch.txt"
 	bad_url_fn := "bad_urls.txt"
 
 	// A fetch channel that goes away and writes intersting things to disk
@@ -103,6 +114,9 @@ func main() {
 
 	// urls read from a file and command line
 	src_url_chan := make(chan grab.Url)
+	// After being read from the file they might first be crawled
+	// alternatively this channel might not really exist at all
+	var shallow_chan chan grab.Url
 	dmv := grab.NewDomVisit()
 
 	// Read from anything that adds to the new_url_chan channel
@@ -130,47 +144,70 @@ func main() {
 		}
 		wg.Done()
 	}()
+	shallow_chan = make(chan grab.Url)
 
 	go func() {
-		var grab_tk_rep *grab.TokenChan
 		if shallow {
-			grab_tk_rep = grab.NewTokenChan(0, num_p_fetch, "shallow")
-			hm.SetGrabCh(src_url_chan)
+		} else {
+			// If not in shallow mode, write direct to
+			shallow_chan = src_url_chan
 		}
+
 		for itm := range chUrlsi {
-			fmt.Println("SeedURL:", itm)
+			//fmt.Println("SeedURL:", itm)
 
 			domain_i := itm.Base()
 			if domain_i != "" {
 				_ = dmv.VisitedA(domain_i)
-				if shallow {
-					// For shallow - thoroughly crawl all the seeds
-					// But once that's done, switch shallow off
-					hm.GrabT(itm, // The URL we are tasked with crawling
-						"",
-						grab_tk_rep,
-					)
-				} else {
-					src_url_chan <- itm
-				}
+				shallow_chan <- itm
 			}
 		}
-		close(src_url_chan)
+		fmt.Println("chUrlsi seen closed")
+		close(shallow_chan)
 
 	}()
-
+	wg.Add(1) // one for shallow
+	go func() {
+		if shallow {
+			hms := grab.NewHamster(
+				promiscuous,
+				shallow,
+				all_interesting,
+				debug, // Print Urls
+			)
+			hms.SetDv(dmv)
+			hms.SetFetchCh(chan_fetch_push)
+			var grab_tk_rep *grab.TokenChan
+			grab_tk_rep = grab.NewTokenChan(0, num_p_fetch, "shallow")
+			hms.SetGrabCh(src_url_chan)
+			for itm := range shallow_chan {
+				//fmt.Println("Shallow Grab:", itm)
+				hms.GrabT(
+					itm, // The URL we are tasked with crawling
+					"",
+					grab_tk_rep,
+				)
+				//fmt.Println("Grabbed:",itm)
+			}
+			// We close it now because after a shallow crawl
+			// there should be no new URLs added to be crawled
+			close(src_url_chan)
+		}
+		wg.Done()
+	}()
 	// Ensure they have written unto the queues first
+	go func() {
+		multi_fetch.SetFileName(fetch_fn)
+		// TODO come up with a way to defer worker start
+		// That still accepts things into the queue
+		multi_fetch.Worker(dmv)
+		fetch_wg.Done()
+	}()
 	wg.Wait()
 	fmt.Println("Run Seeded")
 	hm.ClearShallow()
 	fetch_wg.Add(1)
 
-	go func() {
-		multi_fetch.SetFileName(fetch_fn)
-		multi_fetch.Worker(dmv)
-		fetch_wg.Done()
-
-	}()
 	var grab_wg sync.WaitGroup
 	grab_wg.Add(1)
 	// So here we want to pop things off the unvisited map
@@ -271,10 +308,10 @@ func main() {
 					//var closing_wg sync.WaitGroup
 					//closing_wg.Add(1)
 					//go func() {
-					//	unvisit_urls.Sync()
-					//	visited_urls.Sync()
-					//	unvisit_urls.Flush()
-					//	visited_urls.Flush()
+					unvisit_urls.Flush()
+					visited_urls.Flush()
+					unvisit_urls.Sync()
+					visited_urls.Sync()
 					//	closing_wg.Done()
 					//}()
 					if !grab_closer_closed {

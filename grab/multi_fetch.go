@@ -58,7 +58,7 @@ func (mf *MultiFetch) Close() {
 func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 
 	scram_in_progres := false
-	wt := NewWkTok(10)
+	wt := NewWkTok(4)
 
 	for {
 		select {
@@ -104,7 +104,7 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 					// Implement a timeout on the Fetch Work
 					select {
 					case <-tchan:
-					case <-time.After(10 * time.Minute):
+					case <-time.After(20 * time.Minute):
 						log.Fatal("We needed to use the timeout case, this is bad!")
 					}
 					// If not used network then return the token immediatly
@@ -119,7 +119,7 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 	if mf.filename != "" {
 		wg.Add(1)
 		go func() {
-			LoadFile(mf.filename, mf.fifo.PushChannel, nil, false, false)
+			LoadGob(mf.filename, mf.fifo.PushChannel, nil, false, false)
 			wg.Done()
 		}()
 	}
@@ -150,11 +150,11 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 
 }
 func (mf *MultiFetch) scram_multi() {
-	SaveFile(mf.filename, mf.dump_chan, nil)
+	SaveGob(mf.filename, mf.dump_chan, nil)
 	fmt.Println("Fetch saved")
 }
 func (mf *MultiFetch) scram() {
-	SaveFile(mf.filename, mf.fifo.PopChannel, nil)
+	SaveGob(mf.filename, mf.fifo.PopChannel, nil)
 	fmt.Println("Fetch saved")
 }
 func (mf *MultiFetch) dispatch(dv DomVisitI) {
