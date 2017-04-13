@@ -13,14 +13,13 @@ import (
 // any algorithm that fundamentally 1 worker can create N more items
 type UrlStore struct {
 	//sync.Mutex
-	data          *[]Url
-	PushChannel   UrlChannel
-	PopChannel    UrlChannel
-	enforce_order bool
-	InCount       int
-	OutCount      int
-	FifoP         FifoProto
-	debug         bool
+	data        *[]Url
+	PushChannel UrlChannel
+	PopChannel  UrlChannel
+	inCount     int
+	outCount    int
+	fifoP       FifoProto
+	debug       bool
 }
 
 func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
@@ -28,7 +27,7 @@ func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 	ini_size := 8
 	tmp_store := make([]Url, ini_size)
 	itm.data = &tmp_store
-	itm.FifoP.SetCap(ini_size)
+	itm.fifoP.SetCap(ini_size)
 	itm.PopChannel = make(chan Url, 2)
 	for _, in_if := range in_if_arr {
 		switch in_if.(type) {
@@ -36,9 +35,6 @@ func NewUrlStore(in_if_arr ...interface{}) *UrlStore {
 			itm.PushChannel = in_if.(chan Url)
 		case UrlChannel:
 			itm.PushChannel = in_if.(UrlChannel)
-		case bool:
-			// A bool type is controlling our ordering attribute
-			itm.enforce_order = in_if.(bool)
 		case nil:
 			//Nothing to do
 		default:
@@ -57,7 +53,7 @@ func (us UrlStore) String() string {
 	var ret_str string
 	ret_str = fmt.Sprintf("***Data Store***\n%v\n", *us.data)
 	ret_str += fmt.Sprintf("Capacity:%d\n", us.data_cap())
-	ret_str += us.FifoP.String()
+	ret_str += us.fifoP.String()
 	return ret_str
 }
 func (us *UrlStore) SetDebug() {
@@ -93,7 +89,7 @@ func (us *UrlStore) add_store(item Url) {
 
 	// To what location should we store the data we are going to add
 	// and update the modified pointers after this
-	location, us.FifoP = us.FifoP.AddHead(us)
+	location, us.fifoP = us.fifoP.AddHead(us)
 	data_store := *us.data
 	data_store[location] = item
 	if us.debug {
@@ -104,7 +100,7 @@ func (us *UrlStore) add_store(item Url) {
 // Peek at the item in the store without modifying it
 func (us UrlStore) peek_store() Url {
 	data_store := *us.data
-	location, ok := us.FifoP.GetTail()
+	location, ok := us.fifoP.GetTail()
 	if ok {
 		value := data_store[location]
 		return value
@@ -114,8 +110,8 @@ func (us UrlStore) peek_store() Url {
 }
 
 func (us *UrlStore) advance_store() bool {
-	if us.FifoP.DataValid() {
-		us.FifoP = us.FifoP.AdvanceTail(us)
+	if us.fifoP.DataValid() {
+		us.fifoP = us.fifoP.AdvanceTail(us)
 		return true
 	} else {
 		return false
@@ -128,7 +124,7 @@ func (us *UrlStore) urlWorker() {
 	var input_channel_closed bool
 	var tmp_val Url
 	for {
-		if us.FifoP.DataValid() {
+		if us.fifoP.DataValid() {
 			tmp_out_chan = us.PopChannel
 			tmp_val = us.peek_store() // Peek at what the current value is
 		} else {
@@ -145,7 +141,7 @@ func (us *UrlStore) urlWorker() {
 					fmt.Println("Queueing URL :", ind)
 				}
 				//us.Lock()
-				us.InCount++
+				us.inCount++
 				//us.Unlock()
 
 				// Put the data into the main store
@@ -162,7 +158,7 @@ func (us *UrlStore) urlWorker() {
 		// If it is possible to write to us.PopChannel
 		case tmp_out_chan <- tmp_val:
 			//us.Lock()
-			us.OutCount++
+			us.outCount++
 			//us.Unlock()
 			if us.debug {
 				fmt.Println("DeQueueing URL", tmp_val)
@@ -199,10 +195,10 @@ func (us UrlStore) Pop() (itm Url, ok bool) {
 	return
 }
 func (us UrlStore) InputCount() int {
-	return us.InCount + len(us.PushChannel)
+	return us.inCount + len(us.PushChannel)
 }
 func (us UrlStore) OutputCount() int {
-	return us.OutCount + len(us.PopChannel)
+	return us.outCount + len(us.PopChannel)
 }
 
 func (us UrlStore) Count() int {

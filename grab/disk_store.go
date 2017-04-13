@@ -342,7 +342,36 @@ func (st *DkStore) Size() int {
 		return false
 	})
 	return size
-	//numItems, _, err := st.is.GetTotals()
-	//check(err)
-	//return int(numItems)
+}
+
+//func (st *DkStore) Count() int {
+//	size := 0
+//	if st.is == nil {
+//		// The collection has not been set up yet
+//		return 0
+//	}
+//	min_itm, err := st.is.MinItem(true)
+//	check(err)
+//	if min_itm == nil {
+//		//mpty list if no minimum
+//		return size
+//	}
+//	st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+//		// This visitor callback will be invoked with every item
+//		// If we want to stop visiting, return false;
+//		// otherwise return true to keep visiting.
+//		size++
+//		return true
+//	})
+//	return size
+//}
+
+func (st *DkStore) Count() int {
+	if st.is == nil {
+		// The collection has not been set up yet
+		return 0
+	}
+	numItems, _, err := st.is.GetTotals()
+	check(err)
+	return int(numItems)
 }

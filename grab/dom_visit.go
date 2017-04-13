@@ -3,6 +3,8 @@ package grab
 import (
 	"fmt"
 	"log"
+	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ type DomVisit struct {
 	sm              *sync.Mutex
 	domains_visited *map[string]struct{}
 	bad_domains     *map[string]struct{}
+	bad_file        *os.File
 }
 
 func NewDomVisit() *DomVisit {
@@ -23,7 +26,13 @@ func NewDomVisit() *DomVisit {
 	bd := make(map[string]struct{})
 	itm.domains_visited = &dv
 	itm.bad_domains = &bd
+	var err error
+	itm.bad_file, err = os.OpenFile("badf.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	check(err)
 	return itm
+}
+func (dv DomVisit) Close() {
+	dv.bad_file.Close()
 }
 func (dv DomVisit) Exist(str string) bool {
 	str = base_it(str)
@@ -87,6 +96,15 @@ func (dv DomVisit) multi_url(url_in string) bool {
 }
 
 func (dv DomVisit) GoodUrl(url_in string) bool {
+	mc := dv.multiCheck(url_in)
+	if !mc {
+		return false
+	}
+
+	return dv.reference(url_in)
+}
+func (dv DomVisit) multiCheck(url_in string) bool {
+
 	// Is this a URL we want to visit
 	// Many reasons we may not want to visit it
 	// We maintain a list of banned domains
@@ -106,7 +124,26 @@ func (dv DomVisit) GoodUrl(url_in string) bool {
 	}
 	return true
 }
-
+func (dv DomVisit) reference(url_in string) bool {
+	// we get a lot of urls that are:
+	// something.php?somehere.com
+	// I'm usually not interested in those
+	// so let's have a function to detect and screen them
+	u, err := url.Parse(url_in)
+	if err != nil {
+		// If we can't parse the url then it's a bad url
+		return false
+	}
+	query := u.RawQuery
+	opq := u.Path
+	icom := strings.Contains(query, ".com")
+	iphp := strings.HasSuffix(opq, "out.php")
+	if iphp && icom {
+		fmt.Fprintf(dv.bad_file, "%v\n", url_in)
+		return false
+	}
+	return true
+}
 func (dv DomVisit) VisitedQ(url_in string) bool {
 	ok := dv.Exist(url_in)
 	if ok {

@@ -63,7 +63,7 @@ func DecodeHttpError(err error) HttpError {
 	default:
 		switch err.(type) {
 		case *url.Error:
-			fmt.Println("URL Error")
+			//fmt.Println("URL Error")
 			return URL
 		default:
 			fmt.Printf("Error type is %T, %#v\n", err, err)

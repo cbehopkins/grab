@@ -94,7 +94,7 @@ func (hm *Hamster) GrabT(
 	// And return the crawl token for re-use
 	defer crawl_chan.PutToken(token_name)
 	if !hm.dv.GoodUrl(url_in.Url()) {
-		fmt.Printf("%s is not a Good Url\n", url_in)
+		//fmt.Printf("%s is not a Good Url\n", url_in)
 		return
 	}
 
@@ -116,7 +116,9 @@ func (hm *Hamster) GrabT(
 	resp, err := client.Get(url_in.Url())
 
 	if err != nil {
-		fmt.Println("ERROR: Failed to crawl \"" + url_in.Url() + "\"")
+		if hm.print_urls {
+			fmt.Println("ERROR: Failed to crawl \"" + url_in.Url() + "\"")
+		}
 		DecodeHttpError(err)
 		return
 	}
@@ -135,7 +137,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string, title_text strin
 	check(err)
 	u, err := url.Parse(linked_url)
 	if err != nil {
-		fmt.Println("Unable to parse url,", u)
+		//fmt.Println("Unable to parse url,", u)
 		return
 	}
 	linked_url_string := base.ResolveReference(u).String()
@@ -174,7 +176,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string, title_text strin
 			tmp_ur := NewUrl(linked_url)
 			tmp_ur.SetTitle(title_text)
 			hm.fetch_chan <- tmp_ur
-			fmt.Println("sent", linked_url)
+			//fmt.Println("sent", linked_url)
 		}
 	default:
 		if hm.promiscuous || hm.shallow {
@@ -306,4 +308,41 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
 			}
 		} // End switch
 	}
+}
+
+func (hm *Hamster) GrabIt(urs Url, out_count *OutCounter, crawl_chan *TokenChan) bool {
+	token_got := urs.Base()
+
+	if crawl_chan.TryGetToken(token_got) {
+		// If we successfully got the token
+		if hm.print_urls {
+			fmt.Println("Grab:", urs)
+		}
+		if !hm.Shallow() {
+			go func() {
+				// Before we can send this, we need to take a copy of hm
+				// so that we can parrallelise this
+				hmp := hm.Copy()
+				hmp.GrabT(urs, // The URL we are tasked with crawling
+					token_got,
+					crawl_chan,
+				)
+				//fmt.Println("Grabbed:", urs)
+				// we don't want GrabT doing this as in
+				// None Nil mode it will also add, which
+				//we don't want for this design
+				out_count.Dec()
+			}()
+			return true
+		} else {
+			hm.GrabT(urs, // The URL we are tasked with crawling
+				token_got,
+				crawl_chan,
+			)
+			out_count.Dec()
+		}
+	} else {
+		out_count.Dec()
+	}
+	return false
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+  "sync"
 
 	"golang.org/x/net/html"
 )
@@ -120,7 +121,7 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 	fi, err := f.Stat()
 	check(err)
 	if fi.Size() > 1 {
-		fmt.Println("Opened filename:%s,%d", filename, fi.Size())
+		//fmt.Printf("Opened filename:%s,%d\n", filename, fi.Size())
 		buff := make([]Url, 0)
 		dec := gob.NewDecoder(f)
 		err = dec.Decode(&buff)
@@ -164,16 +165,30 @@ func GetBase(urls string) string {
 		return hn
 	}
 }
-
-// Extract all http** links from a given webpage
-func GrabT(
-	url_in Url, // The URL we are tasked with crawling
-	token_name string,
-	hm *Hamster,
-	crawl_chan *TokenChan,
-) {
-	hm.GrabT(url_in, token_name, crawl_chan)
+func RunChan(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_name string) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		for urv := range input_chan {
+			if dbg_name != "" {
+				fmt.Printf("runChan, %s RX:%v\n", dbg_name, urv)
+			}
+			if visited_urls.Exist(urv) {
+				// If we've already visited it then nothing to do
+				//fmt.Printf("We've already visited %s\n", urv)
+			} else {
+				// If we haven't visited it, then add it to the list of places to visit
+				unvisit_urls.Set(urv)
+			}
+			if dbg_name != "" {
+				fmt.Printf("runChan, %s, has been set\n", dbg_name)
+			}
+		}
+		wg.Done()
+	}()
+	return &wg
 }
+
 func FetchW(fetch_url Url, test_jpg bool) bool {
 	// We retun true if we have used network bandwidth.
 	// If we have not then it's okay to jump straight onto the next file
@@ -209,7 +224,7 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 		page_title = strings.Replace(page_title, "/", "_", -1)
 		if strings.HasSuffix(fn, ".mp4") {
 			fn = page_title + ".mp4"
-			fmt.Println("Title set, so set filename to:", fn)
+			//fmt.Println("Title set, so set filename to:", fn)
 		}
 	}
 	fn = strings.Replace(fn, "%", "_", -1)

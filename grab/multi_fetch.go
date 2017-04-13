@@ -10,6 +10,7 @@ import (
 // One multi-Fetcher does all files!
 type MultiFetch struct {
 	sync.Mutex
+	wg             sync.WaitGroup
 	InChan         chan Url // Write Urls to here
 	dump_chan      chan Url
 	in_chan_closed bool
@@ -18,6 +19,7 @@ type MultiFetch struct {
 	ff_map         map[string]*UrlStore
 	filename       string
 	multi_mode     bool
+	download       bool
 }
 
 func NewMultiFetch(mm bool) *MultiFetch {
@@ -33,11 +35,16 @@ func NewMultiFetch(mm bool) *MultiFetch {
 	itm.scram_chan = make(chan struct{})
 	return itm
 }
-
+func (mf *MultiFetch) Count() int {
+	// Return the number of items we're waiting to fetch
+	return mf.fifo.Count()
+}
 func (mf *MultiFetch) SetFileName(fn string) {
 	mf.filename = fn
 }
-
+func (mf *MultiFetch) SetDownload() {
+	mf.download = true
+}
 func (mf *MultiFetch) Scram() {
 	fmt.Println("Scram Requested")
 	mf.Lock()
@@ -59,12 +66,18 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 
 	scram_in_progres := false
 	wt := NewWkTok(4)
-
+	var icd chan Url
+	if mf.download {
+		// If we are not set to download then
+		// leave the cannel as nil so that the
+		// read from the channel never occurs
+		icd = ic
+	}
 	for {
 		select {
 		case <-mf.scram_chan:
 			if scram_in_progres == false {
-				fmt.Println("Scram Started")
+				//fmt.Println("Scram Started")
 				scram_in_progres = true
 				if mf.multi_mode {
 					for v := range ic {
@@ -78,8 +91,8 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 				fmt.Println("worker finished", nme)
 				return
 			}
-		case urf, ok := <-ic:
-			fmt.Println("Fetch:", urf)
+		case urf, ok := <-icd:
+			//fmt.Println("Fetch:", urf)
 			if !ok {
 				// This is a closed channel
 				// so all we have to do is wait for
@@ -115,40 +128,52 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 	}
 }
 func (mf *MultiFetch) Worker(dv DomVisitI) {
-	var wg sync.WaitGroup
-	if mf.filename != "" {
-		wg.Add(1)
-		go func() {
-			LoadGob(mf.filename, mf.fifo.PushChannel, nil, false, false)
-			wg.Done()
-		}()
-	}
-	wg.Wait()
-
-	if !mf.multi_mode {
-		mf.single_worker(mf.fifo.PopChannel, dv, "universal")
-	} else {
-		mf.dump_chan = make(chan Url)
-		// TBD Try this
-		// Dispatch will not complete until all of the
-		// workers it start complete
-		// In the event of a scram a worker will not complete until it has emptied its
-		// queue into the queue that is only emptied by scram_multi worker
-		go func() {
-			<-mf.scram_chan
+	mf.wg.Add(1)
+	go func() {
+		var wg sync.WaitGroup
+		if mf.filename != "" {
 			wg.Add(1)
-			mf.scram_multi()
-			wg.Done()
-		}()
-		mf.dispatch(dv)
-		// dispatch workers will finish after they have emptied their queues
-		// once they have all emptied then we can close the dump channel
-		close(mf.dump_chan)
-		fmt.Println("Dispatch Complete - waiting for Scram to finish writing")
+			go func() {
+				LoadGob(mf.filename, mf.fifo.PushChannel, nil, false, false)
+				wg.Done()
+			}()
+		}
 		wg.Wait()
-	}
 
+		if !mf.multi_mode {
+			mf.single_worker(mf.fifo.PopChannel, dv, "universal")
+		} else {
+			mf.dump_chan = make(chan Url)
+			// TBD Try this
+			// Dispatch will not complete until all of the
+			// workers it start complete
+			// In the event of a scram a worker will not complete until it has emptied its
+			// queue into the queue that is only emptied by scram_multi worker
+			go func() {
+				<-mf.scram_chan
+				wg.Add(1)
+				mf.scram_multi()
+				wg.Done()
+			}()
+			mf.dispatch(dv)
+			// dispatch workers will finish after they have emptied their queues
+			// once they have all emptied then we can close the dump channel
+			close(mf.dump_chan)
+			fmt.Println("Dispatch Complete - waiting for Scram to finish writing")
+			wg.Wait()
+		}
+		mf.wg.Done()
+	}()
 }
+func (mf *MultiFetch) Wait() {
+	mf.wg.Wait()
+}
+
+func (mf *MultiFetch) Shutdown() {
+	mf.Scram()
+	mf.Wait()
+}
+
 func (mf *MultiFetch) scram_multi() {
 	SaveGob(mf.filename, mf.dump_chan, nil)
 	fmt.Println("Fetch saved")

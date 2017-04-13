@@ -211,12 +211,12 @@ func (f Fetcher) FetchReceiver() {
 		defer f.file.Close()
 	}
 
-	fetched_urls := make(map[Url]bool)
+	fetched_urls := make(map[string]bool)
 	for fetch_url := range f.chan_fetch_pop {
 
-		_, ok := fetched_urls[fetch_url]
+		_, ok := fetched_urls[fetch_url.Url()]
 		if !ok {
-			fetched_urls[fetch_url] = true
+			fetched_urls[fetch_url.Url()] = true
 
 			// Two tokens are needed to proceed
 			// The first is to make sure in no circumstances do we have nore than N trying to process stuff
