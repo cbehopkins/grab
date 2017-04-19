@@ -142,9 +142,21 @@ func TestDiskPersist1(t *testing.T) {
 
 	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
+	log.Println("1st Reload check complete")
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		dkst1.Set(NewUrl(tst_string))
+		backup_hash[tst_string] = struct{}{}
+	}
 	dkst1.Close()
 
+	dkst2 := NewUrlMap("/tmp/test.gkvlite", false)
+	dkst2.checkStore(backup_hash, num_entries, max_str_len)
+	log.Println("2nd Reload check complete")
+	dkst2.Close()
 }
+
 func TestDiskPersist2(t *testing.T) {
 	max_str_len := 256
 	num_entries := 100000
@@ -164,8 +176,10 @@ func TestDiskPersist2(t *testing.T) {
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
+	// This time say we don't want to overwrite if it exists
 	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
+	log.Printf("Reload Checked")
 
 	// Create some more random entries of varing lengths
 	for i := 0; i < num_entries; i++ {
@@ -175,11 +189,13 @@ func TestDiskPersist2(t *testing.T) {
 		backup_hash[tst_string] = struct{}{}
 	}
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
-
+	log.Printf("Checked after insertion")
 	dkst1.Close()
 	// This should work,
 	dkst2 := NewUrlMap("/tmp/test.gkvlite", false)
 	dkst2.checkStore(backup_hash, num_entries, max_str_len)
+	log.Printf("2nd reload. Check complete")
+
 	dkst2.Close()
 }
 

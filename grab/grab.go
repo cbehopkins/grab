@@ -8,7 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-  "sync"
+	"sync"
 
 	"golang.org/x/net/html"
 )

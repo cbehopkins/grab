@@ -13,11 +13,12 @@ import (
 type DkStore struct {
 	st *gkvlite.Store
 	is *gkvlite.Collection
-	f  *os.File
+	f  *ConcSafe
 }
 
 func (ds *DkStore) Flush() {
-	ds.st.Flush()
+	err := ds.st.Flush()
+	check(err)
 }
 func (ds *DkStore) Sync() {
 	ds.f.Sync()
@@ -25,18 +26,17 @@ func (ds *DkStore) Sync() {
 func (ds *DkStore) Close() {
 	ds.st.Flush()
 	// REVISIT - does this work?
-	ds.st.Close()
+	//ds.st.Close() // This is proved to break things
 	ds.f.Sync()
 	ds.f.Close()
 }
-func newStore(filename string, overwrite bool) (*os.File, *gkvlite.Store) {
-	var f *os.File
+func newStore(filename string, overwrite bool) (*ConcSafe, *gkvlite.Store) {
 	st := new(gkvlite.Store)
 	var err error
 	// Remember to close the file later
 
 	// If the file does not exiast already
-	f, err = os.Create(filename)
+	f, err := NewConcSafe(filename)
 	check(err)
 	st, err = gkvlite.NewStore(f)
 	check(err)
@@ -53,53 +53,24 @@ func NewDkStore(filename string, overwrite bool) *DkStore {
 		itm.is = itm.st.SetCollection("int_string", nil)
 		return itm
 	} else {
-		t_itm := new(DkStore)
-		new_filename := filename + "_tmp"
-		err = os.Rename(filename, new_filename)
-		check(err)
-
-		t_f, err := os.Open(new_filename)
-		check(err)
-		f, err := os.Create(filename)
+		t_f, err := OpenConcSafe(filename)
 		check(err)
 
 		t_st, err := gkvlite.NewStore(t_f)
 		check(err)
-		st, err := gkvlite.NewStore(f)
-		check(err)
-
-		itm.f = f
-		itm.st = st
-		t_itm.f = t_f
-		t_itm.st = t_st
-
-		itm.is = itm.st.SetCollection("int_string", nil)
-		t_itm.is = t_itm.st.SetCollection("int_string", nil)
-		for v := range t_itm.GetStringKeys() {
-			itm.SetAny(v, "")
+		if t_st == nil {
+			log.Fatal("Nil t_st for:", filename)
 		}
-		t_itm.Close()
+		// If this works?
+		itm.st = t_st
+		itm.f = t_f
+		itm.is = itm.st.GetCollection("int_string")
+		if itm.is == nil {
+			log.Fatal("Nil Collection name int_string")
+		}
 		return itm
 
 	}
-}
-
-func (st *DkStore) Compact(filename string) {
-	// Copy st.st to a new store
-	// and update accordingly
-	new_filename := "/tmp/new.gkvlite"
-	f, err := os.Create(new_filename)
-	check(err)
-	_, err = st.st.CopyTo(f, 20000)
-	check(err)
-	st.st.Close()
-	f.Close()
-	err = os.Rename(new_filename, filename)
-	check(err)
-	f, err = os.Open(filename)
-	check(err)
-	st.st, err = gkvlite.NewStore(f)
-	check(err)
 }
 
 type ByteAble interface {
@@ -147,14 +118,8 @@ func (st *DkStore) Delete(key interface{}) bool {
 
 func (st *DkStore) Exist(key interface{}) bool {
 	key_bs := toBa(key)
-	// Don't believe the documentation
-	// GetItem() with withValue false does not work
-	// In fact the testcase checks that val is valid with it false!
-	val, _ := st.is.GetItem(key_bs, true)
-	if val == nil {
-		return false
-	}
-	return true
+	val, _ := st.is.GetItem(key_bs, false)
+	return val != nil
 }
 func (st *DkStore) GetString(key interface{}) string {
 	return string(st.GetAny(key))
@@ -343,28 +308,6 @@ func (st *DkStore) Size() int {
 	})
 	return size
 }
-
-//func (st *DkStore) Count() int {
-//	size := 0
-//	if st.is == nil {
-//		// The collection has not been set up yet
-//		return 0
-//	}
-//	min_itm, err := st.is.MinItem(true)
-//	check(err)
-//	if min_itm == nil {
-//		//mpty list if no minimum
-//		return size
-//	}
-//	st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
-//		// This visitor callback will be invoked with every item
-//		// If we want to stop visiting, return false;
-//		// otherwise return true to keep visiting.
-//		size++
-//		return true
-//	})
-//	return size
-//}
 
 func (st *DkStore) Count() int {
 	if st.is == nil {

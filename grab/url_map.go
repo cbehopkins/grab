@@ -8,7 +8,7 @@ import (
 
 type UrlMap struct {
 	sync.RWMutex
-	disk_lock sync.Mutex
+	disk_lock sync.Mutex // Temporaraly not using this as could be causing corruption
 	mp        map[Url]struct{}
 	use_disk  bool
 	closed    bool
@@ -73,8 +73,15 @@ func (um *UrlMap) flusher() {
 		// we don't bother to get a single lock here for both operations as
 		// it's fine to let other things sneak in between these potentially
 		// long operations
-		um.Flush()
-		um.Sync()
+		um.RLock()
+		if !um.closed {
+			um.RUnlock()
+			um.Flush()
+			um.Sync()
+		} else {
+			um.RUnlock()
+			return
+		}
 	}
 }
 func (um *UrlMap) Exist(key Url) bool {
