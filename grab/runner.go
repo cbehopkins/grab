@@ -2,6 +2,7 @@ package grab
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -22,7 +23,7 @@ func NewRunner(hm *Hamster,
 	itm.hm = hm
 	itm.unvisit_urls = unvisit_urls
 	itm.visited_urls = visited_urls
-	itm.recycle_time = 100 * time.Millisecond
+	itm.recycle_time = 1 * time.Millisecond
 	return itm
 }
 func (r *Runner) Wait() {
@@ -112,6 +113,10 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			wgt.Wait()
 			//fmt.Println("runChan has finished")
 
+			// Experiment to reduce memory consumption
+			r.unvisit_urls.Flush()
+			r.visited_urls.Flush()
+			runtime.GC()
 		} else {
 			return
 		}

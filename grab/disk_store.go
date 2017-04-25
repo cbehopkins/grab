@@ -1,12 +1,14 @@
 package grab
 
 import (
+	"fmt"
+	"github.com/steveyen/gkvlite"
 	"log"
+	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"time"
-
-	"github.com/steveyen/gkvlite"
 )
 
 // Disk Store of int to string map
@@ -25,8 +27,7 @@ func (ds *DkStore) Sync() {
 }
 func (ds *DkStore) Close() {
 	ds.st.Flush()
-	// REVISIT - does this work?
-	//ds.st.Close() // This is proved to break things
+	ds.st.Close()
 	ds.f.Sync()
 	ds.f.Close()
 }
@@ -232,7 +233,9 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 	// It wants to be slightly more than the number of tokens we allow
 	// for each basename
 	max_same := 20
-
+  // We don't need to check the token as 
+  // we only re-search when we have done a full list search
+  check_tk := false
 	go func() {
 		cnt := 0
 		min_itm, err := st.is.MinItem(true)
@@ -245,11 +248,13 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 			tmp_val := string(i.Key)
 			// If the token for this is in use
 			// Then it won't fetch this pass, so don't let it through
+      if check_tk {
 			ok := refr.UrlExist(tmp_val)
 			if ok {
 				// Keep going, look for something not in the map
 				return true
 			}
+      }
 			// We could have a bunch in the same base domain
 
 			tmp_base := GetBase(tmp_val)
@@ -279,10 +284,18 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 		done_some = true
 		ret_array = append(ret_array, v)
 	}
+  // Randomize the array to make
+  // us select as many different domains at once as possible
+	for i := range ret_array {
+		j := rand.Intn(i + 1)
+		ret_array[i], ret_array[j] = ret_array[j], ret_array[i]
+	}
 	if !done_some {
 		log.Println("Warning no new items")
 		<-time.After(10 * time.Second)
 	}
+
+
 	return ret_array
 }
 
@@ -317,4 +330,89 @@ func (st *DkStore) Count() int {
 	numItems, _, err := st.is.GetTotals()
 	check(err)
 	return int(numItems)
+}
+
+type Spinner struct {
+	status int
+  scaler int
+  scaled_inc int
+}
+
+var spinn_array = []string{"|", "/", "-", "\\"}
+
+func (s Spinner) translateSpinner() string {
+	return spinn_array[s.status]
+}
+
+func (s *Spinner) PrintSpin(cnt int) {
+  if s.scaler !=0 {
+    s.scaled_inc++
+    if s.scaled_inc >= s.scaler{
+      s.scaled_inc =0
+    }
+  }
+  if (s.scaled_inc==0) {
+	fmt.Printf("%s %8d\b\b\b\b\b\b\b\b\b\b", s.translateSpinner(), cnt)
+	s.status++
+	if s.status >= len(spinn_array) {
+		s.status = 0
+	}
+  }
+
+
+}
+func rankByWordCount(wordFrequencies map[string]int) PairList {
+	pl := make(PairList, len(wordFrequencies))
+	i := 0
+	for k, v := range wordFrequencies {
+		pl[i] = Pair{k, v}
+		i++
+	}
+	sort.Sort(pl)
+	return pl
+}
+
+type Pair struct {
+	Key   string
+	Value int
+}
+
+type PairList []Pair
+
+func (p PairList) Len() int           { return len(p) }
+func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
+func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+func (st *DkStore) PrintWorkload() {
+	min_itm, err := st.is.MinItem(true)
+	check(err)
+	unique_array := make(map[string]int)
+	s := Spinner{scaler:100}
+	var cnt int
+	st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+		// This visitor callback will be invoked with every item
+		// If we want to stop visiting, return false;
+		// otherwise return true to keep visiting.
+		tmp_val := string(i.Key)
+		tmp_base := GetBase(tmp_val)
+		val, ok := unique_array[tmp_base]
+		if !ok {
+			val = 0
+		} else {
+			val++
+		}
+		s.PrintSpin(cnt)
+		cnt++
+		// Store it with the count of how many times we've visited
+		unique_array[tmp_base] = val
+
+		return true
+	})
+	log.Println("Printing Current Workload")
+
+	for _, itm := range rankByWordCount(unique_array) {
+		key := itm.Key
+		value := itm.Value
+		log.Printf("%8d:%s\n", value, key)
+	}
 }

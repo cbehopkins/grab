@@ -12,18 +12,21 @@ import (
 
 // Domains Visited structure
 type DomVisit struct {
-	sm              *sync.Mutex
+	sm              *sync.RWMutex
 	domains_visited *map[string]struct{}
 	bad_domains     *map[string]struct{}
 	bad_file        *os.File
+	re              *regexp.Regexp
 }
 
 func NewDomVisit() *DomVisit {
 	var itm *DomVisit
 	itm = new(DomVisit)
-	itm.sm = new(sync.Mutex)
+	itm.sm = new(sync.RWMutex)
 	dv := make(map[string]struct{})
 	bd := make(map[string]struct{})
+
+	itm.re = regexp.MustCompile("([a-zA-Z0-9_\\-\\.]*?)([a-zA-Z0-9_\\-]+\\.\\w+)/?$")
 	itm.domains_visited = &dv
 	itm.bad_domains = &bd
 	var err error
@@ -35,20 +38,19 @@ func (dv DomVisit) Close() {
 	dv.bad_file.Close()
 }
 func (dv DomVisit) Exist(str string) bool {
-	str = base_it(str)
-	dv.sm.Lock()
+	str = dv.base_it(str)
+	dv.sm.RLock()
 	tdv := *dv.domains_visited
 	_, ok := tdv[str]
-	dv.sm.Unlock()
+	dv.sm.RUnlock()
 	return ok
 }
-func base_it(str string) string {
+func (dv DomVisit) base_it(str string) string {
 	if str == "" {
 		return ""
 	}
 	// This MUST only have the basename passed to it
-	re := regexp.MustCompile("([a-zA-Z0-9_\\-\\.]*?)([a-zA-Z0-9_\\-]+\\.\\w+)/?$")
-	t1 := re.FindStringSubmatch(str)
+	t1 := dv.re.FindStringSubmatch(str)
 	var base string
 	if len(t1) > 2 {
 		base = t1[2]
@@ -60,7 +62,7 @@ func base_it(str string) string {
 }
 
 func (dv DomVisit) Add(strt string) {
-	str := base_it(strt)
+	str := dv.base_it(strt)
 	log.Printf("Adding:%s, because %s\n", str, strt)
 	dv.sm.Lock()
 	tdv := *dv.domains_visited
@@ -68,7 +70,7 @@ func (dv DomVisit) Add(strt string) {
 	dv.sm.Unlock()
 }
 func (dv DomVisit) AddBad(strt string) {
-	str := base_it(strt)
+	str := dv.base_it(strt)
 	log.Printf("Adding Bad:%s, because %s\n", str, strt)
 	dv.sm.Lock()
 	tdv := *dv.bad_domains
@@ -111,7 +113,7 @@ func (dv DomVisit) multiCheck(url_in string) bool {
 	// The URL could also use one of the tricks
 	// to
 	bn := GetBase(url_in)
-	ub := base_it(bn)
+	ub := dv.base_it(bn)
 	bdp := *dv.bad_domains
 	_, ok := bdp[ub]
 	if ok {
@@ -154,12 +156,24 @@ func (dv DomVisit) VisitedQ(url_in string) bool {
 	}
 }
 func (dv DomVisit) VisitedA(url_in string) bool {
-	ok := dv.Exist(url_in)
+	//ok := dv.Exist(url_in)
+	// This is a costly process, so do it once for Exist and Add
+	str := dv.base_it(url_in)
+	dv.sm.RLock()
+	tdv := *dv.domains_visited
+	_, ok := tdv[str]
+	dv.sm.RUnlock()
+
 	if ok {
 		return true
 	} else {
-		//mt.Println("New Authorised Domain:", url_in)
-		dv.Add(url_in)
+		//fmt.Println("New Authorised Domain:", url_in)
+		//dv.Add(url_in)
+		//log.Printf("Adding:%s, because %s\n", str, url_in)
+		dv.sm.Lock()
+		tdv := *dv.domains_visited
+		tdv[str] = struct{}{}
+		dv.sm.Unlock()
 		return false
 	}
 }

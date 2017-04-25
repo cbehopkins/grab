@@ -24,6 +24,9 @@ type Hamster struct {
 	// Channel we should send Further Urls to grab to
 	grab_ch    chan Url
 	fetch_chan chan Url
+
+	re  *regexp.Regexp
+	re1 *regexp.Regexp
 	// On Grab URL should we get everything we possibly can
 	promiscuous bool
 	// A shallow fetch is one where the first fetch gets all
@@ -44,6 +47,10 @@ func NewHamster(promiscuous, shallow, all_interesting, print_urls bool) *Hamster
 	itm.shallow = shallow
 	itm.all_interesting = all_interesting
 	itm.print_urls = print_urls
+	itm.re = regexp.MustCompile("'http.*'")
+	// For our purposes, anything after the ? is an annoyance
+	itm.re1 = regexp.MustCompile("'?(.*)\\?")
+
 	return itm
 }
 func (hm *Hamster) Copy() *Hamster {
@@ -52,6 +59,8 @@ func (hm *Hamster) Copy() *Hamster {
 	itm.dv = hm.dv
 	itm.grab_ch = hm.grab_ch
 	itm.fetch_chan = hm.fetch_chan
+	itm.re = hm.re
+	itm.re1 = hm.re1
 
 	itm.promiscuous = hm.promiscuous
 	itm.shallow = hm.shallow
@@ -232,14 +241,11 @@ func (hm *Hamster) scriptProc(t html.Token,
 	domain_i string, title_text string) {
 
 	if strings.Contains(script_text, "http") {
-		re := regexp.MustCompile("'http.*'")
-		// For our purposes, anything after the ? is an annoyance
-		re1 := regexp.MustCompile("'?(.*)\\?")
 		//t0 := script_text
-		t0 := re.FindAllString(script_text, -1)
+		t0 := hm.re.FindAllString(script_text, -1)
 
 		for _, v := range t0 {
-			t1 := re1.FindStringSubmatch(v)
+			t1 := hm.re1.FindStringSubmatch(v)
 			if len(t1) > 1 {
 				linked_url := resolveUrl(t1[1])
 				if linked_url != "" {

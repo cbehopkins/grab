@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	//"log"
 	"github.com/cbehopkins/grab/grab"
 	"github.com/cheggaaa/pb"
+	"log"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"sync"
 	"time"
 )
@@ -87,18 +88,40 @@ func shutdown(
 	shutdown_in_progress.Unlock()
 	fmt.Println("All Complete")
 }
+func mem_profile(mem_prf_fn string) {
+	if mem_prf_fn != "" {
+		f, err := os.Create(mem_prf_fn)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.WriteHeapProfile(f)
+		f.Close()
+	}
+}
 
 func main() {
+	var memprofile = flag.String("memprofile", "", "write memory profile to this file")
+	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	var mulflg = flag.Bool("multi", true, "Use multiple Fetchers")
 	var prflg = flag.Bool("prom", false, "Promiscuously Fetch everything allowed")
 	var intrflg = flag.Bool("interest", false, "All Links found are Interesting - Super promiscuous mode")
 	var dbgflg = flag.Bool("dbg", false, "Debug Mode")
 	var nodownflg = flag.Bool("nod", false, "No Download Mode")
 	var autostopflg = flag.Bool("as", true, "Autostop")
-  var num_p_fetch int
-  flag.IntVar(&num_p_fetch, "numpar", 4,"Number of parallel fetches per domain")
+	var num_p_fetch int
+	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
 	show_progress_bar := !*dbgflg
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer f.Close()
+		defer pprof.StopCPUProfile()
+	}
 
 	var wg sync.WaitGroup
 	download := !*nodownflg
@@ -234,9 +257,13 @@ func main() {
 		}()
 	}
 	wg.Wait()
+	fmt.Println("Run Seeded 0")
 	wgrc.Wait()
-	fmt.Println("Run Seeded")
+	fmt.Println("Run Seeded 1")
 	hm.ClearShallow()
+	fmt.Println("Printing Workload")
+	unvisit_urls.PrintWorkload()
+	fmt.Println("Workload Printed")
 
 	runr := grab.NewRunner(hm, unvisit_urls, visited_urls)
 	runr.GrabRunner(
@@ -252,15 +279,17 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	var shutdown_in_progress sync.Mutex
+	var shutdown_run bool
 
 	if *autostopflg {
 		go func() {
 			// Run the main thing for no more than 100 Seconds/Minutes
-			time.Sleep(1 * time.Hour)
+			time.Sleep(2 * time.Hour)
 			shutdown_in_progress.Lock()
+			shutdown_run = true
 			fmt.Println("Runtime Exceeded")
+			mem_profile(*memprofile)
 			shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
-			os.Exit(0)
 		}()
 	}
 
@@ -272,8 +301,9 @@ func main() {
 				shutdown_in_progress.Lock()
 				go func() {
 					fmt.Println("Ctrl-C Detected")
+					shutdown_run = true
+					mem_profile(*memprofile)
 					shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
-					os.Exit(0)
 				}()
 			} else {
 				os.Exit(1)
@@ -281,7 +311,9 @@ func main() {
 		}
 	}()
 	runr.Wait()
-
-	shutdown_in_progress.Lock()
-	shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
+	if !shutdown_run {
+		shutdown_in_progress.Lock()
+		mem_profile(*memprofile)
+		shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
+	}
 }

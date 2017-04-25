@@ -1,14 +1,14 @@
 package grab
 
 import (
-	//"fmt"
+	"fmt"
 	"sync"
 	"time"
 )
 
 type UrlMap struct {
 	sync.RWMutex
-	disk_lock sync.Mutex // Temporaraly not using this as could be causing corruption
+	disk_lock sync.Mutex
 	mp        map[Url]struct{}
 	use_disk  bool
 	closed    bool
@@ -24,7 +24,14 @@ func NewUrlMap(filename string, overwrite bool) *UrlMap {
 	itm.use_disk = use_disk
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
-		go itm.flusher()
+		//go itm.flusher()
+    self_read := false
+    if self_read {
+	  fmt.Println("loafing:", filename)
+		for _ = range itm.dkst.GetStringKeys() {
+		}
+		fmt.Println("done:", filename)
+    }
 	} else {
 		itm.mp = make(map[Url]struct{})
 	}
@@ -43,9 +50,9 @@ func (um *UrlMap) Flush() {
 // Sync the disk data to the file system
 func (um *UrlMap) Sync() {
 	if um.use_disk {
-		um.Lock()
+		um.disk_lock.Lock()
 		um.dkst.Sync()
-		um.Unlock()
+		um.disk_lock.Unlock()
 	}
 }
 
@@ -56,10 +63,12 @@ func (um *UrlMap) Close() {
 	// so we need both locks
 	if um.use_disk {
 		um.Lock()
+		um.disk_lock.Lock()
 		um.dkst.Flush()
 		um.dkst.Sync()
 		um.dkst.Close()
 		um.closed = true
+		um.disk_lock.Unlock()
 		um.Unlock()
 	}
 }
@@ -73,7 +82,7 @@ func (um *UrlMap) flusher() {
 		// we don't bother to get a single lock here for both operations as
 		// it's fine to let other things sneak in between these potentially
 		// long operations
-		um.RLock()
+		um.RLock()  // Only get the lock to read the closed flag
 		if !um.closed {
 			um.RUnlock()
 			um.Flush()
@@ -253,6 +262,9 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 				// Get up to 100 things that aren't on the TokenChan
 				string_array := um.dkst.GetMissing(10000, refr)
 				um.RUnlock()
+        // We've done reading, so write out the cache
+        // while the disk is not busy
+        go um.Flush()
 				for _, v := range string_array {
 					//fmt.Println("Visit Url:", v)
 					ret_chan <- NewUrl(v)
@@ -285,4 +297,10 @@ func (um *UrlMap) Delete(key Url) {
 		delete(um.mp, key)
 	}
 	um.Unlock()
+}
+
+func (um *UrlMap) PrintWorkload() {
+	um.RLock()
+	um.dkst.PrintWorkload()
+	um.RUnlock()
 }

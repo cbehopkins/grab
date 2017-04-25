@@ -152,4 +152,3 @@ func TestGkv(t *testing.T) {
 	f2.Sync()
 	f2.Close()
 }
-

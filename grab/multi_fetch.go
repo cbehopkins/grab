@@ -120,7 +120,7 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 					case <-time.After(20 * time.Minute):
 						log.Fatal("We needed to use the timeout case, this is bad!")
 					}
-					// If not used network then return the token immediatly
+					// Return the token at the end
 					wt.PutTok()
 				}()
 			}

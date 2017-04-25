@@ -165,27 +165,28 @@ func GetBase(urls string) string {
 		return hn
 	}
 }
+func runChanW(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_name string, wg *sync.WaitGroup) {
+	for urv := range input_chan {
+		if dbg_name != "" {
+			fmt.Printf("runChan, %s RX:%v\n", dbg_name, urv)
+		}
+		if visited_urls.Exist(urv) {
+			// If we've already visited it then nothing to do
+			//fmt.Printf("We've already visited %s\n", urv)
+		} else {
+			// If we haven't visited it, then add it to the list of places to visit
+			unvisit_urls.Set(urv)
+		}
+		if dbg_name != "" {
+			fmt.Printf("runChan, %s, has been set\n", dbg_name)
+		}
+	}
+	wg.Done()
+}
 func RunChan(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_name string) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
-		for urv := range input_chan {
-			if dbg_name != "" {
-				fmt.Printf("runChan, %s RX:%v\n", dbg_name, urv)
-			}
-			if visited_urls.Exist(urv) {
-				// If we've already visited it then nothing to do
-				//fmt.Printf("We've already visited %s\n", urv)
-			} else {
-				// If we haven't visited it, then add it to the list of places to visit
-				unvisit_urls.Set(urv)
-			}
-			if dbg_name != "" {
-				fmt.Printf("runChan, %s, has been set\n", dbg_name)
-			}
-		}
-		wg.Done()
-	}()
+	go runChanW(input_chan, visited_urls, unvisit_urls, dbg_name, &wg)
 	return &wg
 }
 
