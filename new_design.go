@@ -113,15 +113,6 @@ func main() {
 	flag.Parse()
 	show_progress_bar := !*dbgflg
 
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer f.Close()
-		defer pprof.StopCPUProfile()
-	}
 
 	var wg sync.WaitGroup
 	download := !*nodownflg
@@ -263,7 +254,25 @@ func main() {
 	hm.ClearShallow()
 	fmt.Println("Printing Workload")
 	unvisit_urls.PrintWorkload()
+  go func () {
+    time.Sleep(10 * time.Minute)
+    unvisit_urls.PrintWorkload()
+    fmt.Println("")
+    fmt.Println("")
+  } ()
 	fmt.Println("Workload Printed")
+
+  // Now we're up and running
+  // Start the profiler
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer f.Close()
+		defer pprof.StopCPUProfile()
+	}
 
 	runr := grab.NewRunner(hm, unvisit_urls, visited_urls)
 	runr.GrabRunner(

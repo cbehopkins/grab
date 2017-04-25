@@ -9,10 +9,14 @@ import (
 type UrlMap struct {
 	sync.RWMutex
 	disk_lock sync.Mutex
-	mp        map[Url]struct{}
-	use_disk  bool
-	closed    bool
-	dkst      *DkStore
+	// something in mp must be on the disk - it is a cache
+	// something in mp_tow is not on the disk
+	mp       map[Url]struct{}
+	mp_tow   map[Url]struct{} // URLs waiting to be written
+	use_disk bool
+	closed   bool
+	dkst     *DkStore
+	cachewg  *sync.WaitGroup
 }
 
 func NewUrlMap(filename string, overwrite bool) *UrlMap {
@@ -22,27 +26,56 @@ func NewUrlMap(filename string, overwrite bool) *UrlMap {
 	}
 	itm := new(UrlMap)
 	itm.use_disk = use_disk
+	itm.mp = make(map[Url]struct{})
+	itm.cachewg = new(sync.WaitGroup)
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
-		//go itm.flusher()
-    self_read := false
-    if self_read {
-	  fmt.Println("loafing:", filename)
-		for _ = range itm.dkst.GetStringKeys() {
+		itm.mp_tow = make(map[Url]struct{})
+		go itm.flusher()
+		self_read := false
+		if self_read {
+			fmt.Println("loafing:", filename)
+			for _ = range itm.dkst.GetStringKeys() {
+			}
+			fmt.Println("done:", filename)
 		}
-		fmt.Println("done:", filename)
-    }
-	} else {
-		itm.mp = make(map[Url]struct{})
 	}
 	return itm
+}
+func (um *UrlMap) ageCache() {
+	// remove items from  the cache
+	// remove half of them
+	num_to_remove := len(um.mp) >> 1
+
+	i := 0
+	for key, _ := range um.mp {
+		delete(um.mp, key)
+		if i >= num_to_remove {
+			return
+		} else {
+			i++
+		}
+	}
+}
+
+func (um *UrlMap) localFlush() {
+	for key, _ := range um.mp_tow {
+		//fmt.Println("Adding Key:", key)
+		um.dkst.SetAny(key, "")
+	}
+	um.mp_tow = make(map[Url]struct{})
+}
+func (um *UrlMap) diskFlush() {
+	um.dkst.Flush()
 }
 
 // Flush from local cache to the disk
 func (um *UrlMap) Flush() {
 	if um.use_disk {
 		um.Lock()
-		um.dkst.Flush()
+		um.localFlush()
+		um.diskFlush()
+		um.ageCache()
 		um.Unlock()
 	}
 }
@@ -63,8 +96,9 @@ func (um *UrlMap) Close() {
 	// so we need both locks
 	if um.use_disk {
 		um.Lock()
+		um.localFlush()
 		um.disk_lock.Lock()
-		um.dkst.Flush()
+		um.diskFlush()
 		um.dkst.Sync()
 		um.dkst.Close()
 		um.closed = true
@@ -82,7 +116,7 @@ func (um *UrlMap) flusher() {
 		// we don't bother to get a single lock here for both operations as
 		// it's fine to let other things sneak in between these potentially
 		// long operations
-		um.RLock()  // Only get the lock to read the closed flag
+		um.RLock() // Only get the lock to read the closed flag
 		if !um.closed {
 			um.RUnlock()
 			um.Flush()
@@ -98,11 +132,32 @@ func (um *UrlMap) Exist(key Url) bool {
 	um.RLock()
 	var ok bool
 	if um.use_disk {
-		ok = um.dkst.Exist(key)
+		// Check in the local cache first
+		_, ok = um.mp[key]
+		if !ok {
+			_, ok = um.mp_tow[key]
+
+			if !ok {
+				ok = um.dkst.Exist(key)
+			}
+			if ok {
+				// if we find it exists anywhere
+				// then add it to the cache
+				um.cachewg.Add(1)
+				go func() {
+					// add it to the cache
+					um.Lock()
+					um.mp[key] = struct{}{}
+					um.Unlock()
+					um.cachewg.Done()
+				}()
+			}
+		}
 	} else {
 		_, ok = um.mp[key]
 	}
 	um.RUnlock()
+
 	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
@@ -111,7 +166,9 @@ func (um *UrlMap) Set(key Url) {
 	um.Lock()
 	//fmt.Println("Got Lock")
 	if um.use_disk {
-		um.dkst.SetAny(key, "")
+		//um.dkst.SetAny(key, "")
+		um.mp_tow[key] = struct{}{}
+		//um.mp[key] = struct{}{}
 	} else {
 		um.mp[key] = struct{}{}
 	}
@@ -144,7 +201,7 @@ func (um *UrlMap) Count() int {
 		if um.closed {
 			return 0
 		}
-		return um.dkst.Count()
+		return um.dkst.Count() + len(um.mp_tow)
 	}
 	return len(um.mp)
 }
@@ -159,7 +216,7 @@ func (um *UrlMap) Size() int {
 		if um.closed {
 			return 0
 		}
-		return um.dkst.Size()
+		return um.dkst.Size() + len(um.mp_tow)
 	}
 	return len(um.mp)
 }
@@ -174,6 +231,9 @@ func (um *UrlMap) VisitAll() chan Url {
 
 	go func() {
 		//fmt.Println("Grabbing Lock")
+		um.Lock()
+		um.localFlush()
+		um.Unlock()
 		um.RLock()
 		//fmt.Println("Got Lock")
 		if um.use_disk {
@@ -212,6 +272,9 @@ func (um *UrlMap) Visit() chan Url {
 
 	go func() {
 		//fmt.Println("Grabbing Lock")
+		um.Lock()
+		um.localFlush()
+		um.Unlock()
 		um.RLock()
 		//fmt.Println("Got Lock")
 		if um.use_disk {
@@ -252,6 +315,10 @@ func (um *UrlMap) Visit() chan Url {
 func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 	ret_chan := make(chan Url)
 	go func() {
+		um.Lock()
+		um.localFlush()
+		um.Unlock()
+		um.cachewg.Wait()
 		um.RLock()
 		if um.use_disk {
 			if um.closed {
@@ -262,9 +329,9 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 				// Get up to 100 things that aren't on the TokenChan
 				string_array := um.dkst.GetMissing(10000, refr)
 				um.RUnlock()
-        // We've done reading, so write out the cache
-        // while the disk is not busy
-        go um.Flush()
+				// We've done reading, so write out the cache
+				// while the disk is not busy
+				go um.Flush()
 				for _, v := range string_array {
 					//fmt.Println("Visit Url:", v)
 					ret_chan <- NewUrl(v)
@@ -278,6 +345,9 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 				i++
 			}
 			um.RUnlock()
+			// We've finsihed reading - excellent time
+			// to do lots of writes
+			go um.Flush()
 			for _, v := range tmp_slice {
 				ret_chan <- v
 			}
@@ -288,10 +358,27 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
 }
 
 func (um *UrlMap) Delete(key Url) {
+	um.cachewg.Wait()
 	um.Lock()
 	if um.use_disk {
 		if !um.closed {
-			um.dkst.Delete(key)
+			var ok bool
+			_, ok = um.mp_tow[key]
+			if ok {
+				delete(um.mp_tow, key)
+				_, ok = um.mp[key]
+				if ok {
+					delete(um.mp, key)
+				}
+
+			} else {
+				// It may or may not exist in the cache
+				um.dkst.Delete(key)
+				_, ok = um.mp[key]
+				if ok {
+					delete(um.mp, key)
+				}
+			}
 		}
 	} else {
 		delete(um.mp, key)
@@ -300,6 +387,9 @@ func (um *UrlMap) Delete(key Url) {
 }
 
 func (um *UrlMap) PrintWorkload() {
+	um.Lock()
+	um.localFlush()
+	um.Unlock()
 	um.RLock()
 	um.dkst.PrintWorkload()
 	um.RUnlock()

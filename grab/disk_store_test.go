@@ -134,6 +134,7 @@ func TestDiskPersist1(t *testing.T) {
 		dkst.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
+	dkst.localFlush()
 	dkst.checkStore(backup_hash, num_entries, max_str_len)
 
 	// Close it all off, make sure it is on the disk
@@ -170,6 +171,7 @@ func TestDiskPersist2(t *testing.T) {
 		dkst.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
+	dkst.localFlush()
 	dkst.checkStore(backup_hash, num_entries, max_str_len)
 
 	// Close it all off, make sure it is on the disk
