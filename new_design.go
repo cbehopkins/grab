@@ -108,11 +108,11 @@ func main() {
 	var dbgflg = flag.Bool("dbg", false, "Debug Mode")
 	var nodownflg = flag.Bool("nod", false, "No Download Mode")
 	var autostopflg = flag.Bool("as", true, "Autostop")
+	var compactflg = flag.Bool("compact", false, "Compact Databases")
 	var num_p_fetch int
 	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
 	show_progress_bar := !*dbgflg
-
 
 	var wg sync.WaitGroup
 	download := !*nodownflg
@@ -144,8 +144,8 @@ func main() {
 	var visited_urls *grab.UrlMap
 	var unvisit_urls *grab.UrlMap
 	// Open the maps and do not overwrite any we find
-	visited_urls = grab.NewUrlMap(visited_fname, false)
-	unvisit_urls = grab.NewUrlMap(unvisit_fname, false)
+	visited_urls = grab.NewUrlMap(visited_fname, false, *compactflg)
+	unvisit_urls = grab.NewUrlMap(unvisit_fname, false, *compactflg)
 
 	// A DomVisit tracks what domains we're allowed to visit
 	// Any domains we come across not in this list will not be visited
@@ -254,16 +254,16 @@ func main() {
 	hm.ClearShallow()
 	fmt.Println("Printing Workload")
 	unvisit_urls.PrintWorkload()
-  go func () {
-    time.Sleep(10 * time.Minute)
-    unvisit_urls.PrintWorkload()
-    fmt.Println("")
-    fmt.Println("")
-  } ()
+	go func() {
+		time.Sleep(10 * time.Minute)
+		unvisit_urls.PrintWorkload()
+		fmt.Println("")
+		fmt.Println("")
+	}()
 	fmt.Println("Workload Printed")
 
-  // Now we're up and running
-  // Start the profiler
+	// Now we're up and running
+	// Start the profiler
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {

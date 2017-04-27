@@ -97,6 +97,9 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 								r.unvisit_urls.Delete(urv)
 								//fmt.Println("Grab Started",urv)
 							} else {
+								// TBD This just throws the URLL away
+								// This is very wasteful as VisitMissing is a very Disk intensive activity
+								// Need to think of a good way to recycle them
 								//fmt.Println("Grab Aborted",urv)
 							}
 						}

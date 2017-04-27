@@ -1,14 +1,15 @@
 package grab
 
 import (
-	"fmt"
-	"github.com/steveyen/gkvlite"
 	"log"
 	"math/rand"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/steveyen/gkvlite"
 )
 
 // Disk Store of int to string map
@@ -16,6 +17,7 @@ type DkStore struct {
 	st *gkvlite.Store
 	is *gkvlite.Collection
 	f  *ConcSafe
+	re *regexp.Regexp
 }
 
 func (ds *DkStore) Flush() {
@@ -44,6 +46,16 @@ func newStore(filename string, overwrite bool) (*ConcSafe, *gkvlite.Store) {
 
 	return f, st
 }
+func (ds *DkStore) compact(filename string) {
+	f, err := os.Create(filename)
+	check(err)
+	ns, err := ds.st.CopyTo(f, 100000)
+	check(err)
+	ns.Flush()
+	ns.Close()
+	f.Sync()
+	f.Close()
+}
 func NewDkStore(filename string, overwrite bool) *DkStore {
 	itm := new(DkStore)
 	if _, err := os.Stat(filename); overwrite || os.IsNotExist(err) {
@@ -52,6 +64,7 @@ func NewDkStore(filename string, overwrite bool) *DkStore {
 		itm.st = st
 		itm.f = f
 		itm.is = itm.st.SetCollection("int_string", nil)
+		itm.re = regexp.MustCompile("(http[s]?://)([^/]*)")
 		return itm
 	} else {
 		t_f, err := OpenConcSafe(filename)
@@ -69,6 +82,7 @@ func NewDkStore(filename string, overwrite bool) *DkStore {
 		if itm.is == nil {
 			log.Fatal("Nil Collection name int_string")
 		}
+		itm.re = regexp.MustCompile("(http[s]?://)([^/]*)")
 		return itm
 
 	}
@@ -232,7 +246,7 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 	// But not too many!
 	// It wants to be slightly more than the number of tokens we allow
 	// for each basename
-	max_same := 20
+	max_same := max_items / 10 // fetch at least 10 domains worth to work with
 	// We don't need to check the token as
 	// we only re-search when we have done a full list search
 	check_tk := false
@@ -257,7 +271,10 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 			}
 			// We could have a bunch in the same base domain
 
-			tmp_base := GetBase(tmp_val)
+			//tmp_base := GetBase(tmp_val)
+			// We don't need exactly the correct and tollerant answer
+			// a rough go will be fast enough
+			tmp_base := st.roughBase(tmp_val)
 			val, ok := unique_array[tmp_base]
 			if ok && (val >= max_same) {
 				return true
@@ -331,34 +348,6 @@ func (st *DkStore) Count() int {
 	return int(numItems)
 }
 
-type Spinner struct {
-	status     int
-	scaler     int
-	scaled_inc int
-}
-
-var spinn_array = []string{"|", "/", "-", "\\"}
-
-func (s Spinner) translateSpinner() string {
-	return spinn_array[s.status]
-}
-
-func (s *Spinner) PrintSpin(cnt int) {
-	if s.scaler != 0 {
-		s.scaled_inc++
-		if s.scaled_inc >= s.scaler {
-			s.scaled_inc = 0
-		}
-	}
-	if s.scaled_inc == 0 {
-		fmt.Printf("%s %8d\b\b\b\b\b\b\b\b\b\b", s.translateSpinner(), cnt)
-		s.status++
-		if s.status >= len(spinn_array) {
-			s.status = 0
-		}
-	}
-
-}
 func rankByWordCount(wordFrequencies map[string]int) PairList {
 	pl := make(PairList, len(wordFrequencies))
 	i := 0
@@ -370,22 +359,11 @@ func rankByWordCount(wordFrequencies map[string]int) PairList {
 	return pl
 }
 
-type Pair struct {
-	Key   string
-	Value int
-}
-
-type PairList []Pair
-
-func (p PairList) Len() int           { return len(p) }
-func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
-func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-
 func (st *DkStore) PrintWorkload() {
 	min_itm, err := st.is.MinItem(true)
 	check(err)
 	unique_array := make(map[string]int)
-	s := Spinner{scaler: 100}
+	s := Spinner{scaler: 1000}
 	var cnt int
 	st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
 		// This visitor callback will be invoked with every item

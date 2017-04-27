@@ -101,7 +101,8 @@ func (dkst *DkStore) checkStore(backup_hash map[string]struct{}, num_entries, ma
 func TestDiskPersist0(t *testing.T) {
 	max_str_len := 256
 	num_entries := 100
-	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	test_filename := "/tmp/test.gkvlite"
+	dkst := NewDkStore(test_filename, true)
 	backup_hash := make(map[string]struct{})
 
 	// Create some random entries of varing lengths
@@ -118,13 +119,14 @@ func TestDiskPersist0(t *testing.T) {
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
-	dkst1 := NewDkStore("/tmp/test.gkvlite", false)
+	dkst1 := NewDkStore(test_filename, false)
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 }
 func TestDiskPersist1(t *testing.T) {
 	max_str_len := 256
 	num_entries := 1000
-	dkst := NewUrlMap("/tmp/test.gkvlite", true)
+	test_filename := "/tmp/test.gkvlite"
+	dkst := NewUrlMap(test_filename, true, false)
 	backup_hash := make(map[string]struct{})
 
 	// Create some random entries of varing lengths
@@ -141,7 +143,7 @@ func TestDiskPersist1(t *testing.T) {
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
-	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
+	dkst1 := NewUrlMap(test_filename, false, false)
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 	log.Println("1st Reload check complete")
 	for i := 0; i < num_entries; i++ {
@@ -152,16 +154,26 @@ func TestDiskPersist1(t *testing.T) {
 	}
 	dkst1.Close()
 
-	dkst2 := NewUrlMap("/tmp/test.gkvlite", false)
+	dkst2 := NewUrlMap(test_filename, false, false)
 	dkst2.checkStore(backup_hash, num_entries, max_str_len)
 	log.Println("2nd Reload check complete")
+
+	compact_filename := "/tmp/compacted.gkvlite"
+	dkst2.dkst.compact(compact_filename)
+
 	dkst2.Close()
+
+	dkst3 := NewUrlMap(compact_filename, false, false)
+	dkst3.checkStore(backup_hash, num_entries, max_str_len)
+	log.Printf("3rd reload. Check complete")
+	dkst3.Close()
 }
 
 func TestDiskPersist2(t *testing.T) {
 	max_str_len := 256
 	num_entries := 100000
-	dkst := NewUrlMap("/tmp/test.gkvlite", true)
+	test_filename := "/tmp/test.gkvlite"
+	dkst := NewUrlMap(test_filename, true, false)
 	backup_hash := make(map[string]struct{})
 
 	// Create some random entries of varing lengths
@@ -179,7 +191,7 @@ func TestDiskPersist2(t *testing.T) {
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
 	// This time say we don't want to overwrite if it exists
-	dkst1 := NewUrlMap("/tmp/test.gkvlite", false)
+	dkst1 := NewUrlMap(test_filename, false, false)
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 	log.Printf("Reload Checked")
 
@@ -194,16 +206,24 @@ func TestDiskPersist2(t *testing.T) {
 	log.Printf("Checked after insertion")
 	dkst1.Close()
 	// This should work,
-	dkst2 := NewUrlMap("/tmp/test.gkvlite", false)
+	dkst2 := NewUrlMap(test_filename, false, false)
 	dkst2.checkStore(backup_hash, num_entries, max_str_len)
 	log.Printf("2nd reload. Check complete")
+	compact_filename := "/tmp/compacted.gkvlite"
+	dkst2.dkst.compact(compact_filename)
 
 	dkst2.Close()
+
+	dkst3 := NewUrlMap(compact_filename, false, false)
+	dkst3.checkStore(backup_hash, num_entries, max_str_len)
+	log.Printf("3rd reload. Check complete")
+	dkst3.Close()
 }
 
 func TestDiskStore0(t *testing.T) {
+	test_filename := "/tmp/test.gkvlite"
 
-	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	dkst := NewDkStore(test_filename, true)
 	dkst.SetAny(23, "Hello")
 	dkst.SetAny(25, "Goodbye")
 	dkst.Flush()
@@ -218,8 +238,9 @@ func TestDiskStore0(t *testing.T) {
 }
 
 func TestDiskStore1(t *testing.T) {
+	test_filename := "/tmp/test.gkvlite"
 
-	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	dkst := NewDkStore(test_filename, true)
 	dkst.SetAny("Hello1", 23)
 	dkst.SetAny("Goodbye1", 25)
 	dkst.Flush()
@@ -234,8 +255,9 @@ func TestDiskStore1(t *testing.T) {
 }
 
 func TestDiskStore2(t *testing.T) {
+	test_filename := "/tmp/test.gkvlite"
 
-	dkst := NewDkStore("/tmp/test.gkvlite", true)
+	dkst := NewDkStore(test_filename, true)
 	defer dkst.Close()
 
 	// Let's pretend to have some urls

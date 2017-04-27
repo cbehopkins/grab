@@ -2,6 +2,7 @@ package grab
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 )
@@ -19,7 +20,7 @@ type UrlMap struct {
 	cachewg  *sync.WaitGroup
 }
 
-func NewUrlMap(filename string, overwrite bool) *UrlMap {
+func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 	var use_disk bool
 	if filename != "" {
 		use_disk = true
@@ -30,11 +31,24 @@ func NewUrlMap(filename string, overwrite bool) *UrlMap {
 	itm.cachewg = new(sync.WaitGroup)
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
+		compact := true
+		if compact {
+			fmt.Println("Compacting Database:", filename)
+			// Compact the current store and write to temp file
+			itm.dkst.compact("/tmp/compact.gkvlite")
+			itm.dkst.Close() // Close before:
+			// move temp to current
+			err := os.Rename("/tmp/compact.gkvlite", filename)
+			check(err)
+			// load in the new smaller file
+			itm.dkst = NewDkStore(filename, false)
+			fmt.Println("Compact Complete")
+		}
 		itm.mp_tow = make(map[Url]struct{})
 		go itm.flusher()
 		self_read := false
 		if self_read {
-			fmt.Println("loafing:", filename)
+			//fmt.Println("loafing:", filename)
 			for _ = range itm.dkst.GetStringKeys() {
 			}
 			fmt.Println("done:", filename)
