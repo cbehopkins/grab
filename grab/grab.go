@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
-  "log"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"regexp"
@@ -126,7 +126,7 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 		buff := make([]Url, 0)
 		dec := gob.NewDecoder(f)
 		err = dec.Decode(&buff)
-    fmt.Printf("Gobbed in %d Items\n",len(buff))
+		fmt.Printf("Gobbed in %d Items\n", len(buff))
 		check(err)
 		for _, v := range buff {
 			the_chan <- v
@@ -289,20 +289,21 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 	}
 	if _, err := os.Stat(potential_file_name); !os.IsNotExist(err) {
 		// For a file that does already exist
-		if (mf.jpg_tk==nil) {
+		if mf.jpg_tk == nil {
 			// We're not testing all the jpgs for goodness
 			//fmt.Println("skipping downloading", potential_file_name)
-      log.Fatal("owhoops we should bevtesting jpg")
+			log.Fatal("owhoops we should bevtesting jpg")
 			return false
-		}else{
-		// Check if it is a corrupted file. If it is, then fetch again
-    //fmt.Println("yest jph", fn)
-		mf.jpg_tk.GetToken("jpg")
-		good_file := check_jpg(potential_file_name)
-		mf.jpg_tk.PutToken("jpg")
-		if good_file {
-			return false
-		}}
+		} else {
+			// Check if it is a corrupted file. If it is, then fetch again
+			//fmt.Println("yest jph", fn)
+			mf.jpg_tk.GetToken("jpg")
+			good_file := check_jpg(potential_file_name)
+			mf.jpg_tk.PutToken("jpg")
+			if good_file {
+				return false
+			}
+		}
 	}
 
 	// For a file that doesn't already exist, then just fetch it

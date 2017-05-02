@@ -40,10 +40,10 @@ func NewMultiFetch(mm bool) *MultiFetch {
 	itm.st = time.Now()
 	return itm
 }
-func (mf *MultiFetch)SetTestJpg(cnt int) {
-// Allow up to cnt JPG checks to be happening at once
+func (mf *MultiFetch) SetTestJpg(cnt int) {
+	// Allow up to cnt JPG checks to be happening at once
 	mf.jpg_tk = NewTokenChan(cnt, "jpg checker")
-  }
+}
 func (mf *MultiFetch) IncCount() {
 	mf.fc_lk.Lock()
 	mf.counter++
@@ -157,7 +157,7 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 			wg.Add(1)
 			go func() {
 				LoadGob(mf.filename, mf.fifo.PushChannel, nil, false, false)
-        fmt.Println("Finished reading in Gob fully*************************")
+				fmt.Println("Finished reading in Gob fully*************************")
 				wg.Done()
 			}()
 		}
@@ -208,18 +208,17 @@ func (mf *MultiFetch) Shutdown() {
 func (mf *MultiFetch) scram_multi() {
 	SaveGob(mf.filename, mf.dump_chan, nil)
 	fmt.Println("Fetch saved")
-  //tmp_chan := make(chan Url)
-  //LoadGob(mf.filename, tmp_chan, nil, ture false)
-  //i:=0
-  //for _ = range tmp_chan {
-  //  i++
-  //}
-  //fmt.Println("****Bob File had",i)
+	//tmp_chan := make(chan Url)
+	//LoadGob(mf.filename, tmp_chan, nil, ture false)
+	//i:=0
+	//for _ = range tmp_chan {
+	//  i++
+	//}
+	//fmt.Println("****Bob File had",i)
 }
 func (mf *MultiFetch) scram() {
 	SaveGob(mf.filename, mf.fifo.PopChannel, nil)
 	fmt.Println("Fetch saved")
-
 
 }
 func (mf *MultiFetch) dispatch(dv DomVisitI) {

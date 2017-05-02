@@ -115,9 +115,9 @@ func check_jpg(filename string) bool {
 		return true
 	case jpeg.FormatError:
 		switch err.Error() {
-	case "invalid JPEG format: bad RST marker":
-    return false
-  case "invalid JPEG format: short Huffman data":
+		case "invalid JPEG format: bad RST marker":
+			return false
+		case "invalid JPEG format: short Huffman data":
 			return false
 		case "invalid JPEG format: missing SOI marker":
 			return false
