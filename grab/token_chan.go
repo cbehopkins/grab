@@ -14,7 +14,7 @@ type TokenChan struct {
 	max_cnt        int
 }
 
-func NewTokenChan(delay int, num_tokens int, name string) *TokenChan {
+func NewTokenChan(num_tokens int, name string) *TokenChan {
 	var itm TokenChan
 	itm.open_tokens = make(map[string]int)
 	itm.broadcast_chan = make(chan struct{})
@@ -103,10 +103,9 @@ func (tc *TokenChan) TryPutToken(basename string) {
 	tc.PutToken(basename)
 }
 
-func (tc *TokenChan) UrlExist(urx string) bool {
-	basename := GetBase(urx)
+func (tc *TokenChan) BaseExist(urx string) bool {
 	tc.Lock()
-	_, ok := tc.open_tokens[basename]
+	_, ok := tc.open_tokens[urx]
 	tc.Unlock()
 	return ok
 }

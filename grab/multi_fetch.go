@@ -20,6 +20,10 @@ type MultiFetch struct {
 	filename       string
 	multi_mode     bool
 	download       bool
+	counter        int
+	fc_lk          sync.Mutex
+	st             time.Time
+	jpg_tk         *TokenChan
 }
 
 func NewMultiFetch(mm bool) *MultiFetch {
@@ -33,11 +37,28 @@ func NewMultiFetch(mm bool) *MultiFetch {
 		itm.InChan = make(chan Url)
 	}
 	itm.scram_chan = make(chan struct{})
+	itm.st = time.Now()
 	return itm
+}
+func (mf *MultiFetch)SetTestJpg(cnt int) {
+// Allow up to cnt JPG checks to be happening at once
+	mf.jpg_tk = NewTokenChan(cnt, "jpg checker")
+  }
+func (mf *MultiFetch) IncCount() {
+	mf.fc_lk.Lock()
+	mf.counter++
+	mf.fc_lk.Unlock()
+}
+func (mf *MultiFetch) TotCnt() int {
+	return mf.counter + mf.Count()
 }
 func (mf *MultiFetch) Count() int {
 	// Return the number of items we're waiting to fetch
-	return mf.fifo.Count()
+	running_total := mf.fifo.Count()
+	for _, v := range mf.ff_map {
+		running_total += v.Count()
+	}
+	return running_total
 }
 func (mf *MultiFetch) SetFileName(fn string) {
 	mf.filename = fn
@@ -46,7 +67,7 @@ func (mf *MultiFetch) SetDownload() {
 	mf.download = true
 }
 func (mf *MultiFetch) Scram() {
-	fmt.Println("Scram Requested")
+	fmt.Println("Scram Requested", mf.Count())
 	mf.Lock()
 	if !mf.in_chan_closed {
 		close(mf.InChan)
@@ -109,7 +130,8 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 					go func() {
 
 						// Fetch returns true if it has used the network
-						if FetchW(urf, false) {
+						if mf.FetchW(urf) {
+							mf.IncCount()
 							time.Sleep(500 * time.Millisecond)
 						}
 						tchan <- struct{}{}
@@ -135,6 +157,7 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 			wg.Add(1)
 			go func() {
 				LoadGob(mf.filename, mf.fifo.PushChannel, nil, false, false)
+        fmt.Println("Finished reading in Gob fully*************************")
 				wg.Done()
 			}()
 		}
@@ -168,19 +191,36 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 func (mf *MultiFetch) Wait() {
 	mf.wg.Wait()
 }
+func (mf *MultiFetch) PrintThroughput() {
+	elapsed := time.Since(mf.st).Seconds()
+	//fmt.Printf("%d items in %v seconds",mf.counter,elapsed)
+	tp := float64(mf.counter) / elapsed
+	tp_int := int64(tp)
+	fmt.Printf("\n\n%v Media Files at %v Items per Second\n", mf.counter, tp_int)
+}
 
 func (mf *MultiFetch) Shutdown() {
 	mf.Scram()
 	mf.Wait()
+	mf.PrintThroughput()
 }
 
 func (mf *MultiFetch) scram_multi() {
 	SaveGob(mf.filename, mf.dump_chan, nil)
 	fmt.Println("Fetch saved")
+  //tmp_chan := make(chan Url)
+  //LoadGob(mf.filename, tmp_chan, nil, ture false)
+  //i:=0
+  //for _ = range tmp_chan {
+  //  i++
+  //}
+  //fmt.Println("****Bob File had",i)
 }
 func (mf *MultiFetch) scram() {
 	SaveGob(mf.filename, mf.fifo.PopChannel, nil)
 	fmt.Println("Fetch saved")
+
+
 }
 func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// here we read from in chan

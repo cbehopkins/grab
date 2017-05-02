@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
+  "log"
+	"io"
 	"net/url"
 	"os"
 	"regexp"
@@ -116,7 +118,6 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 			return
 		}
 	}
-	defer os.Remove(filename)
 	defer f.Close()
 	fi, err := f.Stat()
 	check(err)
@@ -125,6 +126,7 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 		buff := make([]Url, 0)
 		dec := gob.NewDecoder(f)
 		err = dec.Decode(&buff)
+    fmt.Printf("Gobbed in %d Items\n",len(buff))
 		check(err)
 		for _, v := range buff {
 			the_chan <- v
@@ -139,19 +141,64 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 	if filename == "" {
 		return
 	}
+	if _, err := os.Stat(filename); err == nil {
+		os.Remove(filename)
+	}
+
+	preader, pwriter := io.Pipe()
+
 	f, err := os.Create(filename)
 	check(err)
 	defer f.Close()
+
+	go func() {
+		last_read := false
+		for !last_read {
+			buf := make([]byte, 1<<10)
+			//fmt.Println("reding into buffer")
+			// REVISIT It would be more //el to read first outside the loop
+			// Then we could pass the next buffer to the read while we wrote
+			n, err := preader.Read(buf)
+			//fmt.Println("Read from buffer",n,err)
+
+			if err == io.EOF {
+				fmt.Println("Detected end of file")
+				last_read = true
+			} else if err != nil {
+				panic(err)
+			}
+			// Reslice so writer has the correct input
+			buf = buf[:n]
+			len_remaining := n
+			for len_remaining > 0 {
+				//fmt.Println("writing bytes:",len_remaining, len(buf), buf)
+				n, err = f.Write(buf)
+				//fmt.Println("Wrote",n,err)
+				check(err)
+				len_remaining -= n
+			}
+			if last_read {
+				preader.Close()
+				//pwriter.Close()
+				f.Close()
+				fmt.Println("Done and closing everything")
+				return
+			}
+		}
+	}()
+
 	buff := make([]Url, 0)
 	fmt.Println("Start bufferring")
 	for v := range the_chan {
 		buff = append(buff, v)
 	}
-	fmt.Println("Finished buffering")
-	enc := gob.NewEncoder(f)
+	fmt.Printf("Gobbing Out %d Items\n", len(buff))
+	enc := gob.NewEncoder(pwriter)
+
 	err = enc.Encode(buff)
 	fmt.Println("Finished gobbing")
 	check(err)
+
 }
 func GetBase(urls string) string {
 	var ai *url.URL
@@ -190,7 +237,7 @@ func RunChan(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_name
 	return &wg
 }
 
-func FetchW(fetch_url Url, test_jpg bool) bool {
+func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 	// We retun true if we have used network bandwidth.
 	// If we have not then it's okay to jump straight onto the next file
 	array := strings.Split(fetch_url.Url(), "/")
@@ -242,16 +289,20 @@ func FetchW(fetch_url Url, test_jpg bool) bool {
 	}
 	if _, err := os.Stat(potential_file_name); !os.IsNotExist(err) {
 		// For a file that does already exist
-		if !test_jpg {
+		if (mf.jpg_tk==nil) {
 			// We're not testing all the jpgs for goodness
 			//fmt.Println("skipping downloading", potential_file_name)
+      log.Fatal("owhoops we should bevtesting jpg")
 			return false
-		}
+		}else{
 		// Check if it is a corrupted file. If it is, then fetch again
+    //fmt.Println("yest jph", fn)
+		mf.jpg_tk.GetToken("jpg")
 		good_file := check_jpg(potential_file_name)
+		mf.jpg_tk.PutToken("jpg")
 		if good_file {
 			return false
-		}
+		}}
 	}
 
 	// For a file that doesn't already exist, then just fetch it

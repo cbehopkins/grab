@@ -38,7 +38,8 @@ type Hamster struct {
 	// vs they need to be from an allowed domain
 	all_interesting bool
 	// Debug
-	print_urls bool
+	print_urls  bool
+	robotsCache *RobotCache
 }
 
 func NewHamster(promiscuous, shallow, all_interesting, print_urls bool) *Hamster {
@@ -53,6 +54,10 @@ func NewHamster(promiscuous, shallow, all_interesting, print_urls bool) *Hamster
 
 	return itm
 }
+func (hm *Hamster) Polite() {
+	hm.robotsCache = NewRobotCache()
+}
+
 func (hm *Hamster) Copy() *Hamster {
 	itm := new(Hamster)
 	itm.oc = hm.oc
@@ -90,6 +95,11 @@ func (hm *Hamster) SetShallow() {
 func (hm *Hamster) ClearShallow() {
 	hm.shallow = false
 }
+func (hm *Hamster) Close() {
+	if hm.robotsCache != nil {
+		hm.robotsCache.Close()
+	}
+}
 func (hm *Hamster) GrabT(
 	url_in Url, // The URL we are tasked with crawling
 	token_name string,
@@ -111,6 +121,13 @@ func (hm *Hamster) GrabT(
 		fmt.Printf("Analyzing UR: %s\n", url_in)
 		defer fmt.Println("Done with URL:", url_in)
 	}
+
+	if hm.robotsCache != nil {
+		if !hm.robotsCache.AllowUrl(url_in) {
+			return
+		}
+	}
+
 	// Flag saying we should printout
 	domain_i := url_in.Base()
 	// Add to the list of domains we have visited (and should visit again)

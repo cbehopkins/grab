@@ -1,11 +1,12 @@
 package grab
 
 import (
-	"github.com/steveyen/gkvlite"
 	"log"
 	"math/rand"
 	"os"
 	"testing"
+
+	"github.com/steveyen/gkvlite"
 )
 
 func GetKeysChan(st *gkvlite.Collection) (ret_chan chan string) {

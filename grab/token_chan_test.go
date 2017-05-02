@@ -9,7 +9,7 @@ import (
 )
 
 func TestTok0(t *testing.T) {
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
 	tks.PutToken("fred")
@@ -22,7 +22,7 @@ func TestTok0(t *testing.T) {
 }
 
 func TestTok1(t *testing.T) {
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
@@ -39,7 +39,7 @@ func TestTok1(t *testing.T) {
 	log.Println("Returned Fred")
 }
 func TestTok2(t *testing.T) {
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
@@ -57,7 +57,7 @@ func TestTok2(t *testing.T) {
 func TestTok3(t *testing.T) {
 	var wg sync.WaitGroup
 
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
@@ -86,7 +86,7 @@ func TestTok3(t *testing.T) {
 func TestTok4(t *testing.T) {
 	var wg sync.WaitGroup
 
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
@@ -116,7 +116,7 @@ func TestTok4(t *testing.T) {
 func TestTok5(t *testing.T) {
 	var wg sync.WaitGroup
 
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
@@ -150,7 +150,7 @@ func TestTok6(t *testing.T) {
 	domains := []string{"bob", "fred", "steve", "wibble"}
 	locks := make([]int, len(domains))
 
-	tks := NewTokenChan(0, 0, "")
+	tks := NewTokenChan(0, "")
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
@@ -185,7 +185,7 @@ func TestTok7(t *testing.T) {
 	locks := make([]int, 4)
 
 	max_procs := 2
-	tks := NewTokenChan(0, max_procs, "")
+	tks := NewTokenChan(max_procs, "")
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		var master_lock sync.Mutex

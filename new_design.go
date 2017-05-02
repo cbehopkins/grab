@@ -38,12 +38,13 @@ func ProgressBars(visited_urls *grab.UrlMap, unvisit_urls *grab.UrlMap, multi_fe
 	}
 	// Start a routine that will occasionally update them
 	go func() {
+		fet_bar.Total = int64(multi_fetch.TotCnt())
 		for {
 			time.Sleep(10 * time.Second)
 
 			// TBD If equal then zero both
-			if multi_fetch.Count() > max_fc {
-				max_fc = multi_fetch.Count()
+			if multi_fetch.TotCnt() > max_fc {
+				max_fc = multi_fetch.TotCnt()
 				fet_bar.Total = int64(max_fc)
 			}
 			fet_bar.Set(max_fc - multi_fetch.Count())
@@ -63,8 +64,11 @@ func shutdown(
 	runr *grab.Runner) {
 
 	// First stop the Progress bar
-	pool.Stop()
-	fmt.Println("flush and close")
+	//fmt.Println("Stop Pool\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+	if pool != nil {
+		pool.Stop()
+	}
+	//fmt.Println("flush and close\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 	var closing_wg sync.WaitGroup
 	closing_wg.Add(1)
 	go func() {
@@ -109,10 +113,14 @@ func main() {
 	var nodownflg = flag.Bool("nod", false, "No Download Mode")
 	var autostopflg = flag.Bool("as", true, "Autostop")
 	var compactflg = flag.Bool("compact", false, "Compact Databases")
+	var politeflg = flag.Bool("polite", false, "Respect robots.txt")
+	var gofastflg = flag.Bool("fast", false, "Go Fast")
+	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var num_p_fetch int
 	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
 	show_progress_bar := !*dbgflg
+	//show_progress_bar := false
 
 	var wg sync.WaitGroup
 	download := !*nodownflg
@@ -125,6 +133,8 @@ func main() {
 	shallow := !promiscuous
 	all_interesting := *intrflg
 	debug := *dbgflg
+
+	print_workload := false
 
 	visited_fname := "/tmp/visited.gkvlite"
 	unvisit_fname := "/tmp/unvisit.gkvlite"
@@ -139,6 +149,9 @@ func main() {
 	if download {
 		multi_fetch.SetDownload()
 	}
+  if true {
+  multi_fetch.SetTestJpg(2)
+  }
 	chan_fetch_push := multi_fetch.InChan
 
 	var visited_urls *grab.UrlMap
@@ -146,6 +159,35 @@ func main() {
 	// Open the maps and do not overwrite any we find
 	visited_urls = grab.NewUrlMap(visited_fname, false, *compactflg)
 	unvisit_urls = grab.NewUrlMap(unvisit_fname, false, *compactflg)
+
+	if *clearvisitedflg {
+		list := make([]grab.Url, 0, 10000)
+    s := grab.Spinner{}
+    cnt := 0
+    length := visited_urls.Count()
+		fmt.Println("Resetting Unvisited", length)
+		for visited_urls.Size() > 0 {
+      cnt_backup := cnt
+			visited_chan := visited_urls.Visit()
+			for v := range visited_chan {
+				list = append(list, v)
+        s.PrintSpin(cnt)
+        cnt++
+			}
+      cnt = cnt_backup
+			for _, v := range list {
+				visited_urls.Delete(v)
+				unvisit_urls.Set(v)
+        s.PrintSpin(cnt)
+        cnt++
+			}
+
+			// reset list to 0 length - but retain capacity
+			list = list[:0]
+		}
+
+		fmt.Println("Finsihed Resetting Unvisited")
+	}
 
 	// A DomVisit tracks what domains we're allowed to visit
 	// Any domains we come across not in this list will not be visited
@@ -161,6 +203,9 @@ func main() {
 		all_interesting,
 		debug, // Print Urls
 	)
+	if *politeflg {
+		hm.Polite()
+	}
 	hm.SetDv(dmv)
 	hm.SetFetchCh(chan_fetch_push)
 
@@ -230,7 +275,7 @@ func main() {
 			hms.SetDv(dmv)
 			hms.SetFetchCh(chan_fetch_push)
 			var grab_tk_rep *grab.TokenChan
-			grab_tk_rep = grab.NewTokenChan(0, num_p_fetch, "shallow")
+			grab_tk_rep = grab.NewTokenChan(num_p_fetch, "shallow")
 			hms.SetGrabCh(src_url_chan)
 			for itm := range start_url_chan {
 				//fmt.Println("Shallow Grab:", itm)
@@ -248,20 +293,22 @@ func main() {
 		}()
 	}
 	wg.Wait()
-	fmt.Println("Run Seeded 0")
 	wgrc.Wait()
-	fmt.Println("Run Seeded 1")
+	fmt.Println("Run Seeded")
 	hm.ClearShallow()
-	fmt.Println("Printing Workload")
-	unvisit_urls.PrintWorkload()
-	go func() {
-		time.Sleep(10 * time.Minute)
-		unvisit_urls.PrintWorkload()
-		fmt.Println("")
-		fmt.Println("")
-	}()
-	fmt.Println("Workload Printed")
 
+	if print_workload {
+		fmt.Println("Printing Workload")
+		unvisit_urls.PrintWorkload()
+
+		go func() {
+			time.Sleep(10 * time.Minute)
+			unvisit_urls.PrintWorkload()
+			fmt.Println("")
+			fmt.Println("")
+		}()
+		fmt.Println("Workload Printed")
+	}
 	// Now we're up and running
 	// Start the profiler
 	if *cpuprofile != "" {
@@ -275,9 +322,16 @@ func main() {
 	}
 
 	runr := grab.NewRunner(hm, unvisit_urls, visited_urls)
+	if !*gofastflg {
+		runr.GoSlow()
+		fmt.Println("Grab Slowly")
+	} else {
+		fmt.Println("Rapid Grab")
+	}
 	runr.GrabRunner(
 		num_p_fetch,
 	)
+
 	var pool *pb.Pool
 	if show_progress_bar {
 		// Show a progress bar
@@ -320,9 +374,12 @@ func main() {
 		}
 	}()
 	runr.Wait()
+	multi_fetch.Wait()
+	shutdown_in_progress.Lock()
 	if !shutdown_run {
-		shutdown_in_progress.Lock()
 		mem_profile(*memprofile)
 		shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
+	} else {
+		shutdown_in_progress.Unlock()
 	}
 }

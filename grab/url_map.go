@@ -31,7 +31,6 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 	itm.cachewg = new(sync.WaitGroup)
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
-		compact := true
 		if compact {
 			fmt.Println("Compacting Database:", filename)
 			// Compact the current store and write to temp file
@@ -322,53 +321,47 @@ func (um *UrlMap) Visit() chan Url {
 	}()
 	return ret_chan
 }
+func (um *UrlMap) FlushWrites() {
+	um.Lock()
+	um.localFlush()
+	um.Unlock()
+	um.cachewg.Wait()
+}
 
 // Similar to Visit() but we supply the map of references
 // This attempts to search through the database
 // finding a good selection of URLs
-func (um *UrlMap) VisitMissing(refr *TokenChan) chan Url {
-	ret_chan := make(chan Url)
-	go func() {
-		um.Lock()
-		um.localFlush()
-		um.Unlock()
-		um.cachewg.Wait()
-		um.RLock()
-		if um.use_disk {
-			if um.closed {
-				um.RUnlock()
-				close(ret_chan)
-				return
-			} else {
-				// Get up to 100 things that aren't on the TokenChan
-				string_array := um.dkst.GetMissing(10000, refr)
-				um.RUnlock()
-				// We've done reading, so write out the cache
-				// while the disk is not busy
-				go um.Flush()
-				for _, v := range string_array {
-					//fmt.Println("Visit Url:", v)
-					ret_chan <- NewUrl(v)
-				}
-			}
-		} else {
-			tmp_slice := make([]Url, len(um.mp))
-			i := 0
-			for v, _ := range um.mp {
-				tmp_slice[i] = v
-				i++
-			}
+func (um *UrlMap) VisitMissing(refr *TokenChan) map[Url]struct{} {
+	ret_map := make(map[Url]struct{})
+	um.FlushWrites()
+
+	um.RLock()
+	if um.use_disk {
+		if um.closed {
 			um.RUnlock()
-			// We've finsihed reading - excellent time
-			// to do lots of writes
-			go um.Flush()
-			for _, v := range tmp_slice {
-				ret_chan <- v
+			return ret_map
+		} else {
+			// Get up to 100 things that aren't on the TokenChan
+			ret_map_url := um.dkst.GetMissing(10000, refr)
+			um.RUnlock()
+			for key, value := range ret_map_url {
+				ret_map[NewUrl(key)] = value
 			}
+			// We've done reading, so write out the cache
+			// while the disk is not busy
+			go um.Flush()
+			return ret_map
 		}
-		close(ret_chan)
-	}()
-	return ret_chan
+	} else {
+		for v, _ := range um.mp {
+			ret_map[v] = struct{}{}
+		}
+		um.RUnlock()
+		// We've finsihed reading - excellent time
+		// to do lots of writes
+		go um.Flush()
+	}
+	return ret_map
 }
 
 func (um *UrlMap) Delete(key Url) {

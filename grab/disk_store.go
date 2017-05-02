@@ -2,12 +2,10 @@ package grab
 
 import (
 	"log"
-	"math/rand"
 	"os"
 	"regexp"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/steveyen/gkvlite"
 )
@@ -237,9 +235,8 @@ func (st *DkStore) GetAnyKeys() (ret_chan chan []byte) {
 	return ret_chan
 }
 
-func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []string) {
-	ret_array = make([]string, 0, max_items)
-	tmp_chan := make(chan string)
+func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_map map[string]struct{}) {
+	ret_map = make(map[string]struct{})
 
 	// we will allow up to max_same of the same basename to go through
 	// This is so we can fetch several things fromt he same host at once
@@ -250,6 +247,7 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 	// We don't need to check the token as
 	// we only re-search when we have done a full list search
 	check_tk := false
+	url_chan := make(chan string)
 	go func() {
 		cnt := 0
 		min_itm, err := st.is.MinItem(true)
@@ -262,8 +260,9 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 			tmp_val := string(i.Key)
 			// If the token for this is in use
 			// Then it won't fetch this pass, so don't let it through
+			tmp_base := st.roughBase(tmp_val)
 			if check_tk {
-				ok := refr.UrlExist(tmp_val)
+				ok := refr.BaseExist(tmp_base)
 				if ok {
 					// Keep going, look for something not in the map
 					return true
@@ -274,7 +273,6 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 			//tmp_base := GetBase(tmp_val)
 			// We don't need exactly the correct and tollerant answer
 			// a rough go will be fast enough
-			tmp_base := st.roughBase(tmp_val)
 			val, ok := unique_array[tmp_base]
 			if ok && (val >= max_same) {
 				return true
@@ -290,29 +288,17 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_array []strin
 			// We've found something interesting so increment the count
 			cnt++
 			// send the interesting thing
-			tmp_chan <- tmp_val
+			url_chan <- tmp_val
 			// keep going until we have got n items
 			return cnt < max_items
 		})
-		close(tmp_chan)
+		close(url_chan)
 	}()
-	var done_some bool
-	for v := range tmp_chan {
-		done_some = true
-		ret_array = append(ret_array, v)
-	}
-	// Randomize the array to make
-	// us select as many different domains at once as possible
-	for i := range ret_array {
-		j := rand.Intn(i + 1)
-		ret_array[i], ret_array[j] = ret_array[j], ret_array[i]
-	}
-	if !done_some {
-		log.Println("Warning no new items")
-		<-time.After(10 * time.Second)
+	for tmp_val := range url_chan {
+		ret_map[tmp_val] = struct{}{}
 	}
 
-	return ret_array
+	return ret_map
 }
 
 func (st *DkStore) Size() int {
