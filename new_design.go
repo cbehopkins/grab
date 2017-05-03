@@ -62,7 +62,7 @@ func shutdown(
 	shutdown_in_progress *sync.Mutex,
 	multi_fetch *grab.MultiFetch,
 	runr *grab.Runner) {
-
+  runr.Resume()
 	// First stop the Progress bar
 	//fmt.Println("Stop Pool\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 	if pool != nil {
@@ -103,6 +103,8 @@ func mem_profile(mem_prf_fn string) {
 	}
 }
 
+
+
 func main() {
 	var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -111,11 +113,14 @@ func main() {
 	var intrflg = flag.Bool("interest", false, "All Links found are Interesting - Super promiscuous mode")
 	var dbgflg = flag.Bool("dbg", false, "Debug Mode")
 	var nodownflg = flag.Bool("nod", false, "No Download Mode")
-	var autostopflg = flag.Bool("as", true, "Autostop")
 	var compactflg = flag.Bool("compact", false, "Compact Databases")
 	var politeflg = flag.Bool("polite", false, "Respect robots.txt")
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
+	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
+  var autopaceflg = flag.Int("apace",0,"Automatically Pace the download")
+  var rundurationflg = flag.Duration("dur", (2*time.Hour), "Specify Run Duration")
+
 	var num_p_fetch int
 	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
@@ -149,8 +154,8 @@ func main() {
 	if download {
 		multi_fetch.SetDownload()
 	}
-  if true {
-  multi_fetch.SetTestJpg(2)
+  if *testjpgflg {
+    multi_fetch.SetTestJpg(2)
   }
 	chan_fetch_push := multi_fetch.InChan
 
@@ -322,6 +327,7 @@ func main() {
 	}
 
 	runr := grab.NewRunner(hm, unvisit_urls, visited_urls)
+
 	if !*gofastflg {
 		runr.GoSlow()
 		fmt.Println("Grab Slowly")
@@ -344,10 +350,10 @@ func main() {
 	var shutdown_in_progress sync.Mutex
 	var shutdown_run bool
 
-	if *autostopflg {
+	if rundurationflg!=nil {
 		go func() {
 			// Run the main thing for no more than 100 Seconds/Minutes
-			time.Sleep(2 * time.Hour)
+			time.Sleep(*rundurationflg)
 			shutdown_in_progress.Lock()
 			shutdown_run = true
 			fmt.Println("Runtime Exceeded")
@@ -373,6 +379,10 @@ func main() {
 			}
 		}
 	}()
+  if *autopaceflg !=0 {
+    go runr.AutoPace(multi_fetch, *autopaceflg)
+  } 
+  
 	runr.Wait()
 	multi_fetch.Wait()
 	shutdown_in_progress.Lock()

@@ -5,7 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"log"
+	//"log"
 	"net/url"
 	"os"
 	"regexp"
@@ -292,7 +292,6 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 		if mf.jpg_tk == nil {
 			// We're not testing all the jpgs for goodness
 			//fmt.Println("skipping downloading", potential_file_name)
-			log.Fatal("owhoops we should bevtesting jpg")
 			return false
 		} else {
 			// Check if it is a corrupted file. If it is, then fetch again

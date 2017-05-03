@@ -17,6 +17,8 @@ type Runner struct {
 	counter      int
 	st           time.Time
 	grab_slowly  bool
+	pause_lk     sync.Mutex
+	pause        bool
 }
 
 func NewRunner(hm *Hamster,
@@ -48,7 +50,26 @@ func (r *Runner) PrintThroughput() {
 	tp_int := int64(tp)
 	fmt.Printf("\n\n%v Items per Second\n", tp_int)
 }
+func (r *Runner) Resume() {
+	r.pause_lk.Lock()
+	if r.pause {
+		fmt.Printf("\nResuming Grabber\n\n\n")
+	}
+	r.pause = false
+	r.pause_lk.Unlock()
+}
+func (r *Runner) Pause() {
+	r.pause_lk.Lock()
+	if !r.pause {
+		fmt.Printf("\nPausing Grabber\n\n\n")
+	}
+	r.pause = true
+	r.pause_lk.Unlock()
+}
 func (r *Runner) Shutdown() {
+  r.Resume()
+  r.pause_lk.Lock() // Prevent us pausing again until shutdown
+  defer r.pause_lk.Unlock()
 	r.Close()
 	r.Wait() // Once we've closed it make sure it is closed
 	r.hm.Close()
@@ -73,6 +94,13 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 		if r.unvisit_urls.Size() <= 0 {
 			return
 		} else {
+			r.pause_lk.Lock()
+			we_pause := r.pause
+			r.pause_lk.Unlock()
+			if we_pause {
+				time.Sleep(10 * time.Second)
+				continue
+			}
 			out_count := NewOutCounter()
 			out_count.Add()
 			out_count.Dec()
@@ -170,4 +198,21 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 		}
 		time.Sleep(r.recycle_time)
 	}
+}
+func (runr *Runner) AutoPace(multi_fetch *MultiFetch, target int) {
+	// When activated pace the runner.
+	// when there is more than target things to fetch. Pause the runner
+	// then less, then activate it
+
+	run_auto := true
+	for current :=multi_fetch.Count(); run_auto; current =multi_fetch.Count() {
+		if current > target {
+			runr.Pause()
+			time.Sleep(10 * time.Second)
+		} else {
+			runr.Resume()
+			time.Sleep(1 * time.Second)
+		}
+	}
+
 }
