@@ -34,9 +34,10 @@ func RandStringBytesMaskImprSrc(n int) string {
 	return string(b)
 }
 func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
+  //dkst.localFlush()
 	for v, _ := range backup_hash {
 		if !dkst.Exist(NewUrl(v)) {
-			log.Fatal("Error, missing key from disk", v)
+			log.Fatal("Error, missing key from URL disk", v)
 		}
 	}
 	for v := range dkst.VisitAll() {
@@ -143,8 +144,16 @@ func TestDiskPersist1(t *testing.T) {
 	dkst.Close()
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
+	// filename, overwrite, compact
 	dkst1 := NewUrlMap(test_filename, false, false)
+	err := dkst1.dkst.st.Flush()
+	check(err)
+
+	dkst1.dkst.Flush()
+
+	dkst1.Flush()
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
+	dkst1.Flush()
 	log.Println("1st Reload check complete")
 	for i := 0; i < num_entries; i++ {
 		str_len := rand.Int31n(int32(max_str_len)) + 1
@@ -152,6 +161,8 @@ func TestDiskPersist1(t *testing.T) {
 		dkst1.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
+	dkst1.checkStore(backup_hash, num_entries, max_str_len)
+  dkst1.Flush()
 	dkst1.Close()
 
 	dkst2 := NewUrlMap(test_filename, false, false)
@@ -202,7 +213,8 @@ func TestDiskPersist2(t *testing.T) {
 		dkst1.Set(NewUrl(tst_string))
 		backup_hash[tst_string] = struct{}{}
 	}
-	dkst1.checkStore(backup_hash, num_entries, max_str_len)
+	//dkst1.localFlush()
+  dkst1.checkStore(backup_hash, num_entries, max_str_len)
 	log.Printf("Checked after insertion")
 	dkst1.Close()
 	// This should work,

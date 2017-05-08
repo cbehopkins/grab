@@ -10,11 +10,22 @@ import (
 	"github.com/steveyen/gkvlite"
 )
 
+var UseConcSafe = false
+
+type DkStFileIf interface {
+	ReadAt([]byte, int64) (int, error)
+	WriteAt([]byte, int64) (int, error)
+	Truncate(size int64) error
+	Sync() error
+	Close() error
+	Stat() (os.FileInfo, error)
+}
+
 // Disk Store of int to string map
 type DkStore struct {
 	st *gkvlite.Store
 	is *gkvlite.Collection
-	f  *ConcSafe
+	f  DkStFileIf
 	re *regexp.Regexp
 }
 
@@ -23,25 +34,37 @@ func (ds *DkStore) Flush() {
 	check(err)
 }
 func (ds *DkStore) Sync() {
-	ds.f.Sync()
+	err := ds.f.Sync()
+	check(err)
 }
 func (ds *DkStore) Close() {
-	ds.st.Flush()
+	err := ds.st.Flush()
+	check(err)
 	ds.st.Close()
-	ds.f.Sync()
-	ds.f.Close()
+	check(err)
+	err = ds.f.Sync()
+	check(err)
+	err = ds.f.Close()
+	check(err)
 }
-func newStore(filename string, overwrite bool) (*ConcSafe, *gkvlite.Store) {
+func newStore(filename string) (DkStFileIf, *gkvlite.Store) {
 	st := new(gkvlite.Store)
 	var err error
+	var f DkStFileIf
 	// Remember to close the file later
 
 	// If the file does not exiast already
-	f, err := NewConcSafe(filename)
+	if UseConcSafe {
+		f, err = NewConcSafe(filename)
+	} else {
+		f, err = os.Create(filename)
+	}
 	check(err)
 	st, err = gkvlite.NewStore(f)
 	check(err)
-
+	if st == nil {
+		log.Fatal("Store creation error - gkvlite.NewStore returned nil")
+	}
 	return f, st
 }
 func (ds *DkStore) compact(filename string) {
@@ -58,14 +81,20 @@ func NewDkStore(filename string, overwrite bool) *DkStore {
 	itm := new(DkStore)
 	if _, err := os.Stat(filename); overwrite || os.IsNotExist(err) {
 		// Doesn't exist? Happy days, create it
-		f, st := newStore(filename, overwrite)
+		f, st := newStore(filename)
 		itm.st = st
 		itm.f = f
 		itm.is = itm.st.SetCollection("int_string", nil)
 		itm.re = regexp.MustCompile("(http[s]?://)([^/]*)")
 		return itm
 	} else {
-		t_f, err := OpenConcSafe(filename)
+		var t_f DkStFileIf
+		var err error
+		if UseConcSafe {
+			t_f, err = OpenConcSafe(filename)
+		} else {
+			t_f, err = os.OpenFile(filename, os.O_RDWR, 0600)
+		}
 		check(err)
 
 		t_st, err := gkvlite.NewStore(t_f)
@@ -73,7 +102,7 @@ func NewDkStore(filename string, overwrite bool) *DkStore {
 		if t_st == nil {
 			log.Fatal("Nil t_st for:", filename)
 		}
-		// If this works?
+
 		itm.st = t_st
 		itm.f = t_f
 		itm.is = itm.st.GetCollection("int_string")
@@ -82,7 +111,6 @@ func NewDkStore(filename string, overwrite bool) *DkStore {
 		}
 		itm.re = regexp.MustCompile("(http[s]?://)([^/]*)")
 		return itm
-
 	}
 }
 

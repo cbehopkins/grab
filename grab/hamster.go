@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"net/http"
 	"golang.org/x/net/html"
+	"net/http"
 )
 
 // A hamster is our struture for the the things that grabs and prepares things for storing
@@ -159,15 +159,14 @@ func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text s
 	// I need to get this into an absolute URL again
 	base := url_in.Parse()
 	u := linked_url.Parse()
-  // Need to re-check for ""
-  // as Parse will nil the strings if parse errors
-  if linked_url.Url() == "" || url_in.Url() == "" || base == nil || u == nil {
-    return
-  }
-  // Re-write an relative URLs
+	// Need to re-check for ""
+	// as Parse will nil the strings if parse errors
+	if linked_url.Url() == "" || url_in.Url() == "" || base == nil || u == nil {
+		return
+	}
+	// Re-write an relative URLs
 	relinked_url_string := base.ResolveReference(u).String()
 	linked_url = NewUrl(relinked_url_string)
-
 
 	domain_j := linked_url.Base()
 	if domain_j == "" {
@@ -197,7 +196,7 @@ func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text s
 	case is_mpg, is_mp4, is_avi:
 		//fmt.Println("MPG found:", linked_url)
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			tmp_ur :=linked_url
+			tmp_ur := linked_url
 			tmp_ur.SetTitle(title_text)
 			hm.fetch_chan <- tmp_ur
 			//fmt.Println("sent", linked_url)

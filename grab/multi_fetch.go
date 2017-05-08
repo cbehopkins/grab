@@ -156,8 +156,8 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 		if mf.filename != "" {
 			wg.Add(1)
 			go func() {
-        // Because in Multi-Mode re read direct from InChan
-        // Maks sure we write there
+				// Because in Multi-Mode re read direct from InChan
+				// Maks sure we write there
 				LoadGob(mf.filename, mf.InChan, nil, false, false)
 				fmt.Println("Finished reading in Gob fully*************************")
 				wg.Done()
@@ -167,7 +167,7 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 
 		if !mf.multi_mode {
 			mf.single_worker(mf.fifo.PopChannel, dv, "universal")
-      wg.Wait()
+			wg.Wait()
 		} else {
 			mf.dump_chan = make(chan Url)
 			// TBD Try this
@@ -229,9 +229,9 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	oc := NewOutCounter()
 	oc.Add()
 	oc.Dec()
-  // In Multi-Mode we read Direct from InChan
+	// In Multi-Mode we read Direct from InChan
 	for urli := range mf.InChan {
-    //fmt.Println("Reading URL in:",urli)
+		//fmt.Println("Reading URL in:",urli)
 		// work out what the basename of the fetch is
 		basename := urli.Base()
 		// Check to see if there is an entry for this basename already

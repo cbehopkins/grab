@@ -129,7 +129,7 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 		fmt.Printf("Gobbed in %d Items\n", len(buff))
 		check(err)
 		for _, v := range buff {
-      v.Initialise()
+			v.Initialise()
 			the_chan <- v
 		}
 

@@ -12,12 +12,14 @@ type UrlMap struct {
 	disk_lock sync.Mutex
 	// something in mp must be on the disk - it is a cache
 	// something in mp_tow is not on the disk
-	mp       map[Url]struct{} // Doubles up as local read cache when using disk
-	mp_tow   map[Url]struct{} // URLs waiting to be written
-	use_disk bool
-	closed   bool
-	dkst     *DkStore
-	cachewg  *sync.WaitGroup
+	mp            map[string] struct{} // Doubles up as local read cache when using disk
+	mp_tow        map[string] struct{}  // URLs waiting to be written
+	use_disk      bool
+	closed        bool
+	dkst          *DkStore
+	cachewg       *sync.WaitGroup
+	UseReadCache  bool
+	UseWriteCache bool
 }
 
 func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
@@ -27,8 +29,7 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 	}
 	itm := new(UrlMap)
 	itm.use_disk = use_disk
-	itm.mp = make(map[Url]struct{})
-	itm.cachewg = new(sync.WaitGroup)
+	itm.mp = make(map[string]struct{})
 	if use_disk {
 		itm.dkst = NewDkStore(filename, overwrite)
 		if compact {
@@ -43,8 +44,10 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 			itm.dkst = NewDkStore(filename, false)
 			fmt.Println("Compact Complete")
 		}
-		itm.mp_tow = make(map[Url]struct{})
 		go itm.flusher()
+
+		// Self read is a debug function
+		// when we suspect problems loading the array
 		self_read := false
 		if self_read {
 			//fmt.Println("loafing:", filename)
@@ -53,6 +56,7 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 			fmt.Println("done:", filename)
 		}
 	}
+  itm.SetWriteCache()
 	return itm
 }
 func (um *UrlMap) ageCache() {
@@ -70,16 +74,28 @@ func (um *UrlMap) ageCache() {
 		}
 	}
 }
+func (um *UrlMap) SetReadCache() {
+	um.UseReadCache = true
+	if um.UseReadCache {
+		um.cachewg = new(sync.WaitGroup)
+	}
+}
+func (um *UrlMap) SetWriteCache() {
+	um.UseWriteCache = true
+	um.mp_tow = make(map[string]struct{})
 
+}
 
 // We have a local version of things to write
 // Get that on the disk
 func (um *UrlMap) localFlush() {
-	for key, _ := range um.mp_tow {
-		//fmt.Println("Adding Key:", key)
-		um.dkst.SetAny(key, "")
+	if um.UseWriteCache {
+		for key, _ := range um.mp_tow {
+			//fmt.Println("Adding Key:", key)
+			um.dkst.SetAny(key, "")
+		}
+		um.mp_tow = make(map[string]struct{})
 	}
-	um.mp_tow = make(map[Url]struct{})
 }
 func (um *UrlMap) diskFlush() {
 	um.dkst.Flush()
@@ -89,9 +105,9 @@ func (um *UrlMap) diskFlush() {
 func (um *UrlMap) Flush() {
 	if um.use_disk {
 		um.Lock()
-		um.localFlush()
-		um.diskFlush()
-		um.ageCache()
+		um.localFlush() // Local write cache
+		um.diskFlush()  // The store itself
+		um.ageCache()   // The read cache
 		um.Unlock()
 	}
 }
@@ -143,32 +159,40 @@ func (um *UrlMap) flusher() {
 		}
 	}
 }
-func (um *UrlMap) Exist(key Url) bool {
+func (um *UrlMap) Exist(key_u Url) bool {
+  key := key_u.Url()
+  return um.ExistS(key)
+}
+func (um *UrlMap) ExistS(key string) bool {
 	//fmt.Println("Exist lock for:", key)
 	um.RLock()
 	var ok bool
 	if um.use_disk {
 		// Check in the local cache first
-		_, ok = um.mp[key]
-		if !ok {
-			_, ok = um.mp_tow[key]
-
-			if !ok {
-				ok = um.dkst.Exist(key)
-			}
-			if ok {
-				// if we find it exists anywhere
-				// then add it to the cache
-				um.cachewg.Add(1)
-				go func() {
-					// add it to the cache
-					um.Lock()
-					um.mp[key] = struct{}{}
-					um.Unlock()
-					um.cachewg.Done()
-				}()
-			}
+		if um.UseReadCache {
+			_, ok = um.mp[key]
 		}
+
+		if um.UseWriteCache && !ok {
+			_, ok = um.mp_tow[key]
+		}
+		if !ok {
+			ok = um.dkst.Exist(key)
+		}
+
+		if ok && um.UseReadCache {
+			// if we find it exists anywhere
+			// then add it to the cache
+			um.cachewg.Add(1)
+			go func() {
+				// add it to the cache
+				um.Lock()
+				um.mp[key] = struct{}{}
+				um.Unlock()
+				um.cachewg.Done()
+			}()
+		}
+
 	} else {
 		_, ok = um.mp[key]
 	}
@@ -177,14 +201,20 @@ func (um *UrlMap) Exist(key Url) bool {
 	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
-func (um *UrlMap) Set(key Url) {
+func (um *UrlMap) Set(key_u Url) {
+  key := key_u.Url()
+  um.SetS(key)
+}
+func (um *UrlMap) SetS(key string) {
 	//fmt.Println("Get lock for:", key)
 	um.Lock()
 	//fmt.Println("Got Lock")
 	if um.use_disk {
-		//um.dkst.SetAny(key, "")
-		um.mp_tow[key] = struct{}{}
-		//um.mp[key] = struct{}{}
+		if um.UseWriteCache {
+			um.mp_tow[key] = struct{}{}
+		} else {
+			um.dkst.SetAny(key, "")
+		}
 	} else {
 		um.mp[key] = struct{}{}
 	}
@@ -217,7 +247,11 @@ func (um *UrlMap) Count() int {
 		if um.closed {
 			return 0
 		}
-		return um.dkst.Count() + len(um.mp_tow)
+		size := um.dkst.Count()
+		if um.UseWriteCache {
+			size += len(um.mp_tow)
+		}
+		return size
 	}
 	return len(um.mp)
 }
@@ -232,7 +266,11 @@ func (um *UrlMap) Size() int {
 		if um.closed {
 			return 0
 		}
-		return um.dkst.Size() + len(um.mp_tow)
+		size := um.dkst.Size()
+		if um.UseWriteCache {
+			size += len(um.mp_tow)
+		}
+		return size
 	}
 	return len(um.mp)
 }
@@ -262,7 +300,7 @@ func (um *UrlMap) VisitAll() chan Url {
 			um.RUnlock()
 
 		} else {
-			tmp_slice := make([]Url, len(um.mp))
+			tmp_slice := make([]string, len(um.mp))
 			i := 0
 			for v, _ := range um.mp {
 				tmp_slice[i] = v
@@ -271,7 +309,7 @@ func (um *UrlMap) VisitAll() chan Url {
 			um.RUnlock()
 			//fmt.Println("Sending Values")
 			for _, v := range tmp_slice {
-				ret_chan <- v
+				ret_chan <- NewUrl(v)
 			}
 		}
 		//fmt.Println("Closing Visit Chan")
@@ -307,7 +345,7 @@ func (um *UrlMap) Visit() chan Url {
 				}
 			}
 		} else {
-			tmp_slice := make([]Url, len(um.mp))
+			tmp_slice := make([]string, len(um.mp))
 			i := 0
 			for v, _ := range um.mp {
 				tmp_slice[i] = v
@@ -316,7 +354,7 @@ func (um *UrlMap) Visit() chan Url {
 			um.RUnlock()
 			//fmt.Println("Sending Values")
 			for _, v := range tmp_slice {
-				ret_chan <- v
+				ret_chan <- NewUrl(v)
 			}
 		}
 		//fmt.Println("Closing Visit Chan")
@@ -326,7 +364,7 @@ func (um *UrlMap) Visit() chan Url {
 }
 func (um *UrlMap) FlushWrites() {
 	um.Lock()
-	um.localFlush()   // Ensure the write cache is up to date
+	um.localFlush() // Ensure the write cache is up to date
 	um.Unlock()
 	//um.cachewg.Wait() // Ensure the read cache is up to date
 }
@@ -334,8 +372,8 @@ func (um *UrlMap) FlushWrites() {
 // Similar to Visit() but we supply the map of references
 // This attempts to search through the database
 // finding a good selection of URLs
-func (um *UrlMap) VisitMissing(refr *TokenChan) map[Url]struct{} {
-	ret_map := make(map[Url]struct{})
+func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
+	ret_map := make(map[string]struct{})
 	//um.FlushWrites()  // Flush writes will happen later with go um.Flush()
 
 	um.RLock()
@@ -348,7 +386,7 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[Url]struct{} {
 			ret_map_url := um.dkst.GetMissing(10000, refr)
 			um.RUnlock()
 			for key, value := range ret_map_url {
-				ret_map[NewUrl(key)] = value
+				ret_map[key] = value
 			}
 			// We've done reading, so write out the cache
 			// while the disk is not busy
@@ -366,29 +404,33 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[Url]struct{} {
 	}
 	return ret_map
 }
-
-func (um *UrlMap) Delete(key Url) {
-	um.cachewg.Wait()
+func (um *UrlMap) Delete(key_u Url) {
+  key := key_u.Url()
+  um.DeleteS(key)
+}
+func (um *UrlMap) DeleteS(key string) {
+	if um.UseReadCache {
+		um.cachewg.Wait()
+	}
 	um.Lock()
 	if um.use_disk {
 		if !um.closed {
 			var ok bool
-			_, ok = um.mp_tow[key]
-			if ok {
-				delete(um.mp_tow, key)
-				_, ok = um.mp[key]
+			if um.UseWriteCache {
+				_, ok = um.mp_tow[key]
 				if ok {
-					delete(um.mp, key)
+					delete(um.mp_tow, key)
 				}
-
-			} else {
-				// It may or may not exist in the cache
-				um.dkst.Delete(key)
+			}
+			if um.UseReadCache {
 				_, ok = um.mp[key]
 				if ok {
 					delete(um.mp, key)
 				}
 			}
+
+			// It may or may not exist in the cache
+			um.dkst.Delete(key)
 		}
 	} else {
 		delete(um.mp, key)

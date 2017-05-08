@@ -67,9 +67,9 @@ func (r *Runner) Pause() {
 	r.pause_lk.Unlock()
 }
 func (r *Runner) Shutdown() {
-  r.Resume()
-  r.pause_lk.Lock() // Prevent us pausing again until shutdown
-  defer r.pause_lk.Unlock()
+	r.Resume()
+	r.pause_lk.Lock() // Prevent us pausing again until shutdown
+	defer r.pause_lk.Unlock()
 	r.Close()
 	r.Wait() // Once we've closed it make sure it is closed
 	r.hm.Close()
@@ -115,21 +115,26 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 
 			// Create a map of URLs that are missing from grab_tk_rep
 			//fmt.Println("Looking for something to do")
-			missing_map := r.unvisit_urls.VisitMissing(grab_tk_rep)
+			missing_map_string := r.unvisit_urls.VisitMissing(grab_tk_rep)
 			//fmt.Println("Got something to do", len(missing_map))
-			grab_already := make([]Url, 0, len(missing_map))
-			for urv, _ := range missing_map {
-        _ = urv.Base()
-				if r.visited_urls.Exist(urv) {
+			grab_already := make([]string, 0, len(missing_map_string))
+			for urv, _ := range missing_map_string {
+				if r.visited_urls.ExistS(urv) {
 					// If we've already visited it then nothing to do
-					r.unvisit_urls.Delete(urv)
+					r.unvisit_urls.DeleteS(urv)
 					//fmt.Println("Deleted:", urv)
 					grab_already = append(grab_already, urv)
 				}
 			}
 			for _, urv := range grab_already {
-				delete(missing_map, urv)
+				delete(missing_map_string, urv)
 			}
+      missing_map := make(map[Url] struct{})
+      for urv := range missing_map_string {
+        new_url := NewUrl(urv)
+        _ = new_url.Base()
+        missing_map[new_url] = struct{}{}
+      }
 			select {
 			case _, ok := <-r.grab_closer:
 				if !ok {
@@ -139,6 +144,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			}
 			//fmt.Printf("Runnin iter loop with %v\n",len(missing_map))
 			for iter_cnt := 0; !chan_closed && (iter_cnt < 100) && (len(missing_map) > 0); iter_cnt++ {
+
 				grab_success := make([]Url, 0, len(missing_map))
 			map_itter:
 				for urv, _ := range missing_map {
@@ -206,7 +212,7 @@ func (runr *Runner) AutoPace(multi_fetch *MultiFetch, target int) {
 	// then less, then activate it
 
 	run_auto := true
-	for current :=multi_fetch.Count(); run_auto; current =multi_fetch.Count() {
+	for current := multi_fetch.Count(); run_auto; current = multi_fetch.Count() {
 		if current > target {
 			runr.Pause()
 			time.Sleep(10 * time.Second)

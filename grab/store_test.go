@@ -42,9 +42,9 @@ func TestCall16(t *testing.T) {
 	url_store.Close()
 	rx_count := 0
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
-		tmp_url := NewUrl("URL" + strconv.Itoa(rx_count))
-		if tmp_url != url {
-			log.Fatalf("Bad Got, Rxd:%s, Exp:%s\n", url, tmp_url)
+		tmp_url := "URL" + strconv.Itoa(rx_count)
+		if tmp_url != url.Url() {
+			log.Fatalf("Bad Got, Rxd:\"%s\", Exp:\"%s\"\n", url.Url(), tmp_url)
 		} else {
 			//log.Printf("Good Got:%s,%s\n", url, tmp_url)
 		}
@@ -131,9 +131,9 @@ func TestCallE(t *testing.T) {
 	url_store.Close()
 	rx_count := 0
 	for url, ok := url_store.Pop(); ok; url, ok = url_store.Pop() {
-		tmp_url := NewUrl("URL" + strconv.Itoa(rx_count))
-		if tmp_url != url {
-			log.Fatalf("Bad Got:%s,%s\n", url, tmp_url)
+		tmp_url := "URL" + strconv.Itoa(rx_count)
+		if tmp_url != url.Url() {
+			log.Fatalf("Bad Got:%s,%s\n", url.Url(), tmp_url)
 		} else {
 			//log.Printf("Good Got:%s,%s\n", url, tmp_url)
 		}
@@ -158,9 +158,9 @@ func TestChanE(t *testing.T) {
 	url_store.Close()
 	rx_count := 0
 	for url := range url_store.PopChannel {
-		tmp_url := NewUrl("URL" + strconv.Itoa(rx_count))
-		if tmp_url != url {
-			log.Fatal("Got:", url, tmp_url)
+		tmp_url := "URL" + strconv.Itoa(rx_count)
+		if tmp_url != url.Url() {
+			log.Fatal("Got:", url.Url(), tmp_url)
 		}
 		rx_count++
 	}

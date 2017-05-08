@@ -106,8 +106,8 @@ func (dv DomVisit) GoodUrl(url_in Url) bool {
 	return dv.reference(url_in)
 }
 
-func (dv DomVisit) isOutPhp (url_in Url) bool {
-  return strings.Contains(url_in.Url(), "/out.php?")
+func (dv DomVisit) isOutPhp(url_in Url) bool {
+	return strings.Contains(url_in.Url(), "/out.php?")
 }
 
 func (dv DomVisit) multiCheck(url_in Url) bool {
@@ -130,10 +130,10 @@ func (dv DomVisit) multiCheck(url_in Url) bool {
 		return false
 	}
 
-  ok = dv.isOutPhp(url_in)
-  if ok {
-    return false
-  }
+	ok = dv.isOutPhp(url_in)
+	if ok {
+		return false
+	}
 
 	return true
 }
