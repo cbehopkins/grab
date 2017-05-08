@@ -120,7 +120,8 @@ func main() {
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
   var autopaceflg = flag.Int("apace",0,"Automatically Pace the download")
   var rundurationflg = flag.Duration("dur", (2*time.Hour), "Specify Run Duration")
-
+  var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
+  var dumpunvisitflg = flag.String("dumpu", "", "Write Unvisited URLs to file")
 	var num_p_fetch int
 	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
@@ -190,9 +191,17 @@ func main() {
 			// reset list to 0 length - but retain capacity
 			list = list[:0]
 		}
-
 		fmt.Println("Finsihed Resetting Unvisited")
 	}
+
+  if *dumpvisitedflg != "" {
+    the_chan :=  visited_urls.VisitAll()
+    grab.SaveFile(*dumpvisitedflg, the_chan, nil)
+  }
+  if *dumpunvisitflg != "" {
+    the_chan :=  unvisit_urls.VisitAll()
+    grab.SaveFile(*dumpunvisitflg, the_chan, nil)
+  }
 
 	// A DomVisit tracks what domains we're allowed to visit
 	// Any domains we come across not in this list will not be visited

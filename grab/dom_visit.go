@@ -77,9 +77,9 @@ func (dv DomVisit) AddBad(strt string) {
 	tdv[str] = struct{}{}
 	dv.sm.Unlock()
 }
-func (dv DomVisit) multi_url(url_in string) bool {
+func (dv DomVisit) multi_url(url_in Url) bool {
 	tmp_map := make(map[string]int)
-	array := strings.Split(url_in, "/")
+	array := strings.Split(url_in.Url(), "/")
 	for _, v := range array {
 		cnt, ok := tmp_map[v]
 		if ok {
@@ -97,7 +97,7 @@ func (dv DomVisit) multi_url(url_in string) bool {
 	return false
 }
 
-func (dv DomVisit) GoodUrl(url_in string) bool {
+func (dv DomVisit) GoodUrl(url_in Url) bool {
 	mc := dv.multiCheck(url_in)
 	if !mc {
 		return false
@@ -105,14 +105,19 @@ func (dv DomVisit) GoodUrl(url_in string) bool {
 
 	return dv.reference(url_in)
 }
-func (dv DomVisit) multiCheck(url_in string) bool {
+
+func (dv DomVisit) isOutPhp (url_in Url) bool {
+  return strings.Contains(url_in.Url(), "/out.php?")
+}
+
+func (dv DomVisit) multiCheck(url_in Url) bool {
 
 	// Is this a URL we want to visit
 	// Many reasons we may not want to visit it
 	// We maintain a list of banned domains
 	// The URL could also use one of the tricks
 	// to
-	bn := GetBase(url_in)
+	bn := url_in.Base()
 	ub := dv.base_it(bn)
 	bdp := *dv.bad_domains
 	_, ok := bdp[ub]
@@ -124,14 +129,20 @@ func (dv DomVisit) multiCheck(url_in string) bool {
 	if ok {
 		return false
 	}
+
+  ok = dv.isOutPhp(url_in)
+  if ok {
+    return false
+  }
+
 	return true
 }
-func (dv DomVisit) reference(url_in string) bool {
+func (dv DomVisit) reference(url_in Url) bool {
 	// we get a lot of urls that are:
 	// something.php?somehere.com
 	// I'm usually not interested in those
 	// so let's have a function to detect and screen them
-	u, err := url.Parse(url_in)
+	u, err := url.Parse(url_in.Url()) // REVISIT
 	if err != nil {
 		// If we can't parse the url then it's a bad url
 		return false
@@ -179,7 +190,7 @@ func (dv DomVisit) VisitedA(url_in string) bool {
 }
 
 type DomVisitI interface {
-	GoodUrl(url_in string) bool
+	GoodUrl(url_in Url) bool
 	VisitedQ(url_in string) bool
 	VisitedA(url_in string) bool
 }

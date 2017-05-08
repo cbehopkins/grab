@@ -119,6 +119,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			//fmt.Println("Got something to do", len(missing_map))
 			grab_already := make([]Url, 0, len(missing_map))
 			for urv, _ := range missing_map {
+        _ = urv.Base()
 				if r.visited_urls.Exist(urv) {
 					// If we've already visited it then nothing to do
 					r.unvisit_urls.Delete(urv)

@@ -69,7 +69,7 @@ func (cs ConcSafe) WriteAt(b []byte, off int64) (n int, err error) {
 		// For performance I think this could be a RWLock
 		// i.e. there could be several queuing for access to the queue
 		// But still allow the exclusive Lock to take place
-		// when we wasnt to fluch the queue
+		// when we wasnt to flush the queue
 		cs.write_lock.Lock()
 		cs.write_queue <- qreq
 		cs.write_lock.Unlock()

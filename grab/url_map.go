@@ -12,7 +12,7 @@ type UrlMap struct {
 	disk_lock sync.Mutex
 	// something in mp must be on the disk - it is a cache
 	// something in mp_tow is not on the disk
-	mp       map[Url]struct{}
+	mp       map[Url]struct{} // Doubles up as local read cache when using disk
 	mp_tow   map[Url]struct{} // URLs waiting to be written
 	use_disk bool
 	closed   bool
@@ -71,6 +71,9 @@ func (um *UrlMap) ageCache() {
 	}
 }
 
+
+// We have a local version of things to write
+// Get that on the disk
 func (um *UrlMap) localFlush() {
 	for key, _ := range um.mp_tow {
 		//fmt.Println("Adding Key:", key)
@@ -285,9 +288,9 @@ func (um *UrlMap) Visit() chan Url {
 
 	go func() {
 		//fmt.Println("Grabbing Lock")
-		um.Lock()
-		um.localFlush()
-		um.Unlock()
+		//um.Lock()
+		//um.localFlush()
+		//um.Unlock()
 		um.RLock()
 		//fmt.Println("Got Lock")
 		if um.use_disk {
@@ -323,9 +326,9 @@ func (um *UrlMap) Visit() chan Url {
 }
 func (um *UrlMap) FlushWrites() {
 	um.Lock()
-	um.localFlush()
+	um.localFlush()   // Ensure the write cache is up to date
 	um.Unlock()
-	um.cachewg.Wait()
+	//um.cachewg.Wait() // Ensure the read cache is up to date
 }
 
 // Similar to Visit() but we supply the map of references
@@ -333,7 +336,7 @@ func (um *UrlMap) FlushWrites() {
 // finding a good selection of URLs
 func (um *UrlMap) VisitMissing(refr *TokenChan) map[Url]struct{} {
 	ret_map := make(map[Url]struct{})
-	um.FlushWrites()
+	//um.FlushWrites()  // Flush writes will happen later with go um.Flush()
 
 	um.RLock()
 	if um.use_disk {

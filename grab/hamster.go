@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"net/http"
-	"net/url"
-
 	"golang.org/x/net/html"
 )
 
@@ -112,7 +110,7 @@ func (hm *Hamster) GrabT(
 	}
 	// And return the crawl token for re-use
 	defer crawl_chan.PutToken(token_name)
-	if !hm.dv.GoodUrl(url_in.Url()) {
+	if !hm.dv.GoodUrl(url_in) {
 		//fmt.Printf("%s is not a Good Url\n", url_in)
 		return
 	}
@@ -154,52 +152,52 @@ func (hm *Hamster) GrabT(
 	defer io.Copy(ioutil.Discard, b)
 	//fmt.Println("Tokenizing:",url_in)
 	z := html.NewTokenizer(b)
-	hm.tokenhandle(z, url_in.Url(), domain_i)
+	hm.tokenhandle(z, url_in, domain_i)
 	//fmt.Println("Tokenized:",url_in)
 }
-func (hm *Hamster) urlProc(linked_url, url_in, domain_i string, title_text string) {
+func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text string) {
 	// I need to get this into an absolute URL again
-	base, err := url.Parse(url_in)
-	check(err)
-	u, err := url.Parse(linked_url)
-	if err != nil {
-		//fmt.Println("Unable to parse url,", u)
-		return
-	}
-	linked_url_string := base.ResolveReference(u).String()
-	linked_url = linked_url_string
-	//if hm.print_urls {
-	//fmt.Println("Resolved URL to:", linked_url)
-	//}
-	domain_j := GetBase(linked_url)
+	base := url_in.Parse()
+	u := linked_url.Parse()
+  // Need to re-check for ""
+  // as Parse will nil the strings if parse errors
+  if linked_url.Url() == "" || url_in.Url() == "" || base == nil || u == nil {
+    return
+  }
+  // Re-write an relative URLs
+	relinked_url_string := base.ResolveReference(u).String()
+	linked_url = NewUrl(relinked_url_string)
+
+
+	domain_j := linked_url.Base()
 	if domain_j == "" {
 		//fmt.Println("Unable to get base,", linked_url)
 		return
 	}
 
-	is_jpg := strings.Contains(linked_url, ".jpg")
-	is_mpg := strings.Contains(linked_url, ".mpg")
-	is_mp4 := strings.Contains(linked_url, ".mp4")
-	is_avi := strings.Contains(linked_url, ".avi")
+	is_jpg := strings.Contains(relinked_url_string, ".jpg")
+	is_mpg := strings.Contains(relinked_url_string, ".mpg")
+	is_mp4 := strings.Contains(relinked_url_string, ".mp4")
+	is_avi := strings.Contains(relinked_url_string, ".avi")
 	switch {
 	case is_jpg:
-		linked_url = strings.TrimLeft(linked_url, ".jpg")
+		relinked_url_string = strings.TrimLeft(relinked_url_string, ".jpg")
 		if hm.oc != nil {
 			hm.oc.Add()
 		}
 		if hm.print_urls {
-			//fmt.Printf("Found jpg:%s\n", linked_url)
+			//fmt.Printf("Found jpg:%s\n", relinked_url_string)
 		}
 		//fmt.Println("sending to fetch")
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			hm.fetch_chan <- NewUrl(linked_url)
+			hm.fetch_chan <- NewUrl(relinked_url_string)
 			//fmt.Println("sent")
 		}
 
 	case is_mpg, is_mp4, is_avi:
 		//fmt.Println("MPG found:", linked_url)
 		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			tmp_ur := NewUrl(linked_url)
+			tmp_ur :=linked_url
 			tmp_ur.SetTitle(title_text)
 			hm.fetch_chan <- tmp_ur
 			//fmt.Println("sent", linked_url)
@@ -217,7 +215,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string, title_text strin
 					hm.oc.Add()
 				}
 				//fmt.Printf("Send %s grab\n", linked_url)
-				hm.grab_ch <- NewUrl(linked_url)
+				hm.grab_ch <- linked_url
 				//fmt.Println("Sent %s to grab\n",linked_url)
 
 				if hm.print_urls {
@@ -230,7 +228,7 @@ func (hm *Hamster) urlProc(linked_url, url_in, domain_i string, title_text strin
 
 }
 func (hm *Hamster) anchorProc(t html.Token,
-	url_in string,
+	url_in Url,
 	domain_i string, title_text string) {
 
 	// Extract the href value, if there is one
@@ -243,18 +241,15 @@ func (hm *Hamster) anchorProc(t html.Token,
 	if linked_url == "" {
 		return
 	}
-	hm.urlProc(linked_url, url_in, domain_i, title_text)
+	hm.urlProc(NewUrl(linked_url), url_in, domain_i, title_text)
 }
-func resolveUrl(url_in string) string {
-	base, err := url.Parse(url_in)
-	if err != nil {
-		return ""
-	}
+func resolveUrl(url_in Url) string {
+	base := url_in.Parse()
 	return base.String()
 }
 func (hm *Hamster) scriptProc(t html.Token,
 	script_text string,
-	url_in string,
+	url_in Url,
 	domain_i string, title_text string) {
 
 	if strings.Contains(script_text, "http") {
@@ -264,8 +259,8 @@ func (hm *Hamster) scriptProc(t html.Token,
 		for _, v := range t0 {
 			t1 := hm.re1.FindStringSubmatch(v)
 			if len(t1) > 1 {
-				linked_url := resolveUrl(t1[1])
-				if linked_url != "" {
+				linked_url := NewUrl(t1[1])
+				if linked_url.Parse().String() != "" {
 					//fmt.Println("URL:", linked_url)
 					hm.urlProc(linked_url, url_in, domain_i, title_text)
 				}
@@ -277,7 +272,7 @@ func (hm *Hamster) scriptProc(t html.Token,
 	}
 }
 
-func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in, domain_i string) {
+func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in Url, domain_i string) {
 	title_text := ""
 	for {
 		tt := z.Next()
