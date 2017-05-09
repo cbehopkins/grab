@@ -1,8 +1,12 @@
 package grab
 
 import (
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
+	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -34,16 +38,23 @@ func RandStringBytesMaskImprSrc(n int) string {
 	return string(b)
 }
 func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
-  //dkst.localFlush()
+	dkst.checkStoreD(backup_hash, num_entries, max_str_len, 0, true)
+}
+func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, max_str_len int, delay time.Duration, test_disk_full bool) {
+	//dkst.localFlush()
 	for v, _ := range backup_hash {
 		if !dkst.Exist(NewUrl(v)) {
 			log.Fatal("Error, missing key from URL disk", v)
 		}
+		time.Sleep(delay)
 	}
-	for v := range dkst.VisitAll() {
-		_, ok := backup_hash[v.Url()]
-		if !ok {
-			log.Fatal("Error, extra key in disk", v)
+	if test_disk_full {
+		for v := range dkst.VisitAll() {
+			_, ok := backup_hash[v.Url()]
+			if !ok {
+				log.Fatal("Error, extra key in disk", v)
+			}
+			time.Sleep(delay)
 		}
 	}
 	// Try some random entries and see if there is one in one but not the other
@@ -63,6 +74,7 @@ func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max
 			// try again
 			i--
 		}
+		time.Sleep(delay)
 	}
 }
 
@@ -98,35 +110,112 @@ func (dkst *DkStore) checkStore(backup_hash map[string]struct{}, num_entries, ma
 		}
 	}
 }
+func tempfilename() string {
+	tmpfile, err := ioutil.TempFile("", "gkvlite")
+	check(err)
+	filename := tmpfile.Name()
+	tmpfile.Close()
+	os.Remove(filename)
+	return filename
+}
 
-func TestDiskPersist0(t *testing.T) {
+func TestDiskPersistX(t *testing.T) {
 	max_str_len := 256
-	num_entries := 100
-	test_filename := "/tmp/test.gkvlite"
-	dkst := NewDkStore(test_filename, true)
-	backup_hash := make(map[string]struct{})
-
+	num_entries_array := []int{
+		100, 1000,
+		//100000
+	}
+	wc_array := []bool{true, false}
+	rc_array := []bool{true, false}
+	for _, num_entries := range num_entries_array {
+		if testing.Short() && num_entries > 1000 {
+			t.Skip()
+		} else {
+			for _, rcl := range rc_array {
+				for _, wcl := range wc_array {
+					rc := rcl
+					wc := wcl
+					t_string := fmt.Sprintf("num_entries=%d", num_entries)
+					ne := num_entries // capture range variable
+					if rc {
+						t_string += ",Read Cached"
+					}
+					if wc {
+						t_string += ",Write Cached"
+					}
+					t_func := func(t *testing.T) {
+						//t.Parallel()
+						generalDiskPersist(max_str_len, ne, rc, wc)
+					}
+					t.Run(t_string, t_func)
+				}
+			}
+		}
+	}
+}
+func BenchmarkDisk(b *testing.B) {
+	max_str_len := 256
+	wc_array := []bool{true, false}
+	rc_array := []bool{true, false}
+	num_entries := 1000
+	for _, rcl := range rc_array {
+		for _, wcl := range wc_array {
+			rc := rcl
+			wc := wcl
+			t_string := fmt.Sprintf("num_entries=%d", num_entries)
+			if rc {
+				t_string += ",Read Cached"
+			}
+			if wc {
+				t_string += ",Write Cached"
+			}
+			t_func := func(b *testing.B) {
+				benchmarkDiskPersist(b, max_str_len, num_entries, rc, wc)
+			}
+			b.Run(t_string, t_func)
+		}
+	}
+}
+func benchmarkDiskPersist(b *testing.B, max_str_len, num_entries int, use_rc, use_wc bool) {
+	for i := 0; i < b.N; i++ {
+		generalDiskAccess(max_str_len, num_entries, use_rc, use_wc)
+	}
+}
+func generalDiskAccess(max_str_len, num_entries int, use_rc, use_wc bool) {
+	test_filename := tempfilename()
+	dkst := NewUrlMap(test_filename, true, false)
+	backup_hash0 := make(map[string]struct{})
+	backup_hash1 := make(map[string]struct{})
 	// Create some random entries of varing lengths
 	for i := 0; i < num_entries; i++ {
 		str_len := rand.Int31n(int32(max_str_len)) + 1
 		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		dkst.SetAny(tst_string, "")
-		backup_hash[tst_string] = struct{}{}
+		dkst.Set(NewUrl(tst_string))
+		backup_hash0[tst_string] = struct{}{}
+		backup_hash1[tst_string] = struct{}{}
 	}
-	dkst.Flush()
-	dkst.checkStore(backup_hash, num_entries, max_str_len)
+	dkst.localFlush()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		dkst.checkStoreD(backup_hash0, num_entries, max_str_len, time.Millisecond, false)
+		wg.Done()
+	}()
+	// Create some more that are in the cache
+	for i := 0; i < num_entries; i++ {
+		str_len := rand.Int31n(int32(max_str_len)) + 1
+		tst_string := RandStringBytesMaskImprSrc(int(str_len))
+		dkst.Set(NewUrl(tst_string))
+		backup_hash1[tst_string] = struct{}{}
+		time.Sleep(time.Millisecond)
+	}
+	dkst.checkStore(backup_hash1, num_entries, max_str_len)
 
-	dkst.Sync()
-	dkst.Close()
-	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
+	wg.Wait()
 
-	dkst1 := NewDkStore(test_filename, false)
-	dkst1.checkStore(backup_hash, num_entries, max_str_len)
 }
-func TestDiskPersist1(t *testing.T) {
-	max_str_len := 256
-	num_entries := 1000
-	test_filename := "/tmp/test.gkvlite"
+func generalDiskPersist(max_str_len, num_entries int, use_rc, use_wc bool) {
+	test_filename := tempfilename()
 	dkst := NewUrlMap(test_filename, true, false)
 	backup_hash := make(map[string]struct{})
 
@@ -162,14 +251,14 @@ func TestDiskPersist1(t *testing.T) {
 		backup_hash[tst_string] = struct{}{}
 	}
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
-  dkst1.Flush()
+	dkst1.Flush()
 	dkst1.Close()
 
 	dkst2 := NewUrlMap(test_filename, false, false)
 	dkst2.checkStore(backup_hash, num_entries, max_str_len)
 	log.Println("2nd Reload check complete")
 
-	compact_filename := "/tmp/compacted.gkvlite"
+	compact_filename := tempfilename()
 	dkst2.dkst.compact(compact_filename)
 
 	dkst2.Close()
@@ -178,58 +267,8 @@ func TestDiskPersist1(t *testing.T) {
 	dkst3.checkStore(backup_hash, num_entries, max_str_len)
 	log.Printf("3rd reload. Check complete")
 	dkst3.Close()
-}
-
-func TestDiskPersist2(t *testing.T) {
-	max_str_len := 256
-	num_entries := 100000
-	test_filename := "/tmp/test.gkvlite"
-	dkst := NewUrlMap(test_filename, true, false)
-	backup_hash := make(map[string]struct{})
-
-	// Create some random entries of varing lengths
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		dkst.Set(NewUrl(tst_string))
-		backup_hash[tst_string] = struct{}{}
-	}
-	dkst.localFlush()
-	dkst.checkStore(backup_hash, num_entries, max_str_len)
-
-	// Close it all off, make sure it is on the disk
-	dkst.Close()
-	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
-
-	// This time say we don't want to overwrite if it exists
-	dkst1 := NewUrlMap(test_filename, false, false)
-	dkst1.checkStore(backup_hash, num_entries, max_str_len)
-	log.Printf("Reload Checked")
-
-	// Create some more random entries of varing lengths
-	for i := 0; i < num_entries; i++ {
-		str_len := rand.Int31n(int32(max_str_len)) + 1
-		tst_string := RandStringBytesMaskImprSrc(int(str_len))
-		dkst1.Set(NewUrl(tst_string))
-		backup_hash[tst_string] = struct{}{}
-	}
-	//dkst1.localFlush()
-  dkst1.checkStore(backup_hash, num_entries, max_str_len)
-	log.Printf("Checked after insertion")
-	dkst1.Close()
-	// This should work,
-	dkst2 := NewUrlMap(test_filename, false, false)
-	dkst2.checkStore(backup_hash, num_entries, max_str_len)
-	log.Printf("2nd reload. Check complete")
-	compact_filename := "/tmp/compacted.gkvlite"
-	dkst2.dkst.compact(compact_filename)
-
-	dkst2.Close()
-
-	dkst3 := NewUrlMap(compact_filename, false, false)
-	dkst3.checkStore(backup_hash, num_entries, max_str_len)
-	log.Printf("3rd reload. Check complete")
-	dkst3.Close()
+	os.Remove(test_filename)
+	os.Remove(compact_filename)
 }
 
 func TestDiskStore0(t *testing.T) {

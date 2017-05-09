@@ -3,14 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/cbehopkins/grab/grab"
-	"github.com/cheggaaa/pb"
 	"log"
 	"os"
 	"os/signal"
 	"runtime/pprof"
 	"sync"
 	"time"
+
+	"github.com/cbehopkins/grab/grab"
+	"github.com/cheggaaa/pb"
 )
 
 func check(err error) {
@@ -62,7 +63,7 @@ func shutdown(
 	shutdown_in_progress *sync.Mutex,
 	multi_fetch *grab.MultiFetch,
 	runr *grab.Runner) {
-  runr.Resume()
+	runr.Resume()
 	// First stop the Progress bar
 	//fmt.Println("Stop Pool\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 	if pool != nil {
@@ -103,8 +104,6 @@ func mem_profile(mem_prf_fn string) {
 	}
 }
 
-
-
 func main() {
 	var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -118,10 +117,10 @@ func main() {
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
-  var autopaceflg = flag.Int("apace",0,"Automatically Pace the download")
-  var rundurationflg = flag.Duration("dur", (2*time.Hour), "Specify Run Duration")
-  var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
-  var dumpunvisitflg = flag.String("dumpu", "", "Write Unvisited URLs to file")
+	var autopaceflg = flag.Int("apace", 0, "Automatically Pace the download")
+	var rundurationflg = flag.Duration("dur", (2 * time.Hour), "Specify Run Duration")
+	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
+	var dumpunvisitflg = flag.String("dumpu", "", "Write Unvisited URLs to file")
 	var num_p_fetch int
 	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
@@ -155,9 +154,9 @@ func main() {
 	if download {
 		multi_fetch.SetDownload()
 	}
-  if *testjpgflg {
-    multi_fetch.SetTestJpg(2)
-  }
+	if *testjpgflg {
+		multi_fetch.SetTestJpg(2)
+	}
 	chan_fetch_push := multi_fetch.InChan
 
 	var visited_urls *grab.UrlMap
@@ -165,27 +164,30 @@ func main() {
 	// Open the maps and do not overwrite any we find
 	visited_urls = grab.NewUrlMap(visited_fname, false, *compactflg)
 	unvisit_urls = grab.NewUrlMap(unvisit_fname, false, *compactflg)
-
+	visited_urls.SetWriteCache()
+	visited_urls.SetReadCache()
+	unvisit_urls.SetWriteCache()
+	unvisit_urls.SetReadCache()
 	if *clearvisitedflg {
 		list := make([]grab.Url, 0, 10000)
-    s := grab.Spinner{}
-    cnt := 0
-    length := visited_urls.Count()
+		s := grab.Spinner{}
+		cnt := 0
+		length := visited_urls.Count()
 		fmt.Println("Resetting Unvisited", length)
 		for visited_urls.Size() > 0 {
-      cnt_backup := cnt
+			cnt_backup := cnt
 			visited_chan := visited_urls.Visit()
 			for v := range visited_chan {
 				list = append(list, v)
-        s.PrintSpin(cnt)
-        cnt++
+				s.PrintSpin(cnt)
+				cnt++
 			}
-      cnt = cnt_backup
+			cnt = cnt_backup
 			for _, v := range list {
 				visited_urls.Delete(v)
 				unvisit_urls.Set(v)
-        s.PrintSpin(cnt)
-        cnt++
+				s.PrintSpin(cnt)
+				cnt++
 			}
 
 			// reset list to 0 length - but retain capacity
@@ -194,14 +196,14 @@ func main() {
 		fmt.Println("Finsihed Resetting Unvisited")
 	}
 
-  if *dumpvisitedflg != "" {
-    the_chan :=  visited_urls.VisitAll()
-    grab.SaveFile(*dumpvisitedflg, the_chan, nil)
-  }
-  if *dumpunvisitflg != "" {
-    the_chan :=  unvisit_urls.VisitAll()
-    grab.SaveFile(*dumpunvisitflg, the_chan, nil)
-  }
+	if *dumpvisitedflg != "" {
+		the_chan := visited_urls.VisitAll()
+		grab.SaveFile(*dumpvisitedflg, the_chan, nil)
+	}
+	if *dumpunvisitflg != "" {
+		the_chan := unvisit_urls.VisitAll()
+		grab.SaveFile(*dumpunvisitflg, the_chan, nil)
+	}
 
 	// A DomVisit tracks what domains we're allowed to visit
 	// Any domains we come across not in this list will not be visited
@@ -359,7 +361,7 @@ func main() {
 	var shutdown_in_progress sync.Mutex
 	var shutdown_run bool
 
-	if rundurationflg!=nil {
+	if rundurationflg != nil {
 		go func() {
 			// Run the main thing for no more than 100 Seconds/Minutes
 			time.Sleep(*rundurationflg)
@@ -388,10 +390,10 @@ func main() {
 			}
 		}
 	}()
-  if *autopaceflg !=0 {
-    go runr.AutoPace(multi_fetch, *autopaceflg)
-  } 
-  
+	if *autopaceflg != 0 {
+		go runr.AutoPace(multi_fetch, *autopaceflg)
+	}
+
 	runr.Wait()
 	multi_fetch.Wait()
 	shutdown_in_progress.Lock()

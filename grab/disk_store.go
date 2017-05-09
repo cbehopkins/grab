@@ -10,7 +10,7 @@ import (
 	"github.com/steveyen/gkvlite"
 )
 
-var UseConcSafe = false
+var UseConcSafe = true
 
 type DkStFileIf interface {
 	ReadAt([]byte, int64) (int, error)

@@ -12,8 +12,8 @@ type UrlMap struct {
 	disk_lock sync.Mutex
 	// something in mp must be on the disk - it is a cache
 	// something in mp_tow is not on the disk
-	mp            map[string] struct{} // Doubles up as local read cache when using disk
-	mp_tow        map[string] struct{}  // URLs waiting to be written
+	mp            map[string]struct{} // Doubles up as local read cache when using disk
+	mp_tow        map[string]struct{} // URLs waiting to be written
 	use_disk      bool
 	closed        bool
 	dkst          *DkStore
@@ -56,7 +56,7 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 			fmt.Println("done:", filename)
 		}
 	}
-  itm.SetWriteCache()
+
 	return itm
 }
 func (um *UrlMap) ageCache() {
@@ -160,8 +160,8 @@ func (um *UrlMap) flusher() {
 	}
 }
 func (um *UrlMap) Exist(key_u Url) bool {
-  key := key_u.Url()
-  return um.ExistS(key)
+	key := key_u.Url()
+	return um.ExistS(key)
 }
 func (um *UrlMap) ExistS(key string) bool {
 	//fmt.Println("Exist lock for:", key)
@@ -202,8 +202,8 @@ func (um *UrlMap) ExistS(key string) bool {
 	return ok
 }
 func (um *UrlMap) Set(key_u Url) {
-  key := key_u.Url()
-  um.SetS(key)
+	key := key_u.Url()
+	um.SetS(key)
 }
 func (um *UrlMap) SetS(key string) {
 	//fmt.Println("Get lock for:", key)
@@ -405,8 +405,8 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	return ret_map
 }
 func (um *UrlMap) Delete(key_u Url) {
-  key := key_u.Url()
-  um.DeleteS(key)
+	key := key_u.Url()
+	um.DeleteS(key)
 }
 func (um *UrlMap) DeleteS(key string) {
 	if um.UseReadCache {
