@@ -280,11 +280,23 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_map map[strin
 		cnt := 0
 		min_itm, err := st.is.MinItem(true)
 		check(err)
+		if min_itm == nil {
+			return
+		}
 		unique_array := make(map[string]int)
-		st.is.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+		if st == nil {
+			log.Fatal("Invalid Stoer")
+		}
+		if st.is == nil {
+			log.Fatal("Invalid collection")
+		}
+		explore_func := func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
+			if i == nil {
+				log.Fatal("WTF!")
+			}
 			tmp_val := string(i.Key)
 			// If the token for this is in use
 			// Then it won't fetch this pass, so don't let it through
@@ -319,7 +331,8 @@ func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_map map[strin
 			url_chan <- tmp_val
 			// keep going until we have got n items
 			return cnt < max_items
-		})
+		}
+		st.is.VisitItemsAscend(min_itm.Key, true, explore_func)
 		close(url_chan)
 	}()
 	for tmp_val := range url_chan {
