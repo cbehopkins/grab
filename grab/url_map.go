@@ -374,7 +374,7 @@ func (um *UrlMap) FlushWrites() {
 // finding a good selection of URLs
 func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	ret_map := make(map[string]struct{})
-	um.FlushWrites()  // Flush writes will happen later with go um.Flush()
+	um.FlushWrites() // Flush writes will happen later with go um.Flush()
 
 	um.RLock()
 	if um.use_disk {

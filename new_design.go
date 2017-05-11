@@ -126,7 +126,21 @@ func main() {
 	flag.Parse()
 	show_progress_bar := !*dbgflg
 	//show_progress_bar := false
+	signalChan := make(chan os.Signal, 1)
+	if false {
+		signal.Notify(signalChan, os.Interrupt)
+		// Used for debugging the compact memory issue
+		go func() {
 
+			for _ = range signalChan {
+
+				fmt.Println("Ctrl-C Detected")
+				mem_profile(*memprofile)
+				os.Exit(1)
+				return
+			}
+		}()
+	}
 	var wg sync.WaitGroup
 	download := !*nodownflg
 	multiple_fetchers := *mulflg && download
@@ -259,7 +273,9 @@ func main() {
 		go grab.LoadFile(url_fn, seed_url_chan, nil, true, false)
 		for itm := range seed_url_chan {
 			//fmt.Println("SeedURL:", itm)
-
+			if itm.Initialise() {
+				log.Fatal("URL needed initialising in nd", itm)
+			}
 			domain_i := itm.Base()
 			if domain_i != "" {
 				// Mark this as a domain we can Fetch from
@@ -356,8 +372,6 @@ func main() {
 		defer pool.Stop()
 	}
 
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
 	var shutdown_in_progress sync.Mutex
 	var shutdown_run bool
 
@@ -373,6 +387,7 @@ func main() {
 		}()
 	}
 
+	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		cc_cnt := 0
 		for _ = range signalChan {
@@ -393,10 +408,15 @@ func main() {
 	if *autopaceflg != 0 {
 		go runr.AutoPace(multi_fetch, *autopaceflg)
 	}
-
+  if *dbgflg {fmt.Println("Waiting for runner to complete")}
 	runr.Wait()
+  if *dbgflg {fmt.Println("Runner complete. Waiting for fetch to complete")}
+  multi_fetch.Close()
 	multi_fetch.Wait()
+  if *dbgflg {fmt.Println("Fetch complete. Waiting for shutdown lock")}
+
 	shutdown_in_progress.Lock()
+  if *dbgflg {fmt.Println("Got shutdown lock. Adios!")}
 	if !shutdown_run {
 		mem_profile(*memprofile)
 		shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)

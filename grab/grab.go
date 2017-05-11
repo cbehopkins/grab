@@ -5,7 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	//"log"
+	"log"
 	"net/url"
 	"os"
 	"regexp"
@@ -72,14 +72,25 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_cha
 	}
 	defer f.Close()
 	r := bufio.NewReader(f)
-	s, e := Readln(r)
-	for e == nil {
+	for s, e := Readln(r); e == nil; s, e = Readln(r) {
+		s = strings.TrimSpace(s)
+		comment := strings.HasPrefix(s, "//")
+		comment = comment || strings.HasPrefix(s, "#")
+		if comment {
+			continue
+		}
+		if s == "" {
+			continue
+		}
 		//fmt.Println("Fast adding ", s)
 		if inc_count {
 			counter.Add()
 		}
-		the_chan <- NewUrl(s)
-		s, e = Readln(r)
+		tmp_u := NewUrl(s)
+		if tmp_u.Initialise() {
+			log.Fatal("nneded to init after new")
+		}
+		the_chan <- tmp_u
 	}
 }
 func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
@@ -294,7 +305,7 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 			// We're not testing all the jpgs for goodness
 			//fmt.Println("skipping downloading", potential_file_name)
 			return false
-		} else {
+		} else if strings.HasSuffix(fn, ".jpg") {
 			// Check if it is a corrupted file. If it is, then fetch again
 			//fmt.Println("yest jph", fn)
 			mf.jpg_tk.GetToken("jpg")
@@ -303,7 +314,11 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 			if good_file {
 				return false
 			}
+		} else {
+			// not a jpg and it already exists
+			return false
 		}
+
 	}
 
 	// For a file that doesn't already exist, then just fetch it

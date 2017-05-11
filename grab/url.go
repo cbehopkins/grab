@@ -26,9 +26,13 @@ func NewUrlChannel() *UrlChannel {
 	return &itm
 }
 
-func (u *Url) Initialise() {
-	u.base = new(string)
-	u.parse = new(*url.URL)
+func (u *Url) Initialise() bool {
+	if u.base == nil || u.parse == nil {
+		u.base = new(string)
+		u.parse = new(*url.URL)
+		return true
+	}
+	return false
 }
 
 func (u Url) Url() string {
@@ -38,10 +42,16 @@ func (u Url) String() string {
 	return u.Url()
 }
 func (u Url) Base() string {
-	if *u.base == "" {
-		u.genBase()
+	if u.UrlS == "" {
+		return ""
 	}
+	if *u.parse == nil {
+		u.parseUs()
 
+		if *u.base == "" {
+			u.genBase()
+		}
+	}
 	return *u.base
 }
 func (u *Url) SetTitle(tt string) {

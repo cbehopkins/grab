@@ -205,7 +205,7 @@ func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text s
 		if hm.promiscuous || hm.shallow {
 			if hm.all_interesting || hm.dv.VisitedQ(domain_j) || (domain_i == domain_j) {
 				if hm.print_urls {
-					fmt.Printf("Interesting url, %s, %s, %s, %s\n", domain_i, domain_j, linked_url, url_in)
+					fmt.Printf("Interesting url, %s, %s\n", linked_url, url_in)
 				}
 				if !hm.dv.GoodUrl(url_in) {
 					return

@@ -67,12 +67,12 @@ func (r *Runner) Pause() {
 	r.pause_lk.Unlock()
 }
 func (r *Runner) Shutdown() {
+	// We may have paused the runner as part of our throughput limits
 	r.Resume()
 	r.pause_lk.Lock() // Prevent us pausing again until shutdown
 	defer r.pause_lk.Unlock()
 	r.Close()
 	r.Wait() // Once we've closed it make sure it is closed
-	r.hm.Close()
 	r.PrintThroughput()
 }
 func (r *Runner) SetRTime(rt time.Duration) {
@@ -86,6 +86,7 @@ func (r *Runner) GrabRunner(num_p_fetch int) {
 
 func (r *Runner) grabRunner(num_p_fetch int) {
 	defer r.wg.Done()
+	defer r.hm.Close()
 	grab_tk_rep := NewTokenChan(num_p_fetch, "grab")
 	var chan_closed bool
 	grab_slowly := r.grab_slowly
@@ -129,12 +130,12 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			for _, urv := range grab_already {
 				delete(missing_map_string, urv)
 			}
-      missing_map := make(map[Url] struct{})
-      for urv := range missing_map_string {
-        new_url := NewUrl(urv)
-        _ = new_url.Base()
-        missing_map[new_url] = struct{}{}
-      }
+			missing_map := make(map[Url]struct{})
+			for urv := range missing_map_string {
+				new_url := NewUrl(urv)
+				_ = new_url.Base()
+				missing_map[new_url] = struct{}{}
+			}
 			select {
 			case _, ok := <-r.grab_closer:
 				if !ok {

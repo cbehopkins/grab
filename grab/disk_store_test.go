@@ -158,6 +158,12 @@ func BenchmarkDisk(b *testing.B) {
 	wc_array := []bool{true, false}
 	rc_array := []bool{true, false}
 	num_entries := 1000
+	UseConcSafe = true
+	bmd(b, max_str_len, num_entries, wc_array, rc_array)
+	//	UseConcSafe = true
+	//	bmd(b, max_str_len, num_entries, wc_array, rc_array)
+}
+func bmd(b *testing.B, max_str_len, num_entries int, wc_array, rc_array []bool) {
 	for _, rcl := range rc_array {
 		for _, wcl := range wc_array {
 			rc := rcl
@@ -169,12 +175,16 @@ func BenchmarkDisk(b *testing.B) {
 			if wc {
 				t_string += ",Write Cached"
 			}
+			if UseConcSafe {
+				t_string += ",ConcSafe"
+			}
 			t_func := func(b *testing.B) {
 				benchmarkDiskPersist(b, max_str_len, num_entries, rc, wc)
 			}
 			b.Run(t_string, t_func)
 		}
 	}
+
 }
 func benchmarkDiskPersist(b *testing.B, max_str_len, num_entries int, use_rc, use_wc bool) {
 	for i := 0; i < b.N; i++ {

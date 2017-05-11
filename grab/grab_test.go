@@ -2,6 +2,7 @@ package grab
 
 import (
 	"log"
+  "os"
 	"math/rand"
 	"testing"
 )
@@ -33,6 +34,7 @@ func TestGobWrite0(t *testing.T) {
 	the_chan, the_map := UrlSrc(100000)
 
 	go SaveGob(filename, the_chan, out_count)
+  defer os.Remove(filename)
 	out_count.Wait()
 	log.Println("Write Success!")
 

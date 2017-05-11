@@ -14,6 +14,7 @@ type MultiFetch struct {
 	InChan         chan Url // Write Urls to here
 	dump_chan      chan Url
 	in_chan_closed bool
+	scrammed       bool
 	scram_chan     chan struct{} // Simply close this channel to scram to filename
 	fifo           *UrlStore     // stored here
 	ff_map         map[string]*UrlStore
@@ -73,13 +74,20 @@ func (mf *MultiFetch) Scram() {
 		close(mf.InChan)
 		mf.in_chan_closed = true
 	}
-	close(mf.scram_chan)
+	if !mf.scrammed {
+		close(mf.scram_chan)
+		mf.scrammed = true
+	}
 	mf.Unlock()
 }
 func (mf *MultiFetch) Close() {
-	if !mf.in_chan_closed {
-		close(mf.InChan)
-		mf.in_chan_closed = true
+	if !mf.download {
+		mf.Scram()
+	} else {
+		if !mf.in_chan_closed {
+			close(mf.InChan)
+			mf.in_chan_closed = true
+		}
 	}
 }
 
@@ -120,6 +128,9 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 				// any tokens to finish
 				wt.Wait()
 				return
+			}
+			if urf.base == nil {
+				urf.Initialise()
 			}
 			basename := urf.Base()
 			if basename != "" && dv.VisitedQ(basename) {

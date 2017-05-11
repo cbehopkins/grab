@@ -10,7 +10,7 @@ import (
 	"github.com/steveyen/gkvlite"
 )
 
-var UseConcSafe = true
+var UseConcSafe = false
 
 type DkStFileIf interface {
 	ReadAt([]byte, int64) (int, error)
@@ -70,7 +70,7 @@ func newStore(filename string) (DkStFileIf, *gkvlite.Store) {
 func (ds *DkStore) compact(filename string) {
 	f, err := os.Create(filename)
 	check(err)
-	ns, err := ds.st.CopyTo(f, 100000)
+	ns, err := ds.st.CopyTo(f, 10)
 	check(err)
 	ns.Flush()
 	ns.Close()
