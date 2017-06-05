@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/steveyen/gkvlite"
+	"github.com/cbehopkins/gkvlite"
 )
 
 var UseConcSafe = false

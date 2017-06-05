@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/steveyen/gkvlite"
+	"github.com/cbehopkins/gkvlite"
 )
 
 func GetKeysChan(st *gkvlite.Collection) (ret_chan chan string) {
@@ -62,6 +62,26 @@ func checkStoreN(st *gkvlite.Collection, backup_hash map[string]struct{}, num_en
 	}
 }
 
+// Test function to let me debug the internale
+func TestGkvFunc(t *testing.T) {
+	test_filen := "/tmp/test.gkvlite"
+	col_name := "tst"
+	f, err := os.Create(test_filen)
+	check(err)
+	st, err := gkvlite.NewStore(f)
+	check(err)
+	col := st.SetCollection(col_name, nil)
+  col.Set([]byte("a"), []byte{})
+  col.Set([]byte("b"), []byte{})
+  col.Set([]byte("c"), []byte{})
+  col.Set([]byte("d"), []byte{})
+  col.Set([]byte("e"), []byte{})
+  col.Set([]byte("f"), []byte{})
+  col.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
+    log.Printf("Key:%s\n", string(i.Key))
+    return true
+  })
+}
 func TestGkv0(t *testing.T) {
 	max_str_len := 256
 	num_entries := 1000
@@ -156,7 +176,7 @@ func TestGkv0(t *testing.T) {
 }
 func TestGkv1(t *testing.T) {
 	max_str_len := 256
-	num_entries := 100000
+	num_entries := 50000
 	test_filen := "/tmp/test.gkvlite"
 	col_name := "tst"
 	f, err := os.Create(test_filen)

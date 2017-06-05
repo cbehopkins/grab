@@ -95,9 +95,18 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 		if r.unvisit_urls.Size() <= 0 {
 			return
 		} else {
-			r.pause_lk.Lock()
+			select {
+			case _, ok := <-r.grab_closer:
+				if !ok {
+					chan_closed = true
+          continue
+				}
+			default:
+			}
+  		r.pause_lk.Lock()
 			we_pause := r.pause
 			r.pause_lk.Unlock()
+
 			if we_pause {
 				time.Sleep(10 * time.Second)
 				continue
@@ -136,14 +145,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 				_ = new_url.Base()
 				missing_map[new_url] = struct{}{}
 			}
-			select {
-			case _, ok := <-r.grab_closer:
-				if !ok {
-					chan_closed = true
-				}
-			default:
-			}
-			//fmt.Printf("Runnin iter loop with %v\n",len(missing_map))
+      //fmt.Printf("Runnin iter loop with %v\n",len(missing_map))
 			for iter_cnt := 0; !chan_closed && (iter_cnt < 100) && (len(missing_map) > 0); iter_cnt++ {
 
 				grab_success := make([]Url, 0, len(missing_map))
@@ -214,12 +216,19 @@ func (runr *Runner) AutoPace(multi_fetch *MultiFetch, target int) {
 
 	run_auto := true
 	for current := multi_fetch.Count(); run_auto; current = multi_fetch.Count() {
-		if current > target {
-			runr.Pause()
-			time.Sleep(10 * time.Second)
-		} else {
-			runr.Resume()
-			time.Sleep(1 * time.Second)
+		select {
+		case _, ok := <-runr.grab_closer:
+			if !ok {
+				run_auto = false
+			}
+		default:
+			if current > target {
+				runr.Pause()
+				time.Sleep(10 * time.Second)
+			} else {
+				runr.Resume()
+				time.Sleep(1 * time.Second)
+			}
 		}
 	}
 

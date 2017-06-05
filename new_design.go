@@ -63,13 +63,22 @@ func shutdown(
 	shutdown_in_progress *sync.Mutex,
 	multi_fetch *grab.MultiFetch,
 	runr *grab.Runner) {
-	runr.Resume()
-	// First stop the Progress bar
-	//fmt.Println("Stop Pool\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+
+  // Flag to get out debug
+	debug_shutdown := true
+	if debug_shutdown {
+		fmt.Println("Shutdown process started")
+	}
+
 	if pool != nil {
+	  if debug_shutdown {
+  		fmt.Println("Stop Progress Bar")
+	  }
 		pool.Stop()
 	}
-	//fmt.Println("flush and close\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+	if debug_shutdown {
+		fmt.Println("Flush and Close")
+	}
 	var closing_wg sync.WaitGroup
 	closing_wg.Add(1)
 	go func() {
@@ -79,10 +88,15 @@ func shutdown(
 		unvisit_urls.Sync()
 		visited_urls.Sync()
 		closing_wg.Done()
+		fmt.Println("Done Flush and Sync")
 	}()
-	// Shutdown the Grab function
+	if debug_shutdown {
+		fmt.Println("Shutting down Grab Function")
+	}
 	runr.Shutdown()
-	// Shutdown the Fetch Function
+	if debug_shutdown {
+		fmt.Println("Shutdown the Fetch Function")
+	}
 	multi_fetch.Shutdown()
 
 	// Wait for hamster to complete
@@ -91,7 +105,7 @@ func shutdown(
 	unvisit_urls.Close()
 	visited_urls.Close()
 	shutdown_in_progress.Unlock()
-	fmt.Println("All Complete")
+	fmt.Println("Shutdown Complete")
 }
 func mem_profile(mem_prf_fn string) {
 	if mem_prf_fn != "" {
@@ -155,8 +169,8 @@ func main() {
 
 	print_workload := false
 
-	visited_fname := "/tmp/visited.gkvlite"
-	unvisit_fname := "/tmp/unvisit.gkvlite"
+	visited_fname := os.TempDir() + "/visited.gkvlite"
+	unvisit_fname := os.TempDir() + "/unvisit.gkvlite"
 	url_fn := "in_urls.txt"
 	fetch_fn := "gob_fetch.txt"
 	bad_url_fn := "bad_urls.txt"
@@ -379,10 +393,11 @@ func main() {
 		go func() {
 			// Run the main thing for no more than 100 Seconds/Minutes
 			time.Sleep(*rundurationflg)
+			fmt.Println("\n\nRuntime Exceeded\n\n")
 			shutdown_in_progress.Lock()
 			shutdown_run = true
-			fmt.Println("Runtime Exceeded")
 			mem_profile(*memprofile)
+      fmt.Println("Calling Shutdown")
 			shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
 		}()
 	}
@@ -408,15 +423,23 @@ func main() {
 	if *autopaceflg != 0 {
 		go runr.AutoPace(multi_fetch, *autopaceflg)
 	}
-  if *dbgflg {fmt.Println("Waiting for runner to complete")}
+	if *dbgflg {
+		fmt.Println("Waiting for runner to complete")
+	}
 	runr.Wait()
-  if *dbgflg {fmt.Println("Runner complete. Waiting for fetch to complete")}
-  multi_fetch.Close()
+	if *dbgflg {
+		fmt.Println("Runner complete. Waiting for fetch to complete")
+	}
+	multi_fetch.Close()
 	multi_fetch.Wait()
-  if *dbgflg {fmt.Println("Fetch complete. Waiting for shutdown lock")}
+	//if *dbgflg {
+		fmt.Println("Fetch complete. Waiting for shutdown lock")
+	//}
 
 	shutdown_in_progress.Lock()
-  if *dbgflg {fmt.Println("Got shutdown lock. Adios!")}
+	//if *dbgflg {
+		fmt.Println("Got shutdown lock. Adios!")
+	//}
 	if !shutdown_run {
 		mem_profile(*memprofile)
 		shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
