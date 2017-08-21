@@ -282,7 +282,7 @@ func generalDiskPersist(max_str_len, num_entries int, use_rc, use_wc bool) {
 }
 
 func TestDiskStore0(t *testing.T) {
-	test_filename := "/tmp/test.gkvlite"
+	test_filename := os.TempDir() + "/test.gkvlite"
 
 	dkst := NewDkStore(test_filename, true)
 	dkst.SetAny(23, "Hello")
@@ -299,7 +299,7 @@ func TestDiskStore0(t *testing.T) {
 }
 
 func TestDiskStore1(t *testing.T) {
-	test_filename := "/tmp/test.gkvlite"
+	test_filename := os.TempDir() + "/test.gkvlite"
 
 	dkst := NewDkStore(test_filename, true)
 	dkst.SetAny("Hello1", 23)
@@ -316,7 +316,7 @@ func TestDiskStore1(t *testing.T) {
 }
 
 func TestDiskStore2(t *testing.T) {
-	test_filename := "/tmp/test.gkvlite"
+	test_filename := os.TempDir() + "/test.gkvlite"
 
 	dkst := NewDkStore(test_filename, true)
 	defer dkst.Close()

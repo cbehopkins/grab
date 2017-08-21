@@ -20,7 +20,7 @@ func NewRobotCache() *RobotCache {
 	itm := new(RobotCache)
 	itm.cache = make(map[string]*robotstxt.RobotsData)
 	var err error
-	itm.log_file, err = os.Create("/tmp/invalid_urls")
+	itm.log_file, err = os.Create(os.TempDir() + "/invalid_urls")
 	check(err)
 	return itm
 }

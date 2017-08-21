@@ -64,16 +64,16 @@ func shutdown(
 	multi_fetch *grab.MultiFetch,
 	runr *grab.Runner) {
 
-  // Flag to get out debug
+	// Flag to get out debug
 	debug_shutdown := true
 	if debug_shutdown {
 		fmt.Println("Shutdown process started")
 	}
 
 	if pool != nil {
-	  if debug_shutdown {
-  		fmt.Println("Stop Progress Bar")
-	  }
+		if debug_shutdown {
+			fmt.Println("Stop Progress Bar")
+		}
 		pool.Stop()
 	}
 	if debug_shutdown {
@@ -397,7 +397,7 @@ func main() {
 			shutdown_in_progress.Lock()
 			shutdown_run = true
 			mem_profile(*memprofile)
-      fmt.Println("Calling Shutdown")
+			fmt.Println("Calling Shutdown")
 			shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
 		}()
 	}
@@ -433,12 +433,12 @@ func main() {
 	multi_fetch.Close()
 	multi_fetch.Wait()
 	//if *dbgflg {
-		fmt.Println("Fetch complete. Waiting for shutdown lock")
+	fmt.Println("Fetch complete. Waiting for shutdown lock")
 	//}
 
 	shutdown_in_progress.Lock()
 	//if *dbgflg {
-		fmt.Println("Got shutdown lock. Adios!")
+	fmt.Println("Got shutdown lock. Adios!")
 	//}
 	if !shutdown_run {
 		mem_profile(*memprofile)

@@ -38,8 +38,9 @@ func (tc *TokenChan) qToken(basename string) bool {
 func (tc *TokenChan) loopToken(basename string) {
 	// Stay in here until the entry does not exist
 	for success := tc.qToken(basename); success; success = tc.qToken(basename) {
+		chan_to_listen := tc.broadcast_chan
 		tc.Unlock()
-		<-tc.broadcast_chan
+		<-chan_to_listen
 		tc.Lock()
 	}
 }

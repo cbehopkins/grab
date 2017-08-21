@@ -99,11 +99,11 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			case _, ok := <-r.grab_closer:
 				if !ok {
 					chan_closed = true
-          continue
+					continue
 				}
 			default:
 			}
-  		r.pause_lk.Lock()
+			r.pause_lk.Lock()
 			we_pause := r.pause
 			r.pause_lk.Unlock()
 
@@ -145,7 +145,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 				_ = new_url.Base()
 				missing_map[new_url] = struct{}{}
 			}
-      //fmt.Printf("Runnin iter loop with %v\n",len(missing_map))
+			//fmt.Printf("Runnin iter loop with %v\n",len(missing_map))
 			for iter_cnt := 0; !chan_closed && (iter_cnt < 100) && (len(missing_map) > 0); iter_cnt++ {
 
 				grab_success := make([]Url, 0, len(missing_map))

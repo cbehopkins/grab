@@ -89,7 +89,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 		//fmt.Println("null fetch")
 		return
 	}
-	timeout := time.Duration(10 * time.Minute)
+	timeout := time.Duration(30 * time.Minute)
 	client := http.Client{
 		Timeout: timeout,
 	}

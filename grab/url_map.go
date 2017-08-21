@@ -35,10 +35,10 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 		if compact {
 			fmt.Println("Compacting Database:", filename)
 			// Compact the current store and write to temp file
-			itm.dkst.compact("/tmp/compact.gkvlite")
+			itm.dkst.compact(os.TempDir() + "/compact.gkvlite")
 			itm.dkst.Close() // Close before:
 			// move temp to current
-			err := os.Rename("/tmp/compact.gkvlite", filename)
+			err := os.Rename(os.TempDir()+"/compact.gkvlite", filename)
 			check(err)
 			// load in the new smaller file
 			itm.dkst = NewDkStore(filename, false)

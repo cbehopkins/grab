@@ -121,9 +121,10 @@ func TestTok5(t *testing.T) {
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
 	log.Println("Got a token for bob")
+	num_loops := 100
+	wg.Add(num_loops)
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
+	for i := 0; i < num_loops; i++ {
 		go func() {
 			tks.GetToken("bob")
 			log.Println("Got another token for bob")

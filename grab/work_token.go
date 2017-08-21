@@ -50,7 +50,7 @@ func (wt *wkTok) PutTok() {
 	default:
 	}
 
-	wt.Unlock()
+	defer wt.Unlock()
 	if (wt.cnt == 0) && (wt.wait_chan != nil) {
 		close(wt.wait_chan)
 	}
