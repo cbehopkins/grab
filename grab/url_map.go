@@ -51,7 +51,7 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 		self_read := false
 		if self_read {
 			//fmt.Println("loafing:", filename)
-			for _ = range itm.dkst.GetStringKeys() {
+			for range itm.dkst.GetStringKeys() {
 			}
 			fmt.Println("done:", filename)
 		}
@@ -65,7 +65,7 @@ func (um *UrlMap) ageCache() {
 	num_to_remove := len(um.mp) >> 1
 
 	i := 0
-	for key, _ := range um.mp {
+	for key := range um.mp {
 		delete(um.mp, key)
 		if i >= num_to_remove {
 			return
@@ -90,7 +90,7 @@ func (um *UrlMap) SetWriteCache() {
 // Get that on the disk
 func (um *UrlMap) localFlush() {
 	if um.UseWriteCache {
-		for key, _ := range um.mp_tow {
+		for key := range um.mp_tow {
 			//fmt.Println("Adding Key:", key)
 			um.dkst.SetAny(key, "")
 		}
@@ -302,7 +302,7 @@ func (um *UrlMap) VisitAll() chan Url {
 		} else {
 			tmp_slice := make([]string, len(um.mp))
 			i := 0
-			for v, _ := range um.mp {
+			for v := range um.mp {
 				tmp_slice[i] = v
 				i++
 			}
@@ -347,7 +347,7 @@ func (um *UrlMap) Visit() chan Url {
 		} else {
 			tmp_slice := make([]string, len(um.mp))
 			i := 0
-			for v, _ := range um.mp {
+			for v := range um.mp {
 				tmp_slice[i] = v
 				i++
 			}
@@ -394,7 +394,7 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 			return ret_map
 		}
 	} else {
-		for v, _ := range um.mp {
+		for v := range um.mp {
 			ret_map[v] = struct{}{}
 		}
 		um.RUnlock()

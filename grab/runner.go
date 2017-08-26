@@ -128,7 +128,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			missing_map_string := r.unvisit_urls.VisitMissing(grab_tk_rep)
 			//fmt.Println("Got something to do", len(missing_map))
 			grab_already := make([]string, 0, len(missing_map_string))
-			for urv, _ := range missing_map_string {
+			for urv := range missing_map_string {
 				if r.visited_urls.ExistS(urv) {
 					// If we've already visited it then nothing to do
 					r.unvisit_urls.DeleteS(urv)
@@ -150,7 +150,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 
 				grab_success := make([]Url, 0, len(missing_map))
 			map_itter:
-				for urv, _ := range missing_map {
+				for urv := range missing_map {
 					select {
 					case _, ok := <-r.grab_closer:
 						if !ok {

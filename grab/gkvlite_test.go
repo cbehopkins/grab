@@ -31,7 +31,7 @@ func ExistsSt(st *gkvlite.Collection, key string) bool {
 
 func checkStoreN(st *gkvlite.Collection, backup_hash map[string]struct{}, num_entries, max_str_len int) {
 
-	for v, _ := range backup_hash {
+	for v := range backup_hash {
 		if !ExistsSt(st, v) {
 			log.Fatal("Error, missing key from disk", v)
 		}

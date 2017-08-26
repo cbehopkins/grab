@@ -42,7 +42,7 @@ func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max
 }
 func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, max_str_len int, delay time.Duration, test_disk_full bool) {
 	//dkst.localFlush()
-	for v, _ := range backup_hash {
+	for v := range backup_hash {
 		if !dkst.Exist(NewUrl(v)) {
 			log.Fatal("Error, missing key from URL disk", v)
 		}
@@ -80,7 +80,7 @@ func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, ma
 
 func (dkst *DkStore) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
 
-	for v, _ := range backup_hash {
+	for v := range backup_hash {
 		if !dkst.Exist(v) {
 			log.Fatal("Error, missing key from disk", v)
 		}
