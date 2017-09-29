@@ -121,6 +121,8 @@ func check_jpg(filename string) bool {
 			return false
 		case "invalid JPEG format: missing SOI marker":
 			return false
+		case "invalid JPEG format: missing 0xff00 sequence":
+			return false
 		default:
 			fmt.Printf("Unknown jpeg Error Text type:%T, Value %v\n", err, err)
 			panic(err)

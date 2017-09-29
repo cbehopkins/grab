@@ -135,6 +135,7 @@ func main() {
 	var rundurationflg = flag.Duration("dur", (2 * time.Hour), "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
 	var dumpunvisitflg = flag.String("dumpu", "", "Write Unvisited URLs to file")
+	var vdflg = flag.String("vd", os.TempDir(), "Visited Directory")
 	var num_p_fetch int
 	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
@@ -169,15 +170,14 @@ func main() {
 
 	print_workload := false
 
-	visited_fname := os.TempDir() + "/visited.gkvlite"
-	unvisit_fname := os.TempDir() + "/unvisit.gkvlite"
+	visited_fname := *vdflg + "/visited.gkvlite"
+	unvisit_fname := *vdflg + "/unvisit.gkvlite"
 	url_fn := "in_urls.txt"
 	fetch_fn := "gob_fetch.txt"
 	bad_url_fn := "bad_urls.txt"
 
 	// A fetch channel that goes away and writes intersting things to disk
 	multi_fetch := grab.NewMultiFetch(multiple_fetchers)
-	multi_fetch.SetFileName(fetch_fn)
 
 	if download {
 		multi_fetch.SetDownload()
@@ -237,7 +237,6 @@ func main() {
 	// Any domains we come across not in this list will not be visited
 	dmv := grab.NewDomVisit()
 	defer dmv.Close()
-	multi_fetch.Worker(dmv)
 
 	// The Hamster is the thing that goes out and
 	// Grabs stuff, looking for interesting things to fetch
@@ -266,11 +265,9 @@ func main() {
 	// After being read from the file they might first be crawled
 	// alternatively this channel might not really exist at all
 	var start_url_chan chan grab.Url
-
 	// urls read from a file and command line
 	src_url_chan := make(chan grab.Url)
 	wgrc := grab.RunChan(src_url_chan, visited_urls, unvisit_urls, "")
-
 	go func() {
 		if shallow {
 			// If in shallow mode then first write to shallow chan
@@ -282,11 +279,12 @@ func main() {
 			// which will sort them into the *visit* maps
 			start_url_chan = src_url_chan
 		}
-
 		seed_url_chan := *grab.NewUrlChannel()
 		go grab.LoadFile(url_fn, seed_url_chan, nil, true, false)
 		for itm := range seed_url_chan {
-			//fmt.Println("SeedURL:", itm)
+			if debug {
+				fmt.Println("SeedURL:", itm)
+			}
 			if itm.Initialise() {
 				log.Fatal("URL needed initialising in nd", itm)
 			}
@@ -323,14 +321,26 @@ func main() {
 			var grab_tk_rep *grab.TokenChan
 			grab_tk_rep = grab.NewTokenChan(num_p_fetch, "shallow")
 			hms.SetGrabCh(src_url_chan)
+			fmt.Println("Starting shallow grab")
 			for itm := range start_url_chan {
-				//fmt.Println("Shallow Grab:", itm)
-				hms.GrabT(
-					itm, // The URL we are tasked with crawling
-					"",
-					grab_tk_rep,
-				)
-				//fmt.Println("Grabbed:",itm)
+				if debug {
+					fmt.Println("Shallow Grab:", itm)
+				}
+				if visited_urls.ExistS(itm.Url()) {
+					//fmt.Println("Seed ", itm.Url(), " already Exists")
+				} else {
+					//fmt.Println("Shallow Grab:", itm)
+					visited_urls.Set(itm)
+					hms.GrabT(
+						itm, // The URL we are tasked with crawling
+						"",
+						grab_tk_rep,
+					)
+					if debug {
+						fmt.Println("Grabbed:", itm)
+					}
+				}
+
 			}
 			// We close it now because after a shallow crawl
 			// there should be no new URLs added to be crawled
@@ -338,10 +348,13 @@ func main() {
 			wg.Done()
 		}()
 	}
+	fmt.Println("Waiting for Seed pahse to complete")
 	wg.Wait()
 	wgrc.Wait()
-	fmt.Println("Run Seeded")
+	fmt.Println("Seed Phase complete")
 	hm.ClearShallow()
+	multi_fetch.SetFileName(fetch_fn)
+	multi_fetch.Worker(dmv)
 
 	if print_workload {
 		fmt.Println("Printing Workload")

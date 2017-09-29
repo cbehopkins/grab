@@ -259,7 +259,8 @@ func (hm *Hamster) scriptProc(t html.Token,
 			t1 := hm.re1.FindStringSubmatch(v)
 			if len(t1) > 1 {
 				linked_url := NewUrl(t1[1])
-				if linked_url.Parse().String() != "" {
+				linked_url.Parse()
+				if linked_url.String() != "" {
 					//fmt.Println("URL:", linked_url)
 					hm.urlProc(linked_url, url_in, domain_i, title_text)
 				}

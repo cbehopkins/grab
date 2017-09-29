@@ -157,6 +157,9 @@ func (dv DomVisit) reference(url_in Url) bool {
 	}
 	return true
 }
+
+// VisitedQ Asks the Question
+// Have we visted here
 func (dv DomVisit) VisitedQ(url_in string) bool {
 	ok := dv.Exist(url_in)
 	if ok {
@@ -166,6 +169,8 @@ func (dv DomVisit) VisitedQ(url_in string) bool {
 		return false
 	}
 }
+
+// VisitedA Adds a domain we should visit
 func (dv DomVisit) VisitedA(url_in string) bool {
 	//ok := dv.Exist(url_in)
 	// This is a costly process, so do it once for Exist and Add
