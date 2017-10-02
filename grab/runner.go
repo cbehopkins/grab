@@ -2,7 +2,6 @@ package grab
 
 import (
 	"fmt"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -38,7 +37,9 @@ func (r *Runner) Wait() {
 	//log.Println("Done Waiting for Runner")
 }
 func (r *Runner) Close() {
-	close(r.grab_closer)
+	if r.grab_closer != nil {
+		close(r.grab_closer)
+	}
 }
 func (r *Runner) GoSlow() {
 	r.grab_slowly = true
@@ -112,8 +113,9 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 				continue
 			}
 			out_count := NewOutCounter()
-			out_count.Add()
-			out_count.Dec()
+			out_count.initDc()
+			//out_count.Add()
+			//out_count.Dec()
 
 			// Create a channel that the hamster can add new urls to
 			tmp_chan := make(chan Url)
@@ -126,24 +128,17 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			// Create a map of URLs that are missing from grab_tk_rep
 			//fmt.Println("Looking for something to do")
 			missing_map_string := r.unvisit_urls.VisitMissing(grab_tk_rep)
-			//fmt.Println("Got something to do", len(missing_map))
-			grab_already := make([]string, 0, len(missing_map_string))
-			for urv := range missing_map_string {
-				if r.visited_urls.ExistS(urv) {
-					// If we've already visited it then nothing to do
-					r.unvisit_urls.DeleteS(urv)
-					//fmt.Println("Deleted:", urv)
-					grab_already = append(grab_already, urv)
-				}
-			}
-			for _, urv := range grab_already {
-				delete(missing_map_string, urv)
-			}
+
+			// Convert into a map of urls rather than string
 			missing_map := make(map[Url]struct{})
 			for urv := range missing_map_string {
-				new_url := NewUrl(urv)
-				_ = new_url.Base()
-				missing_map[new_url] = struct{}{}
+				if r.visited_urls.ExistS(urv) {
+					r.unvisit_urls.DeleteS(urv)
+				} else {
+					new_url := NewUrl(urv)
+					_ = new_url.Base()
+					missing_map[new_url] = struct{}{}
+				}
 			}
 			//fmt.Printf("Runnin iter loop with %v\n",len(missing_map))
 			for iter_cnt := 0; !chan_closed && (iter_cnt < 100) && (len(missing_map) > 0); iter_cnt++ {
@@ -158,22 +153,16 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 							break map_itter
 						}
 					default:
-					}
-					// Whatever happens GrabIt will do the Dec()
-					out_count.Add()
 
-					if r.hm.GrabIt(urv, out_count, grab_tk_rep) {
-						// If we sucessfully grab this (get a token etc)
-						// then delete it fro the store
-						//One we haven't visited we need to run a grab on
-						// This fetch the URL and look for what to do
-						r.visited_urls.Set(urv)
-						r.unvisit_urls.Delete(urv)
-						grab_success = append(grab_success, urv)
-						//fmt.Println("Grab Started",urv)
-					} else {
-						//fmt.Println("Grab Aborted",urv)
+						if r.getConditional(urv, out_count, grab_tk_rep) {
+							// If we sucessfully grab this (get a token etc)
+							// then delete it fro the store
+							//One we haven't visited we need to run a grab on
+							// This fetch the URL and look for what to do
+							grab_success = append(grab_success, urv)
+						}
 					}
+
 				}
 
 				for _, urv := range grab_success {
@@ -199,12 +188,6 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 			wgt.Wait()
 			//fmt.Println("runChan has finished")
 
-			// Experiment to reduce memory consumption
-			if false {
-				r.unvisit_urls.Flush()
-				r.visited_urls.Flush()
-				runtime.GC()
-			}
 		}
 		time.Sleep(r.recycle_time)
 	}
@@ -232,4 +215,49 @@ func (runr *Runner) AutoPace(multi_fetch *MultiFetch, target int) {
 		}
 	}
 
+}
+func (r *Runner) getConditional(urs Url, out_count *OutCounter, crawl_chan *TokenChan) bool {
+	if r.hm.grabItWork(urs, out_count, crawl_chan) {
+		r.visited_urls.Set(urs)
+		if r.unvisit_urls != nil {
+			r.unvisit_urls.Delete(urs)
+		}
+		return true
+	}
+	return false
+}
+func (r *Runner) getRegardless(itm Url, grab_tk_rep *TokenChan) {
+	urv := itm.Url()
+	if r.visited_urls.ExistS(urv) {
+    if true {
+      urv := itm.Url()
+      fmt.Println("Skipping:", urv)
+    }
+		return
+	} else {
+		r.visited_urls.Set(itm)
+		if r.unvisit_urls != nil {
+			r.unvisit_urls.Delete(itm)
+		}
+    if true {
+      urv := itm.Url()
+      fmt.Println("Get:", urv)
+    }
+		r.hm.GrabT(
+			itm, // The URL we are tasked with crawling
+			"",  // Using universal token
+			grab_tk_rep,
+		)
+
+	}
+}
+func (r *Runner) ChanGettery(start_url_chan chan Url, grab_tk_rep *TokenChan) {
+  fmt.Println("Getter starting")
+	for itm := range start_url_chan {
+    if true {
+      urv := itm.Url()
+      fmt.Println("Get:", urv)
+    }
+		r.getRegardless(itm, grab_tk_rep)
+	}
 }

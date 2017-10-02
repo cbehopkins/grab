@@ -282,9 +282,9 @@ func main() {
 		seed_url_chan := *grab.NewUrlChannel()
 		go grab.LoadFile(url_fn, seed_url_chan, nil, true, false)
 		for itm := range seed_url_chan {
-			if debug {
+			//if debug {
 				fmt.Println("SeedURL:", itm)
-			}
+			//}
 			if itm.Initialise() {
 				log.Fatal("URL needed initialising in nd", itm)
 			}
@@ -294,6 +294,7 @@ func main() {
 				_ = dmv.VisitedA(domain_i)
 				// send this URL for grabbing
 				start_url_chan <- itm
+        //fmt.Println(itm, "Sent")
 			}
 		}
 		fmt.Println("seed_url_chan seen closed")
@@ -321,30 +322,22 @@ func main() {
 			var grab_tk_rep *grab.TokenChan
 			grab_tk_rep = grab.NewTokenChan(num_p_fetch, "shallow")
 			hms.SetGrabCh(src_url_chan)
-			fmt.Println("Starting shallow grab")
-			for itm := range start_url_chan {
-				if debug {
-					fmt.Println("Shallow Grab:", itm)
-				}
-				if visited_urls.ExistS(itm.Url()) {
-					//fmt.Println("Seed ", itm.Url(), " already Exists")
-				} else {
-					//fmt.Println("Shallow Grab:", itm)
-					visited_urls.Set(itm)
-					hms.GrabT(
-						itm, // The URL we are tasked with crawling
-						"",
-						grab_tk_rep,
-					)
-					if debug {
-						fmt.Println("Grabbed:", itm)
-					}
-				}
 
+			fmt.Println("Starting shallow grab")
+			if visited_urls == nil {
+				log.Fatal("Nil Visited before getRegardless")
 			}
+			r := grab.NewRunner(hms, nil, visited_urls)
+			//runr.GrabRunner(
+			//num_p_fetch,
+			//)
+			r.ChanGettery(start_url_chan, grab_tk_rep)
+
 			// We close it now because after a shallow crawl
 			// there should be no new URLs added to be crawled
 			close(src_url_chan)
+			r.Wait()
+			r.Close()
 			wg.Done()
 		}()
 	}

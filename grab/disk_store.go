@@ -53,7 +53,7 @@ func newStore(filename string) (DkStFileIf, *gkvlite.Store) {
 	var f DkStFileIf
 	// Remember to close the file later
 
-	// If the file does not exiast already
+	// If the file does not exist already
 	if UseConcSafe {
 		f, err = NewConcSafe(filename)
 	} else {
@@ -135,9 +135,7 @@ func toBa(st interface{}) []byte {
 
 	return bs
 }
-func (v Url) ToBa() []byte {
-	return []byte(v.Url())
-}
+
 func (st *DkStore) SetAny(key, val interface{}) {
 	key_bs := toBa(key)
 	val_bs := toBa(val)

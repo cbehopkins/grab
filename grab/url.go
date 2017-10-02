@@ -41,6 +41,9 @@ func (u Url) Url() string {
 func (u Url) String() string {
 	return u.Url()
 }
+func (v Url) ToBa() []byte {
+	return []byte(v.Url())
+}
 func (u Url) Base() string {
 	if u.UrlS == "" {
 		return ""

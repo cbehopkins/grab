@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	//"log"
 	"regexp"
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
 	"net/http"
+
+	"golang.org/x/net/html"
 )
 
 // A hamster is our struture for the the things that grabs and prepares things for storing
@@ -328,7 +328,7 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in Url, domain_i string) {
 	}
 }
 
-func (hm *Hamster) GrabIt(urs Url, out_count *OutCounter, crawl_chan *TokenChan) bool {
+func (hm *Hamster) grabItWork(urs Url, out_count *OutCounter, crawl_chan *TokenChan) bool {
 	token_got := urs.Base()
 
 	if crawl_chan.TryGetToken(token_got) {
@@ -337,6 +337,8 @@ func (hm *Hamster) GrabIt(urs Url, out_count *OutCounter, crawl_chan *TokenChan)
 			fmt.Println("Grab:", urs)
 		}
 		if !hm.Shallow() {
+			out_count.Add()
+
 			go func() {
 				// Before we can send this, we need to take a copy of hm
 				// so that we can parrallelise this
@@ -357,10 +359,7 @@ func (hm *Hamster) GrabIt(urs Url, out_count *OutCounter, crawl_chan *TokenChan)
 				token_got,
 				crawl_chan,
 			)
-			out_count.Dec()
 		}
-	} else {
-		out_count.Dec()
 	}
 	return false
 }

@@ -71,9 +71,15 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 			log.Fatal("Invalid filename", potential_file_name)
 		case os.ErrInvalid:
 			log.Fatal("Invalid argument", potential_file_name)
+    default :
+    switch t.Err.Error(){
+    case "is a directory":
+      // Malformed URL gives this
+      // Indicates where we are fetching from is giving us illegal stuff
+      return
 		default:
-			log.Fatalf("Que?\n\"%s\"\n%v\n,Dir:%s\nUrl:%s\n", potential_file_name, t.Err, dir_str, fetch_url)
-
+			log.Fatalf("Unknown os.PathError\n\"%s\"\n%v\n,Type:%t\nDir:%s\nUrl:%s\n", potential_file_name, t.Err, t.Err, dir_str, fetch_url)
+      }
 		}
 	case nil:
 		// nothing
