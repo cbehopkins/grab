@@ -148,6 +148,10 @@ func (st *DkStore) GetAny(key interface{}) []byte {
 	check(err)
 	return ret_val
 }
+func (st *DkStore) UrlFromBa(in []byte) Url {
+	// TBD Fix this so we look up the value in the store
+	return NewUrlFromBa(in)
+}
 func (st *DkStore) Delete(key interface{}) bool {
 	key_bs := toBa(key)
 	was_deleted, err := st.is.Delete(key_bs)
@@ -183,26 +187,27 @@ func (st *DkStore) GetIntKeys() (ret_chan chan int) {
 	return ret_chan
 
 }
-func (st *DkStore) GetStringKeys() (ret_chan chan string) {
-	ret_chan = make(chan string)
-	go func() {
 
-		for ba := range st.GetAnyKeys() {
-			key := string(ba)
-			ret_chan <- key
-		}
-		close(ret_chan)
-	}()
-	return ret_chan
-}
-func (st *DkStore) GetStringKeysArray(max_items int) (ret_arr []string) {
-	ret_arr = make([]string, 0, max_items)
-	for _, ba := range st.GetAnyKeysArray(max_items) {
-		key := string(ba)
-		ret_arr = append(ret_arr, key)
-	}
-	return ret_arr
-}
+//func (st *DkStore) GetStringKeys() (ret_chan chan string) {
+//	ret_chan = make(chan string)
+//	go func() {
+//
+//		for ba := range st.GetAnyKeys() {
+//			key := string(ba)
+//			ret_chan <- key
+//		}
+//		close(ret_chan)
+//	}()
+//	return ret_chan
+//}
+//func (st *DkStore) GetStringKeysArray(max_items int) (ret_arr []string) {
+//	ret_arr = make([]string, 0, max_items)
+//	for _, ba := range st.GetAnyKeysArray(max_items) {
+//		key := string(ba)
+//		ret_arr = append(ret_arr, key)
+//	}
+//	return ret_arr
+//}
 
 func (st *DkStore) GetAnyValues() (ret_chan chan []byte) {
 	ret_chan = make(chan []byte)
@@ -260,83 +265,82 @@ func (st *DkStore) GetAnyKeys() (ret_chan chan []byte) {
 	}()
 	return ret_chan
 }
-
-func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_map map[string]struct{}) {
-	ret_map = make(map[string]struct{})
-
+func (st *DkStore) getMissingChan(max_items int, refr *TokenChan) chan string {
+	uc := make(chan string)
+	go st.getMissingChanWorker(uc, max_items, refr)
+	return uc
+}
+func (st *DkStore) getMissingChanWorker(url_chan chan string, max_items int, refr *TokenChan) {
+	defer close(url_chan)
 	// we will allow up to max_same of the same basename to go through
 	// This is so we can fetch several things fromt he same host at once
 	// But not too many!
 	// It wants to be slightly more than the number of tokens we allow
 	// for each basename
+	if st == nil {
+		log.Fatal("Invalid Stoer")
+	}
+	if st.is == nil {
+		log.Fatal("Invalid collection")
+	}
 	max_same := max_items / 10 // fetch at least 10 domains worth to work with
-	// We don't need to check the token as
-	// we only re-search when we have done a full list search
-	check_tk := false
-	url_chan := make(chan string)
-	go func() {
-		cnt := 0
-		min_itm, err := st.is.MinItem(true)
-		check(err)
-		if min_itm == nil {
-			return
-		}
-		unique_array := make(map[string]int)
-		if st == nil {
-			log.Fatal("Invalid Stoer")
-		}
-		if st.is == nil {
-			log.Fatal("Invalid collection")
-		}
-		explore_func := func(i *gkvlite.Item) bool {
-			// This visitor callback will be invoked with every item
-			// If we want to stop visiting, return false;
-			// otherwise return true to keep visiting.
-			if i == nil {
-				log.Fatal("WTF!")
-			}
-			tmp_val := string(i.Key)
-			// If the token for this is in use
-			// Then it won't fetch this pass, so don't let it through
-			tmp_base := st.roughBase(tmp_val)
-			if check_tk {
-				ok := refr.BaseExist(tmp_base)
-				if ok {
-					// Keep going, look for something not in the map
-					return true
-				}
-			}
-			// We could have a bunch in the same base domain
 
-			//tmp_base := GetBase(tmp_val)
-			// We don't need exactly the correct and tollerant answer
-			// a rough go will be fast enough
-			val, ok := unique_array[tmp_base]
-			if ok && (val >= max_same) {
+	check_tk := false
+	cnt := 0
+	min_itm, err := st.is.MinItem(true)
+	check(err)
+	if min_itm == nil {
+		return
+	}
+	unique_array := make(map[string]int)
+	explore_func := func(i *gkvlite.Item) bool {
+		// This visitor callback will be invoked with every item
+		// If we want to stop visiting, return false;
+		// otherwise return true to keep visiting.
+		if i == nil {
+			log.Fatal("WTF!")
+		}
+		tmp_val := string(i.Key)
+		// If the token for this is in use
+		// Then it won't fetch this pass, so don't let it through
+		tmp_base := st.roughBase(tmp_val)
+		if check_tk {
+			ok := refr.BaseExist(tmp_base)
+			if ok {
+				// Keep going, look for something not in the map
 				return true
 			}
-			if !ok {
-				val = 0
-			} else {
-				val++
-			}
-			// Store it with the count of how many times we've visited
-			unique_array[tmp_base] = val
-
-			// We've found something interesting so increment the count
-			cnt++
-			// send the interesting thing
-			url_chan <- tmp_val
-			// keep going until we have got n items
-			return cnt < max_items
 		}
-		st.is.VisitItemsAscend(min_itm.Key, true, explore_func)
-		close(url_chan)
-	}()
-	for tmp_val := range url_chan {
+		// We could have a bunch in the same base domain
+
+		// We don't need exactly the correct and tollerant answer
+		// a rough go will be fast enough
+		val, ok := unique_array[tmp_base]
+		if ok && (val >= max_same) {
+			return true
+		}
+		if !ok {
+			val = 0
+		} else {
+			val++
+		}
+		// Store it with the count of how many times we've visited
+		unique_array[tmp_base] = val
+
+		// We've found something interesting so increment the count
+		cnt++
+		// send the interesting thing
+		url_chan <- tmp_val
+		// keep going until we have got n items
+		return cnt < max_items
+	}
+	st.is.VisitItemsAscend(min_itm.Key, true, explore_func)
+}
+func (st *DkStore) GetMissing(max_items int, refr *TokenChan) (ret_map map[string]struct{}) {
+	ret_map = make(map[string]struct{})
+	for tmp_val := range st.getMissingChan(max_items, refr) {
 		ret_map[tmp_val] = struct{}{}
 	}
-
 	return ret_map
 }
 

@@ -18,6 +18,7 @@ type OutCounter struct {
 func NewOutCounter() *OutCounter {
 	itm := new(OutCounter)
 	itm.op = new(outCounter)
+	itm.initDc()
 	return itm
 }
 

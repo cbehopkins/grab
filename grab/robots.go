@@ -2,12 +2,13 @@ package grab
 
 import (
 	"fmt"
-	"github.com/temoto/robotstxt"
 	"net/http"
 	"net/url"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/temoto/robotstxt"
 )
 
 type RobotCache struct {
@@ -45,7 +46,7 @@ func (rc *RobotCache) AllowUrl(urls Url) bool {
 		var ok bool
 		robots, ok = rc.cache[bn]
 		if !ok {
-			timeout := time.Duration(5 * time.Second)
+			timeout := time.Duration(GrabTimeout)
 			client := http.Client{
 				Timeout: timeout,
 			}

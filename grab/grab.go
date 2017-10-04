@@ -138,7 +138,12 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 		dec := gob.NewDecoder(f)
 		err = dec.Decode(&buff)
 		fmt.Printf("Gobbed in %d Items\n", len(buff))
-		check(err)
+		if err == io.EOF {
+			log.Println("Gob Load error. Early EOF. Discarded Items")
+			return
+		} else if err != nil {
+			log.Fatalf("Unexpected Gob Load Error, Type:%T,\nValue:%v", err, err)
+		}
 		for _, v := range buff {
 			v.Initialise()
 			the_chan <- v
@@ -161,9 +166,12 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 
 	f, err := os.Create(filename)
 	check(err)
-	defer f.Close()
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer f.Close()
+		defer wg.Done()
 		last_read := false
 		for !last_read {
 			buf := make([]byte, 1<<10)
@@ -191,8 +199,6 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 			}
 			if last_read {
 				preader.Close()
-				//pwriter.Close()
-				f.Close()
 				fmt.Println("Done and closing everything")
 				return
 			}
@@ -208,6 +214,9 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 	enc := gob.NewEncoder(pwriter)
 
 	err = enc.Encode(buff)
+	fmt.Println("Encode complete, closing and waiting")
+	pwriter.Close()
+	wg.Wait()
 	fmt.Println("Finished gobbing")
 	check(err)
 

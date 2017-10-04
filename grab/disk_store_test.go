@@ -44,7 +44,8 @@ func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, ma
 	//dkst.localFlush()
 	for v := range backup_hash {
 		if !dkst.Exist(NewUrl(v)) {
-			log.Fatal("Error, missing key from URL disk", v)
+			log.Println(dkst.mp)
+			log.Fatal("Error, missing key from URLmap disk", v)
 		}
 		time.Sleep(delay)
 	}
@@ -81,11 +82,13 @@ func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, ma
 func (dkst *DkStore) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
 
 	for v := range backup_hash {
-		if !dkst.Exist(v) {
+		if !dkst.Exist(NewUrl(v).ToBa()) {
 			log.Fatal("Error, missing key from disk", v)
 		}
 	}
-	for v := range dkst.GetStringKeys() {
+	for ba := range dkst.GetAnyKeys() {
+		ur := dkst.UrlFromBa(ba)
+		v := ur.String()
 		_, ok := backup_hash[v]
 		if !ok {
 			log.Fatal("Error, extra key in disk", v)

@@ -1,6 +1,7 @@
 package grab
 
 import (
+	"log"
 	"net/url"
 	"strings"
 )
@@ -35,14 +36,42 @@ func (u *Url) Initialise() bool {
 	return false
 }
 
+// This is the function you should call
+// if you want to generate a key of the map
+func (u Url) Key() string {
+	return u.Url()
+}
+
+// Get the actual URL itself
 func (u Url) Url() string {
 	return u.UrlS
 }
+
+// A strigified version of the URL structure
 func (u Url) String() string {
 	return u.Url()
 }
+
+var UseTags = false
+
 func (v Url) ToBa() []byte {
-	return []byte(v.Url())
+	if UseTags {
+		return []byte("Url:" + v.Url())
+	} else {
+		return []byte(v.Url())
+	}
+}
+func NewUrlFromBa(in []byte) Url {
+	if UseTags {
+		str := string(in)
+		if strings.HasPrefix(str, "URL:") {
+			return NewUrl(str[4:])
+		}
+		log.Fatal("Impossible Structure:", str)
+		return NewUrl(str)
+	} else {
+		return NewUrl(string(in))
+	}
 }
 func (u Url) Base() string {
 	if u.UrlS == "" {

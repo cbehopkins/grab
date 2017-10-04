@@ -2,6 +2,8 @@ package grab
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -14,7 +16,6 @@ type UrlMap struct {
 	// something in mp_tow is not on the disk
 	mp            map[string]struct{} // Doubles up as local read cache when using disk
 	mp_tow        map[string]struct{} // URLs waiting to be written
-	use_disk      bool
 	closed        bool
 	dkst          *DkStore
 	cachewg       *sync.WaitGroup
@@ -22,39 +23,98 @@ type UrlMap struct {
 	UseWriteCache bool
 }
 
-func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
-	var use_disk bool
-	if filename != "" {
-		use_disk = true
+// CopyFile copies a file from src to dst. If src and dst files exist, and are
+// the same, then return success. Otherise, attempt to create a hard link
+// between the two files. If that fail, copy the file contents from src to dst.
+func CopyFile(src, dst string) (err error) {
+	sfi, err := os.Stat(src)
+	if err != nil {
+		return
 	}
-	itm := new(UrlMap)
-	itm.use_disk = use_disk
-	itm.mp = make(map[string]struct{})
-	if use_disk {
-		itm.dkst = NewDkStore(filename, overwrite)
-		if compact {
-			fmt.Println("Compacting Database:", filename)
-			// Compact the current store and write to temp file
-			itm.dkst.compact(os.TempDir() + "/compact.gkvlite")
-			itm.dkst.Close() // Close before:
-			// move temp to current
-			err := os.Rename(os.TempDir()+"/compact.gkvlite", filename)
-			check(err)
-			// load in the new smaller file
-			itm.dkst = NewDkStore(filename, false)
-			fmt.Println("Compact Complete")
+	if !sfi.Mode().IsRegular() {
+		// cannot copy non-regular files (e.g., directories,
+		// symlinks, devices, etc.)
+		return fmt.Errorf("CopyFile: non-regular source file %s (%q)", sfi.Name(), sfi.Mode().String())
+	}
+	dfi, err := os.Stat(dst)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return
 		}
-		go itm.flusher()
+	} else {
+		if !(dfi.Mode().IsRegular()) {
+			return fmt.Errorf("CopyFile: non-regular destination file %s (%q)", dfi.Name(), dfi.Mode().String())
+		}
+		if os.SameFile(sfi, dfi) {
+			return
+		}
+	}
+	if err = os.Link(src, dst); err == nil {
+		return
+	}
+	err = copyFileContents(src, dst)
+	return
+}
 
-		// Self read is a debug function
-		// when we suspect problems loading the array
-		self_read := false
-		if self_read {
-			//fmt.Println("loafing:", filename)
-			for range itm.dkst.GetStringKeys() {
-			}
-			fmt.Println("done:", filename)
+// copyFileContents copies the contents of the file named src to the file named
+// by dst. The file will be created if it does not already exist. If the
+// destination file exists, all it's contents will be replaced by the contents
+// of the source file.
+func copyFileContents(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
 		}
+	}()
+	if _, err = io.Copy(out, in); err != nil {
+		return
+	}
+	err = out.Sync()
+	return
+}
+
+func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
+	itm := new(UrlMap)
+	itm.mp = make(map[string]struct{})
+	itm.dkst = NewDkStore(filename, overwrite)
+	if compact {
+		fmt.Println("Compacting Database:", filename)
+		// Compact the current store and write to temp file
+		itm.dkst.compact(os.TempDir() + "/compact.gkvlite")
+		itm.dkst.Close() // Close before:
+		// move temp to current
+
+		//err := os.Rename(os.TempDir()+"/compact.gkvlite", filename)
+		err := CopyFile(os.TempDir()+"/compact.gkvlite", filename)
+		if err != nil {
+			log.Fatalf("Copy problem\nType:%T\nVal:%v\n", err, err)
+		}
+		err = os.Remove(os.TempDir() + "/compact.gkvlite")
+		check(err)
+		// load in the new smaller file
+		itm.dkst = NewDkStore(filename, false)
+		fmt.Println("Compact Complete")
+	}
+	go itm.flusher()
+
+	// Self read is a debug function
+	// when we suspect problems loading the array
+	self_read := false
+	if self_read {
+		//fmt.Println("loafing:", filename)
+		for range itm.dkst.GetAnyKeys() {
+		}
+		fmt.Println("done:", filename)
 	}
 
 	return itm
@@ -103,22 +163,18 @@ func (um *UrlMap) diskFlush() {
 
 // Flush from local cache to the disk
 func (um *UrlMap) Flush() {
-	if um.use_disk {
-		um.Lock()
-		um.localFlush() // Local write cache
-		um.diskFlush()  // The store itself
-		um.ageCache()   // The read cache
-		um.Unlock()
-	}
+	um.Lock()
+	um.localFlush() // Local write cache
+	um.diskFlush()  // The store itself
+	um.ageCache()   // The read cache
+	um.Unlock()
 }
 
 // Sync the disk data to the file system
 func (um *UrlMap) Sync() {
-	if um.use_disk {
-		um.disk_lock.Lock()
-		um.dkst.Sync()
-		um.disk_lock.Unlock()
-	}
+	um.disk_lock.Lock()
+	um.dkst.Sync()
+	um.disk_lock.Unlock()
 }
 
 // Close the disk off
@@ -126,17 +182,15 @@ func (um *UrlMap) Close() {
 	// Close is a special case that operates on
 	// both the collection and the disk itself
 	// so we need both locks
-	if um.use_disk {
-		um.Lock()
-		um.localFlush()
-		um.disk_lock.Lock()
-		um.diskFlush()
-		um.dkst.Sync()
-		um.dkst.Close()
-		um.closed = true
-		um.disk_lock.Unlock()
-		um.Unlock()
-	}
+	um.Lock()
+	um.localFlush()
+	um.disk_lock.Lock()
+	um.diskFlush()
+	um.dkst.Sync()
+	um.dkst.Close()
+	um.closed = true
+	um.disk_lock.Unlock()
+	um.Unlock()
 }
 
 // Occasionally flush and sync
@@ -160,63 +214,79 @@ func (um *UrlMap) flusher() {
 	}
 }
 func (um *UrlMap) Exist(key_u Url) bool {
-	key := key_u.Url()
-	return um.ExistS(key)
+	if false {
+		key := key_u.Key()
+		return um.ExistS(key)
+	} else {
+		key_ba := key_u.ToBa()
+		return um.ExistS(string(key_ba))
+	}
 }
 func (um *UrlMap) ExistS(key string) bool {
 	//fmt.Println("Exist lock for:", key)
 	um.RLock()
 	var ok bool
-	if um.use_disk {
-		// Check in the local cache first
-		if um.UseReadCache {
-			_, ok = um.mp[key]
-		}
-
-		if um.UseWriteCache && !ok {
-			_, ok = um.mp_tow[key]
-		}
-		if !ok {
-			ok = um.dkst.Exist(key)
-		}
-
-		if ok && um.UseReadCache {
-			// if we find it exists anywhere
-			// then add it to the cache
-			um.cachewg.Add(1)
-			go func() {
-				// add it to the cache
-				um.Lock()
-				um.mp[key] = struct{}{}
-				um.Unlock()
-				um.cachewg.Done()
-			}()
-		}
-
-	} else {
+	// Check in the local cache first
+	if um.UseReadCache {
 		_, ok = um.mp[key]
+	}
+
+	if um.UseWriteCache && !ok {
+		_, ok = um.mp_tow[key]
+	}
+	if !ok {
+		ok = um.dkst.Exist(key)
+	}
+
+	if ok && um.UseReadCache {
+		// if we find it exists anywhere
+		// then add it to the cache
+		um.cachewg.Add(1)
+		go func() {
+			// add it to the cache
+			um.Lock()
+			um.mp[key] = struct{}{}
+			um.Unlock()
+			um.cachewg.Done()
+		}()
 	}
 	um.RUnlock()
 
 	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
+func (um *UrlMap) GetUrl(key string) Url {
+	// TBD change this to actually do the lookup
+	tmp := NewUrl(key)
+	tmp.Base()
+	return tmp
+}
+
+//func (um *UrlMap) Set(key_u Url) {
+//	um.SetBa(key_u.ToBa())
+//}
 func (um *UrlMap) Set(key_u Url) {
-	key := key_u.Url()
-	um.SetS(key)
+	key_ba := key_u.ToBa()
+	key_string := string(key_ba)
+	//fmt.Println("Get lock for:", key)
+	um.Lock()
+	//fmt.Println("Got Lock")
+	if um.UseWriteCache {
+		um.mp_tow[key_string] = struct{}{}
+	} else {
+		um.dkst.SetAny(key_ba, "")
+	}
+	um.Unlock()
+	//fmt.Println("Lock Returned for:", key)
 }
 func (um *UrlMap) SetS(key string) {
 	//fmt.Println("Get lock for:", key)
 	um.Lock()
 	//fmt.Println("Got Lock")
-	if um.use_disk {
-		if um.UseWriteCache {
-			um.mp_tow[key] = struct{}{}
-		} else {
-			um.dkst.SetAny(key, "")
-		}
+	if um.UseWriteCache {
+		um.mp_tow[key] = struct{}{}
 	} else {
-		um.mp[key] = struct{}{}
+		um.dkst.SetAny(key, "")
 	}
 	um.Unlock()
 	//fmt.Println("Lock Returned for:", key)
@@ -243,17 +313,14 @@ func (um *UrlMap) Check(key Url) bool {
 func (um *UrlMap) Count() int {
 	um.RLock()
 	defer um.RUnlock()
-	if um.use_disk {
-		if um.closed {
-			return 0
-		}
-		size := um.dkst.Count()
-		if um.UseWriteCache {
-			size += len(um.mp_tow)
-		}
-		return size
+	if um.closed {
+		return 0
 	}
-	return len(um.mp)
+	size := um.dkst.Count()
+	if um.UseWriteCache {
+		size += len(um.mp_tow)
+	}
+	return size
 }
 
 // Size provides a backwards compatable interface.
@@ -262,17 +329,14 @@ func (um *UrlMap) Count() int {
 func (um *UrlMap) Size() int {
 	um.RLock()
 	defer um.RUnlock()
-	if um.use_disk {
-		if um.closed {
-			return 0
-		}
-		size := um.dkst.Size()
-		if um.UseWriteCache {
-			size += len(um.mp_tow)
-		}
-		return size
+	if um.closed {
+		return 0
 	}
-	return len(um.mp)
+	size := um.dkst.Size()
+	if um.UseWriteCache {
+		size += len(um.mp_tow)
+	}
+	return size
 }
 
 // Return a channel that we can read the (current) list of Urls From
@@ -290,28 +354,14 @@ func (um *UrlMap) VisitAll() chan Url {
 		um.Unlock()
 		um.RLock()
 		//fmt.Println("Got Lock")
-		if um.use_disk {
-			if !um.closed {
-				for v := range um.dkst.GetStringKeys() {
-					//fmt.Println("Visit Url:", v)
-					ret_chan <- NewUrl(v)
-				}
-			}
-			um.RUnlock()
-
-		} else {
-			tmp_slice := make([]string, len(um.mp))
-			i := 0
-			for v := range um.mp {
-				tmp_slice[i] = v
-				i++
-			}
-			um.RUnlock()
-			//fmt.Println("Sending Values")
-			for _, v := range tmp_slice {
-				ret_chan <- NewUrl(v)
+		if !um.closed {
+			for ba := range um.dkst.GetAnyKeys() {
+				//fmt.Println("Visit Url:", v)
+				ret_chan <- um.dkst.UrlFromBa(ba)
 			}
 		}
+		um.RUnlock()
+
 		//fmt.Println("Closing Visit Chan")
 		close(ret_chan)
 	}()
@@ -331,30 +381,16 @@ func (um *UrlMap) Visit() chan Url {
 		//um.Unlock()
 		um.RLock()
 		//fmt.Println("Got Lock")
-		if um.use_disk {
-			if um.closed {
-				um.RUnlock()
-				close(ret_chan)
-				return
-			} else {
-				string_array := um.dkst.GetStringKeysArray(100)
-				um.RUnlock()
-				for _, v := range string_array {
-					//fmt.Println("Visit Url:", v)
-					ret_chan <- NewUrl(v)
-				}
-			}
-		} else {
-			tmp_slice := make([]string, len(um.mp))
-			i := 0
-			for v := range um.mp {
-				tmp_slice[i] = v
-				i++
-			}
+		if um.closed {
 			um.RUnlock()
-			//fmt.Println("Sending Values")
-			for _, v := range tmp_slice {
-				ret_chan <- NewUrl(v)
+			close(ret_chan)
+			return
+		} else {
+			string_array := um.dkst.GetAnyKeysArray(100)
+			um.RUnlock()
+			for _, ba := range string_array {
+				//fmt.Println("Visit Url:", v)
+				ret_chan <- um.dkst.UrlFromBa(ba)
 			}
 		}
 		//fmt.Println("Closing Visit Chan")
@@ -377,35 +413,31 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	um.FlushWrites() // Flush writes will happen later with go um.Flush()
 
 	um.RLock()
-	if um.use_disk {
-		if um.closed {
-			um.RUnlock()
-			return ret_map
-		} else {
-			// Get up to 100 things that aren't on the TokenChan
-			ret_map_url := um.dkst.GetMissing(10000, refr)
-			um.RUnlock()
-			for key, value := range ret_map_url {
-				ret_map[key] = value
-			}
-			// We've done reading, so write out the cache
-			// while the disk is not busy
-			go um.Flush()
-			return ret_map
-		}
-	} else {
-		for v := range um.mp {
-			ret_map[v] = struct{}{}
-		}
+	if um.closed {
 		um.RUnlock()
-		// We've finsihed reading - excellent time
-		// to do lots of writes
+		return ret_map
+	} else {
+		// Get up to 100 things that aren't on the TokenChan
+		ret_map_url := um.dkst.GetMissing(10000, refr)
+		um.RUnlock()
+		s := Spinner{scaler: 100}
+		cnt := 0
+		for key, value := range ret_map_url {
+			if false {
+				cnt++
+				s.PrintSpin(cnt)
+			}
+			ret_map[key] = value
+		}
+		// We've done reading, so write out the cache
+		// while the disk is not busy
 		go um.Flush()
+		return ret_map
 	}
 	return ret_map
 }
 func (um *UrlMap) Delete(key_u Url) {
-	key := key_u.Url()
+	key := key_u.Key()
 	um.DeleteS(key)
 }
 func (um *UrlMap) DeleteS(key string) {
@@ -413,27 +445,23 @@ func (um *UrlMap) DeleteS(key string) {
 		um.cachewg.Wait()
 	}
 	um.Lock()
-	if um.use_disk {
-		if !um.closed {
-			var ok bool
-			if um.UseWriteCache {
-				_, ok = um.mp_tow[key]
-				if ok {
-					delete(um.mp_tow, key)
-				}
+	if !um.closed {
+		var ok bool
+		if um.UseWriteCache {
+			_, ok = um.mp_tow[key]
+			if ok {
+				delete(um.mp_tow, key)
 			}
-			if um.UseReadCache {
-				_, ok = um.mp[key]
-				if ok {
-					delete(um.mp, key)
-				}
-			}
-
-			// It may or may not exist in the cache
-			um.dkst.Delete(key)
 		}
-	} else {
-		delete(um.mp, key)
+		if um.UseReadCache {
+			_, ok = um.mp[key]
+			if ok {
+				delete(um.mp, key)
+			}
+		}
+
+		// It may or may not exist in the cache
+		um.dkst.Delete(key)
 	}
 	um.Unlock()
 }

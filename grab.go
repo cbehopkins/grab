@@ -237,6 +237,8 @@ func main() {
 	// Any domains we come across not in this list will not be visited
 	dmv := grab.NewDomVisit()
 	defer dmv.Close()
+  // We expect to be able to write to the fetch channel, so start the worker
+	multi_fetch.Worker(dmv)
 
 	// The Hamster is the thing that goes out and
 	// Grabs stuff, looking for interesting things to fetch
@@ -267,12 +269,13 @@ func main() {
 	var start_url_chan chan grab.Url
 	// urls read from a file and command line
 	src_url_chan := make(chan grab.Url)
-	wgrc := grab.RunChan(src_url_chan, visited_urls, unvisit_urls, "")
+  start_url_chan = make(chan grab.Url)
+  wgrc := grab.RunChan(src_url_chan, visited_urls, unvisit_urls, "")
 	go func() {
 		if shallow {
 			// If in shallow mode then first write to shallow chan
 			// then have a process that Grabs those URLs
-			start_url_chan = make(chan grab.Url)
+			//start_url_chan = make(chan grab.Url)
 		} else {
 			// If not in shallow mode, write direct to
 			// the main source channel
@@ -318,6 +321,15 @@ func main() {
 				debug, // Print Urls
 			)
 			hms.SetDv(dmv)
+      // This should not be needed, Neither hamster nor runner closes fetch
+      //cfp_tmp := make(chan grab.Url)
+      //go func () {
+        //for urx := range cfp_tmp {
+        //  chan_fetch_push <- urx
+        //}
+        //fmt.Println("cfp closed")
+//        wg.Done()
+      //}()
 			hms.SetFetchCh(chan_fetch_push)
 			var grab_tk_rep *grab.TokenChan
 			grab_tk_rep = grab.NewTokenChan(num_p_fetch, "shallow")
@@ -339,6 +351,7 @@ func main() {
 			r.Wait()
 			r.Close()
 			wg.Done()
+      //close(cfp_tmp)
 		}()
 	}
 	fmt.Println("Waiting for Seed pahse to complete")
@@ -347,7 +360,6 @@ func main() {
 	fmt.Println("Seed Phase complete")
 	hm.ClearShallow()
 	multi_fetch.SetFileName(fetch_fn)
-	multi_fetch.Worker(dmv)
 
 	if print_workload {
 		fmt.Println("Printing Workload")
@@ -429,9 +441,9 @@ func main() {
 	if *autopaceflg != 0 {
 		go runr.AutoPace(multi_fetch, *autopaceflg)
 	}
-	if *dbgflg {
+	//if *dbgflg {
 		fmt.Println("Waiting for runner to complete")
-	}
+	//}
 	runr.Wait()
 	if *dbgflg {
 		fmt.Println("Runner complete. Waiting for fetch to complete")

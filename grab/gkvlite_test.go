@@ -194,6 +194,7 @@ func TestGkv1(t *testing.T) {
 		col.Set([]byte(tst_string), []byte{})
 		backup_hash[tst_string] = struct{}{}
 	}
+	//log.Printf("Store created, checking self")
 	checkStoreN(col, backup_hash, num_entries, max_str_len)
 
 	// Close it all off, make sure it is on the disk

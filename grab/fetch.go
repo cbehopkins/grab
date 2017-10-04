@@ -7,8 +7,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"syscall"
 	//"strings"
 	"time"
+)
+
+const (
+	FetchTimeout = 30 * time.Minute
+	GrabTimeout  = 5 * time.Second
 )
 
 // Test the jpeg for validity
@@ -64,29 +70,24 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	os.MkdirAll(dir_str, dir_file_mode)
 
 	out, err := os.Create(potential_file_name)
-	switch t := err.(type) {
-	case *os.PathError:
-		switch t.Err {
-		case os.ErrNotExist:
-			log.Fatal("Invalid filename", potential_file_name)
-		case os.ErrInvalid:
-			log.Fatal("Invalid argument", potential_file_name)
-    default :
-    switch t.Err.Error(){
-    case "is a directory":
-      // Malformed URL gives this
-      // Indicates where we are fetching from is giving us illegal stuff
-      return
-		default:
-			log.Fatalf("Unknown os.PathError\n\"%s\"\n%v\n,Type:%t\nDir:%s\nUrl:%s\n", potential_file_name, t.Err, t.Err, dir_str, fetch_url)
-      }
+	if err != nil {
+		var pe = err.(*os.PathError)        // let it panic or use the ,ok trick as below
+		var en, ok = pe.Err.(syscall.Errno) // not a Go 1 Compat guarantee, so handle failed type assertion
+		if !ok {
+			log.Fatalf("Unexpected error from os.Create: %s\n", pe)
 		}
-	case nil:
-		// nothing
-	default:
-		log.Printf("Error is of type %T,n", err)
-		check(err)
-
+		switch en {
+		case syscall.EEXIST:
+			log.Fatal("Error in os create, File does not exist")
+		case syscall.EISDIR:
+			// Malformed URL gives this
+			// Indicates where we are fetching from is giving us illegal stuff
+			return
+		case syscall.EINVAL:
+			log.Fatal("Error in os create, invalid name")
+		default:
+			log.Fatal("Unhandled syscall error")
+		}
 	}
 
 	defer out.Close()
@@ -95,12 +96,11 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 		//fmt.Println("null fetch")
 		return
 	}
-	timeout := time.Duration(30 * time.Minute)
+	timeout := time.Duration(FetchTimeout)
 	client := http.Client{
 		Timeout: timeout,
 	}
 	resp, err := client.Get(fetch_url.Url())
-	// TBD Add error handling here
 	if err != nil {
 		return
 	}

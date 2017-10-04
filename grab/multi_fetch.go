@@ -10,7 +10,11 @@ import (
 // One multi-Fetcher does all files!
 type MultiFetch struct {
 	sync.Mutex
-	wg             sync.WaitGroup
+	wg sync.WaitGroup
+	// Gob Wait Group
+	// Ensure we wait for gob to have finished before we close the fetch channel
+	// That gob will be trying to write to
+	gwg            sync.WaitGroup
 	InChan         chan Url // Write Urls to here
 	dump_chan      chan Url
 	in_chan_closed bool
@@ -63,6 +67,14 @@ func (mf *MultiFetch) Count() int {
 }
 func (mf *MultiFetch) SetFileName(fn string) {
 	mf.filename = fn
+	mf.gwg.Add(1)
+	go func() {
+		// Because in Multi-Mode re read direct from InChan
+		// Maks sure we write there
+		LoadGob(mf.filename, mf.InChan, nil, false, false)
+		fmt.Println("Finished reading in Gob fully*************************")
+		mf.gwg.Done()
+	}()
 }
 func (mf *MultiFetch) SetDownload() {
 	mf.download = true
@@ -85,6 +97,7 @@ func (mf *MultiFetch) Close() {
 		mf.Scram()
 	} else {
 		if !mf.in_chan_closed {
+			mf.gwg.Wait()
 			close(mf.InChan)
 			mf.in_chan_closed = true
 		}
@@ -150,7 +163,7 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 					// Implement a timeout on the Fetch Work
 					select {
 					case <-tchan:
-					case <-time.After(20 * time.Minute):
+					case <-time.After(FetchTimeout + time.Second):
 						log.Fatal("We needed to use the timeout case, this is bad!")
 					}
 					// Return the token at the end
@@ -163,25 +176,12 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 func (mf *MultiFetch) Worker(dv DomVisitI) {
 	mf.wg.Add(1)
 	go func() {
-		var wg sync.WaitGroup
-		if mf.filename != "" {
-			wg.Add(1)
-			go func() {
-				// Because in Multi-Mode re read direct from InChan
-				// Maks sure we write there
-				LoadGob(mf.filename, mf.InChan, nil, false, false)
-				fmt.Println("Finished reading in Gob fully*************************")
-				wg.Done()
-			}()
-		}
-		//wg.Wait()
 
 		if !mf.multi_mode {
 			mf.single_worker(mf.fifo.PopChannel, dv, "universal")
-			wg.Wait()
 		} else {
+			var wg sync.WaitGroup
 			mf.dump_chan = make(chan Url)
-			// TBD Try this
 			// Dispatch will not complete until all of the
 			// workers it start complete
 			// In the event of a scram a worker will not complete until it has emptied its
@@ -189,10 +189,13 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 			go func() {
 				<-mf.scram_chan
 				wg.Add(1)
+				fmt.Println("MultiScram Start")
 				mf.scram_multi()
+				fmt.Println("Multiscram End")
 				wg.Done()
 			}()
 			mf.dispatch(dv)
+			fmt.Println("Dispatch Complete - Closing starting")
 			// dispatch workers will finish after they have emptied their queues
 			// once they have all emptied then we can close the dump channel
 			close(mf.dump_chan)

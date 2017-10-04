@@ -131,13 +131,14 @@ func (hm *Hamster) GrabT(
 	// Add to the list of domains we have visited (and should visit again)
 	// this current URL
 	//_ = ur.VisitedA(domain_i)
-	timeout := time.Duration(5 * time.Second)
+	timeout := time.Duration(GrabTimeout)
 	client := http.Client{
 		Timeout: timeout,
 	}
 
 	//fmt.Println("Getting:", url_in)
 	resp, err := client.Get(url_in.Url())
+	//fmt.Println("Got:", url_in)
 
 	if err != nil {
 		if hm.print_urls {
@@ -152,6 +153,7 @@ func (hm *Hamster) GrabT(
 	defer io.Copy(ioutil.Discard, b)
 	//fmt.Println("Tokenizing:",url_in)
 	z := html.NewTokenizer(b)
+	//fmt.Println("About to handle")
 	hm.tokenhandle(z, url_in, domain_i)
 	//fmt.Println("Tokenized:",url_in)
 }
@@ -178,6 +180,8 @@ func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text s
 	is_mpg := strings.Contains(relinked_url_string, ".mpg")
 	is_mp4 := strings.Contains(relinked_url_string, ".mp4")
 	is_avi := strings.Contains(relinked_url_string, ".avi")
+	//fmt.Println("Switching")
+	//defer fmt.Println("Switched")
 	switch {
 	case is_jpg:
 		relinked_url_string = strings.TrimLeft(relinked_url_string, ".jpg")
