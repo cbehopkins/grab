@@ -334,8 +334,8 @@ func TestDiskStore2(t *testing.T) {
 	if dkst.Size() > 0 {
 		log.Fatal("Bigger than zero")
 	}
-	dkst.SetAny(url_0, "")
-	dkst.SetAny(url_1, "")
+	dkst.SetUrl(url_0)
+	dkst.SetUrl(url_1)
 	if dkst.Size() == 0 {
 		log.Fatal("Size is zero")
 	}
@@ -356,11 +356,53 @@ func TestDiskStore2(t *testing.T) {
 	}
 
 	// Delete returns true if suceeds
-	_ = dkst.Delete(url_0)
-	_ = dkst.Delete(url_1)
+	ok := dkst.Delete(url_0)
+	if !ok {
+		log.Fatal("Delete failed on url_0")
+	}
+	ok = dkst.Delete(url_1)
+	if !ok {
+		log.Fatal("Delete failed on url_1")
+	}
 
 	if dkst.Size() > 0 {
 		log.Fatal("Bigger than zero after delete")
+	}
+}
+func TestDiskStore3(t *testing.T) {
+	test_filename := os.TempDir() + "/test.gkvlite"
+	dkst := NewDkStore(test_filename, true)
+	defer dkst.Close()
+	// Let's pretend to have some urls
+	var url_0 Url
+	var url_1 Url
+	var url_2 Url
+	url_0 = NewUrl("http://here.com")
+	url_0.SetPromiscuous()
+	url_1 = NewUrl("http://there.com")
+	url_2 = NewUrl("http://nowhere.com")
+	dkst.SetUrl(url_0)
+	dkst.SetUrl(url_1)
+	dkst.SetUrl(url_2)
+	output, err := url_0.goMarshalJSON()
+	if err != nil {
+		log.Fatal("Marshalling error", err)
+	}
+	//log.Println("JSON Output", string(output))
+	new_url0 := dkst.GetUrl("http://here.com")
+	if !new_url0.GetPromiscuous() {
+		log.Fatal("We should be promiscuous")
+	}
+	if new_url0.Url() != url_0.Url() {
+		log.Fatal("URLs are incirrect", new_url0.Url(), url_0.Url())
+	}
+	new_url1 := dkst.GetUrl("http://there.com")
+	new_url2 := dkst.GetUrl("http://nowhere.com")
+	if new_url1.GetPromiscuous() {
+		log.Fatal("We should not be promiscuous")
+	}
+	if new_url2.GetPromiscuous() {
+		log.Fatal("We should not be promiscuous")
 	}
 
 }

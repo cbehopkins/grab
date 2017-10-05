@@ -148,9 +148,37 @@ func (st *DkStore) GetAny(key interface{}) []byte {
 	check(err)
 	return ret_val
 }
+func (st *DkStore) GetUrl(key string) Url {
+	return st.UrlFromBa([]byte(key))
+}
+func (st *DkStore) SetUrl(in Url) {
+	key := in.Key()
+	key_ba := []byte(key)
+	output, err := in.goMarshalJSON()
+	if err == nil {
+		st.SetAny(key_ba, output)
+	} else {
+		log.Fatal("JSOM Marshall error")
+	}
+}
 func (st *DkStore) UrlFromBa(in []byte) Url {
-	// TBD Fix this so we look up the value in the store
-	return NewUrlFromBa(in)
+	var itm Url
+	var ok bool
+
+	ok = st.Exist(in)
+	if !ok {
+		itm = NewUrlFromBa(in)
+		return itm
+	}
+	itm_ba := st.GetAny(in)
+	if string(itm_ba) == "" {
+		return NewUrlFromBa(in)
+	}
+	//log.Fatal("Puzzling, this is not possible")
+	var tmpUrl Url
+	tmpUrl.goUnMarshalJSON(itm_ba)
+	tmpUrl.UrlS = string(in)
+	return tmpUrl
 }
 func (st *DkStore) Delete(key interface{}) bool {
 	key_bs := toBa(key)

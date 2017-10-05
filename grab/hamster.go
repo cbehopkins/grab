@@ -206,8 +206,13 @@ func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text s
 			//fmt.Println("sent", linked_url)
 		}
 	default:
-		if hm.promiscuous || hm.shallow {
-			if hm.all_interesting || hm.dv.VisitedQ(domain_j) || (domain_i == domain_j) {
+		grabAllowed := hm.promiscuous || hm.shallow || url_in.GetPromiscuous() || url_in.GetShallow()
+		if hm.promiscuous {
+			linked_url.SetPromiscuous()
+		}
+		if grabAllowed {
+			interestingUrl := hm.all_interesting || hm.dv.VisitedQ(domain_j) || (domain_i == domain_j)
+			if interestingUrl {
 				if hm.print_urls {
 					fmt.Printf("Interesting url, %s, %s\n", linked_url, url_in)
 				}

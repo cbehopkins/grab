@@ -152,6 +152,7 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 				grab_success := make([]Url, 0, len(missing_map))
 			map_itter:
 				for urv := range missing_map {
+					urv.Base()
 					select {
 					case _, ok := <-r.grab_closer:
 						if !ok {
@@ -232,38 +233,38 @@ func (r *Runner) getConditional(urs Url, out_count *OutCounter, crawl_chan *Toke
 	}
 	return false
 }
-func (r *Runner) getRegardless(itm Url, grab_tk_rep *TokenChan) {
-	//urv := itm.Url()
-	if r.visited_urls.Exist(itm) {
-		if false {
-			urv := itm.Url()
-			fmt.Println("Skipping:", urv)
-		}
-		return
-	} else {
-		r.visited_urls.Set(itm)
-		if r.unvisit_urls != nil {
-			r.unvisit_urls.Delete(itm)
-		}
-		if false {
-			urv := itm.Url()
-			fmt.Println("Get:", urv)
-		}
-		r.hm.GrabT(
-			itm, // The URL we are tasked with crawling
-			"",  // Using universal token
-			grab_tk_rep,
-		)
-
-	}
-}
-func (r *Runner) ChanGettery(start_url_chan chan Url, grab_tk_rep *TokenChan) {
-	fmt.Println("Getter starting", start_url_chan)
-	for itm := range start_url_chan {
-		if false {
-			urv := itm.Url()
-			fmt.Println("Get:", urv)
-		}
-		r.getRegardless(itm, grab_tk_rep)
-	}
-}
+//func (r *Runner) getRegardless(itm Url, grab_tk_rep *TokenChan) {
+//	//urv := itm.Url()
+//	if r.visited_urls.Exist(itm) {
+//		if false {
+//			urv := itm.Url()
+//			fmt.Println("Skipping:", urv)
+//		}
+//		return
+//	} else {
+//		r.visited_urls.Set(itm)
+//		if r.unvisit_urls != nil {
+//			r.unvisit_urls.Delete(itm)
+//		}
+//		if false {
+//			urv := itm.Url()
+//			fmt.Println("Get:", urv)
+//		}
+//		r.hm.GrabT(
+//			itm, // The URL we are tasked with crawling
+//			"",  // Using universal token
+//			grab_tk_rep,
+//		)
+//
+//	}
+//}
+//func (r *Runner) ChanGettery(start_url_chan chan Url, grab_tk_rep *TokenChan) {
+//	fmt.Println("Getter starting", start_url_chan)
+//	for itm := range start_url_chan {
+//		if false {
+//			urv := itm.Url()
+//			fmt.Println("Get:", urv)
+//		}
+//		r.getRegardless(itm, grab_tk_rep)
+//	}
+//}

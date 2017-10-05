@@ -164,7 +164,7 @@ func main() {
 		fmt.Printf("*\n*\n*\n*\n*\n*\nPromiscuous mode activated\n*\n*\n*\n*\n*\n*\n\n")
 		time.Sleep(5 * time.Second)
 	}
-	shallow := !promiscuous
+	//shallow := !promiscuous
 	all_interesting := *intrflg
 	debug := *dbgflg
 
@@ -243,11 +243,12 @@ func main() {
 	// The Hamster is the thing that goes out and
 	// Grabs stuff, looking for interesting things to fetch
 	hm := grab.NewHamster(
-		promiscuous,
-		shallow,
+		false,
+		false,
 		all_interesting,
 		debug, // Print Urls
 	)
+	//hm.ClearShallow()
 	if *politeflg {
 		hm.Polite()
 	}
@@ -266,22 +267,11 @@ func main() {
 	}()
 	// After being read from the file they might first be crawled
 	// alternatively this channel might not really exist at all
-	var start_url_chan chan grab.Url
 	// urls read from a file and command line
 	src_url_chan := make(chan grab.Url)
-  start_url_chan = make(chan grab.Url)
+
   wgrc := grab.RunChan(src_url_chan, visited_urls, unvisit_urls, "")
 	go func() {
-		if shallow {
-			// If in shallow mode then first write to shallow chan
-			// then have a process that Grabs those URLs
-			//start_url_chan = make(chan grab.Url)
-		} else {
-			// If not in shallow mode, write direct to
-			// the main source channel
-			// which will sort them into the *visit* maps
-			start_url_chan = src_url_chan
-		}
 		seed_url_chan := *grab.NewUrlChannel()
 		go grab.LoadFile(url_fn, seed_url_chan, nil, true, false)
 		for itm := range seed_url_chan {
@@ -296,69 +286,21 @@ func main() {
 				// Mark this as a domain we can Fetch from
 				_ = dmv.VisitedA(domain_i)
 				// send this URL for grabbing
-				start_url_chan <- itm
+        if promiscuous {
+          itm.SetPromiscuous()
+        }
+        itm.SetShallow()
+				src_url_chan <- itm
         //fmt.Println(itm, "Sent")
 			}
 		}
 		fmt.Println("seed_url_chan seen closed")
-		close(start_url_chan)
+    close(src_url_chan)
 	}()
 
-	if shallow {
-		wg.Add(1) // one for shallow
-		go func() {
-			// Now don't get confused by how a shallow hamster behaves
-			// With shallow set, we actually get the same behaviour as promiscuous being set
-			// The point is we do a single pass looking for things to add to grab
-			// Later we clear shallow bit
-			// The URLS are still then grabbed and processed for interesting things
-			// but without promiscuous or shallow set, then we never look for
-			// new Urls within the page that might be suitable for further grabbing
-			hms := grab.NewHamster(
-				promiscuous,
-				shallow,
-				all_interesting,
-				debug, // Print Urls
-			)
-			hms.SetDv(dmv)
-      // This should not be needed, Neither hamster nor runner closes fetch
-      //cfp_tmp := make(chan grab.Url)
-      //go func () {
-        //for urx := range cfp_tmp {
-        //  chan_fetch_push <- urx
-        //}
-        //fmt.Println("cfp closed")
-//        wg.Done()
-      //}()
-			hms.SetFetchCh(chan_fetch_push)
-			var grab_tk_rep *grab.TokenChan
-			grab_tk_rep = grab.NewTokenChan(num_p_fetch, "shallow")
-			hms.SetGrabCh(src_url_chan)
-
-			fmt.Println("Starting shallow grab")
-			if visited_urls == nil {
-				log.Fatal("Nil Visited before getRegardless")
-			}
-			r := grab.NewRunner(hms, nil, visited_urls)
-			//runr.GrabRunner(
-			//num_p_fetch,
-			//)
-			r.ChanGettery(start_url_chan, grab_tk_rep)
-
-			// We close it now because after a shallow crawl
-			// there should be no new URLs added to be crawled
-			close(src_url_chan)
-			r.Wait()
-			r.Close()
-			wg.Done()
-      //close(cfp_tmp)
-		}()
-	}
-	fmt.Println("Waiting for Seed pahse to complete")
 	wg.Wait()
 	wgrc.Wait()
 	fmt.Println("Seed Phase complete")
-	hm.ClearShallow()
 	multi_fetch.SetFileName(fetch_fn)
 
 	if print_workload {

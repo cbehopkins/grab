@@ -238,11 +238,23 @@ func runChanW(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_nam
 		if dbg_name != "" {
 			fmt.Printf("runChan, %s RX:%v\n", dbg_name, urv)
 		}
-		if visited_urls.Exist(urv) {
+		promiscuous, shallow, ok := visited_urls.Properties(urv)
+		new_shallow := urv.GetShallow() || urv.GetPromiscuous()
+		if ok && (!new_shallow || shallow || promiscuous) {
 			// If we've already visited it then nothing to do
-			//fmt.Printf("We've already visited %s\n", urv)
+			if dbg_name != "" {
+				fmt.Printf("We've already visited %s\n", urv)
+			}
 		} else {
+			// If we previously visited this url
+			// but at the time we didn't fully grab it
+			if new_shallow && !shallow {
+				visited_urls.Delete(urv)
+			}
 			// If we haven't visited it, then add it to the list of places to visit
+			if dbg_name != "" {
+				fmt.Println("Adding as unvisited url:", urv)
+			}
 			unvisit_urls.Set(urv)
 		}
 		if dbg_name != "" {

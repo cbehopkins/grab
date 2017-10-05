@@ -1,16 +1,19 @@
 package grab
 
 import (
+	"encoding/json"
 	"log"
 	"net/url"
 	"strings"
 )
 
 type Url struct {
-	UrlS  string
-	Title string
-	base  *string
-	parse **url.URL
+	UrlS        string `json:"-"`
+	Title       string `json:"t,omitempty""`
+	Promiscuous bool   `json:"p,omitempty"`
+	Shallow     bool   `json:"s,omitempty"`
+	base        *string
+	parse       **url.URL
 }
 
 func NewUrl(ur string) (ret Url) {
@@ -49,29 +52,35 @@ func (u Url) Url() string {
 
 // A strigified version of the URL structure
 func (u Url) String() string {
-	return u.Url()
+	retStr := "Url:\"" + u.Url() + "\""
+	if u.Title != "" {
+		retStr += "Title:\"" + u.Title + "\""
+	}
+	if u.Promiscuous {
+		retStr += "Promiscuous"
+	}
+	if u.Shallow {
+		retStr += "Shallow"
+	}
+	return retStr
 }
 
-var UseTags = false
-
 func (v Url) ToBa() []byte {
-	if UseTags {
-		return []byte("Url:" + v.Url())
+	return []byte(v.Url())
+}
+
+// FromBa populates a url from the information in the input byte array
+func (u *Url) FromBa(key string, in []byte) {
+	if string(in) == "" {
+		// Null written to disk
+		*u = NewUrl(key)
+		u.Base()
 	} else {
-		return []byte(v.Url())
+		log.Fatal("This functionality not supported yet")
 	}
 }
 func NewUrlFromBa(in []byte) Url {
-	if UseTags {
-		str := string(in)
-		if strings.HasPrefix(str, "URL:") {
-			return NewUrl(str[4:])
-		}
-		log.Fatal("Impossible Structure:", str)
-		return NewUrl(str)
-	} else {
-		return NewUrl(string(in))
-	}
+	return NewUrl(string(in))
 }
 func (u Url) Base() string {
 	if u.UrlS == "" {
@@ -116,4 +125,32 @@ func (u Url) genBase() {
 	} else {
 		*u.base = hn
 	}
+}
+
+func (u *Url) SetPromiscuous() {
+	u.Promiscuous = true
+}
+func (u *Url) ClearPromiscuous() {
+	u.Promiscuous = false
+}
+func (u Url) GetPromiscuous() bool {
+	return u.Promiscuous
+}
+
+func (u *Url) SetShallow() {
+	u.Shallow = true
+}
+func (u *Url) ClearShallow() {
+	u.Shallow = false
+}
+func (u Url) GetShallow() bool {
+	return u.Shallow
+}
+func (item *Url) goMarshalJSON() (output []byte, err error) {
+	output, err = json.Marshal(item)
+	return
+}
+func (item *Url) goUnMarshalJSON(input []byte) (err error) {
+	err = json.Unmarshal(input, item)
+	return
 }
