@@ -388,7 +388,8 @@ func TestDiskStore3(t *testing.T) {
 	if err != nil {
 		log.Fatal("Marshalling error", err)
 	}
-	//log.Println("JSON Output", string(output))
+  if false {
+	log.Println("JSON Output", string(output))}
 	new_url0 := dkst.GetUrl("http://here.com")
 	if !new_url0.GetPromiscuous() {
 		log.Fatal("We should be promiscuous")

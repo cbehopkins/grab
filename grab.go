@@ -274,10 +274,12 @@ func main() {
 	go func() {
 		seed_url_chan := *grab.NewUrlChannel()
 		go grab.LoadFile(url_fn, seed_url_chan, nil, true, false)
-		for itm := range seed_url_chan {
-			//if debug {
+		s := grab.Spinner{}
+    cnt:= 0
+    for itm := range seed_url_chan {
+			if debug {
 				fmt.Println("SeedURL:", itm)
-			//}
+			}
 			if itm.Initialise() {
 				log.Fatal("URL needed initialising in nd", itm)
 			}
@@ -290,7 +292,9 @@ func main() {
           itm.SetPromiscuous()
         }
         itm.SetShallow()
+        s.PrintSpin(cnt)
 				src_url_chan <- itm
+        cnt++
         //fmt.Println(itm, "Sent")
 			}
 		}

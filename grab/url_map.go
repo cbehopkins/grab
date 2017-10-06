@@ -247,18 +247,19 @@ func (um *UrlMap) ExistS(key string) bool {
 	if um.UseWriteCache && !ok {
 		_, ok = um.mp_tow[key]
 	}
+  var dkOk bool
 	if !ok {
-		ok = um.dkst.Exist(key)
+		dkOk = um.dkst.Exist(key)
 	}
 
-	if ok && um.UseReadCache {
+	if !ok && dkOk && um.UseReadCache {
 		// if we find it exists anywhere
 		// then add it to the cache
 		um.cachewg.Add(1)
 		go func() {
 			// add it to the cache
 			um.Lock()
-			um.mp[key] = um.GetUrl(key)
+			um.mp[key] = um.GetUrlDisk(key)
 			um.Unlock()
 			um.cachewg.Done()
 		}()
@@ -268,25 +269,33 @@ func (um *UrlMap) ExistS(key string) bool {
 	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
+func (um *UrlMap) GetUrlDisk(key string) Url {
+		itm := um.dkst.GetUrl(key)
+		itm.Initialise()
+  return itm
+}
 func (um *UrlMap) GetUrl(key string) Url {
-	// TBD change this to actually do the lookup
 	if true {
 		var itm Url
 		var ok bool
+    um.RLock()
+    defer um.RUnlock()
 		if um.UseReadCache {
 			itm, ok = um.mp[key]
 			if ok {
+        //um.RUnlock()
 				return itm
 			}
 		}
 		if um.UseWriteCache && !ok {
 			itm, ok = um.mp_tow[key]
 			if ok {
+        //um.RUnlock()
 				return itm
 			}
 		}
-		itm = um.dkst.GetUrl(key)
-		itm.Initialise()
+    //um.RUnlock()
+    itm = um.GetUrlDisk(key)
 		return itm
 
 	} else {
@@ -455,7 +464,6 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	um.RLock()
 	if um.closed {
 		um.RUnlock()
-		return ret_map
 	} else {
 		// Get up to 100 things that aren't on the TokenChan
 		ret_map_url := um.dkst.GetMissing(10000, refr)
@@ -472,7 +480,6 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 		// We've done reading, so write out the cache
 		// while the disk is not busy
 		go um.Flush()
-		return ret_map
 	}
 	return ret_map
 }

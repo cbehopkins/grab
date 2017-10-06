@@ -9,7 +9,7 @@ import (
 
 type Url struct {
 	UrlS        string `json:"-"`
-	Title       string `json:"t,omitempty""`
+	Title       string `json:"t,omitempty"`
 	Promiscuous bool   `json:"p,omitempty"`
 	Shallow     bool   `json:"s,omitempty"`
 	base        *string
