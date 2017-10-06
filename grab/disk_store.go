@@ -158,7 +158,7 @@ func (st *DkStore) SetUrl(in Url) {
 	if err == nil {
 		st.SetAny(key_ba, output)
 	} else {
-		log.Fatal("JSOM Marshall error")
+		log.Fatal("JSON Marshall error")
 	}
 }
 func (st *DkStore) UrlFromBa(in []byte) Url {

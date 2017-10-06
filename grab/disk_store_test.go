@@ -42,8 +42,25 @@ func (dkst *UrlMap) checkStore(backup_hash map[string]struct{}, num_entries, max
 }
 func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, max_str_len int, delay time.Duration, test_disk_full bool) {
 	//dkst.localFlush()
+	if false {
+		for key := range dkst.dkst.GetAnyKeys() {
+			log.Println("Disk contains key:", string(key))
+			if !dkst.ExistS(string(key)) {
+				log.Fatal("self check fail 0")
+			}
+		}
+		for v := range dkst.VisitAll() {
+			key := v.Key()
+			//log.Println("Disk contains key:", key)
+			if !dkst.ExistS(key) {
+				log.Fatal("self check fail 1")
+			}
+		}
+	}
 	for v := range backup_hash {
-		if !dkst.Exist(NewUrl(v)) {
+		key := NewUrl(v)
+		//log.Println("Checking for key", key)
+		if !dkst.Exist(key) {
 			log.Println(dkst.mp)
 			log.Fatal("Error, missing key from URLmap disk", v)
 		}
@@ -125,6 +142,7 @@ func tempfilename() string {
 func TestDiskPersistX(t *testing.T) {
 	max_str_len := 256
 	num_entries_array := []int{
+		10,
 		100, 1000,
 		//100000
 	}
@@ -388,8 +406,9 @@ func TestDiskStore3(t *testing.T) {
 	if err != nil {
 		log.Fatal("Marshalling error", err)
 	}
-  if false {
-	log.Println("JSON Output", string(output))}
+	if false {
+		log.Println("JSON Output", string(output))
+	}
 	new_url0 := dkst.GetUrl("http://here.com")
 	if !new_url0.GetPromiscuous() {
 		log.Fatal("We should be promiscuous")

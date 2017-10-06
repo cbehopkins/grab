@@ -227,7 +227,7 @@ func (um *UrlMap) Properties(key_u Url) (promiscuous, shallow, exist bool) {
 }
 
 func (um *UrlMap) Exist(key_u Url) bool {
-	if false {
+	if true {
 		key := key_u.Key()
 		return um.ExistS(key)
 	} else {
@@ -247,7 +247,7 @@ func (um *UrlMap) ExistS(key string) bool {
 	if um.UseWriteCache && !ok {
 		_, ok = um.mp_tow[key]
 	}
-  var dkOk bool
+	var dkOk bool
 	if !ok {
 		dkOk = um.dkst.Exist(key)
 	}
@@ -265,37 +265,37 @@ func (um *UrlMap) ExistS(key string) bool {
 		}()
 	}
 	um.RUnlock()
-
+	ok = ok || dkOk
 	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
 func (um *UrlMap) GetUrlDisk(key string) Url {
-		itm := um.dkst.GetUrl(key)
-		itm.Initialise()
-  return itm
+	itm := um.dkst.GetUrl(key)
+	itm.Initialise()
+	return itm
 }
 func (um *UrlMap) GetUrl(key string) Url {
 	if true {
 		var itm Url
 		var ok bool
-    um.RLock()
-    defer um.RUnlock()
+		um.RLock()
+		defer um.RUnlock()
 		if um.UseReadCache {
 			itm, ok = um.mp[key]
 			if ok {
-        //um.RUnlock()
+				//um.RUnlock()
 				return itm
 			}
 		}
 		if um.UseWriteCache && !ok {
 			itm, ok = um.mp_tow[key]
 			if ok {
-        //um.RUnlock()
+				//um.RUnlock()
 				return itm
 			}
 		}
-    //um.RUnlock()
-    itm = um.GetUrlDisk(key)
+		//um.RUnlock()
+		itm = um.GetUrlDisk(key)
 		return itm
 
 	} else {
@@ -318,9 +318,8 @@ func (um *UrlMap) Set(key_u Url) {
 	if um.UseWriteCache {
 		um.mp_tow[key_string] = key_u
 	} else {
-
 		//um.dkst.SetAny(key_ba, "")
-		fmt.Println("Storing URL:", key_u)
+		//fmt.Println("Storing URL:", key_u)
 		um.dkst.SetUrl(key_u)
 	}
 	um.Unlock()
@@ -438,7 +437,6 @@ func (um *UrlMap) Visit() chan Url {
 			string_array := um.dkst.GetAnyKeysArray(100)
 			um.RUnlock()
 			for _, ba := range string_array {
-				//fmt.Println("Visit Url:", v)
 				ret_chan <- um.dkst.UrlFromBa(ba)
 			}
 		}
