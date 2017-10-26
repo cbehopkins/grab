@@ -208,7 +208,7 @@ func (um *UrlMap) ExistS(key string) bool {
 }
 func (um *UrlMap) GetUrlDisk(key string) Url {
 	itm := um.dkst.GetUrl(key)
-	itm.Initialise()
+	//itm.Initialise()
 	return itm
 }
 func (um *UrlMap) GetUrl(key string) Url {
@@ -373,6 +373,33 @@ func (um *UrlMap) Visit() chan Url {
 			return
 		} else {
 			string_array := um.dkst.GetAnyKeysArray(100)
+			um.RUnlock()
+			for _, ba := range string_array {
+				ret_chan <- um.dkst.UrlFromBa(ba)
+			}
+		}
+		//fmt.Println("Closing Visit Chan")
+		close(ret_chan)
+	}()
+	return ret_chan
+}
+func (um *UrlMap) VisitFrom(startUrl Url) chan Url {
+	ret_chan := make(chan Url)
+	//fmt.Println("Called Visit")
+
+	go func() {
+		//fmt.Println("Grabbing Lock")
+		//um.Lock()
+		//um.localFlush()
+		//um.Unlock()
+		um.RLock()
+		//fmt.Println("Got Lock")
+		if um.closed {
+			um.RUnlock()
+			close(ret_chan)
+			return
+		} else {
+			string_array := um.dkst.GetAnyKeysArrayFrom(100, startUrl.ToBa())
 			um.RUnlock()
 			for _, ba := range string_array {
 				ret_chan <- um.dkst.UrlFromBa(ba)

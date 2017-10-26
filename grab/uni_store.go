@@ -79,6 +79,9 @@ func (usr uniStore) Visit() chan Url {
 func (usr uniStore) VisitAll(closeChan chan struct{}) chan Url {
 	return usr.unvisit_urls.VisitAll(closeChan)
 }
+func (usr uniStore) VisitFrom(startUrl Url) chan Url {
+	return usr.unvisit_urls.VisitFrom(startUrl)
+}
 func (usr uniStore) getMissing(refr *TokenChan) map[string]struct{} {
 	return usr.unvisit_urls.VisitMissing(refr)
 }

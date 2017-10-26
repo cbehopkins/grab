@@ -74,6 +74,7 @@ func (st *DkCollection) UrlFromBa(in []byte) Url {
 	var tmpUrl Url
 	tmpUrl.goUnMarshalJSON(itm_ba)
 	tmpUrl.UrlS = string(in)
+	tmpUrl.Initialise()
 	return tmpUrl
 }
 func (st *DkCollection) Delete(key interface{}) bool {
@@ -134,6 +135,33 @@ func (st *DkCollection) GetAnyKeysArray(max_items int) (ret_array [][]byte) {
 		min_itm, err := st.col.MinItem(true)
 		check(err)
 		st.col.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+			// This visitor callback will be invoked with every item
+			// If we want to stop visiting, return false;
+			// otherwise return true to keep visiting.
+			tmp_chan <- i.Key
+			// keep going until we have got n items
+			cnt++
+			return cnt < max_items
+		})
+		close(tmp_chan)
+	}()
+
+	for v := range tmp_chan {
+		ret_array = append(ret_array, v)
+	}
+	return ret_array
+}
+func (st *DkCollection) GetAnyKeysArrayFrom(max_items int, start []byte) (ret_array [][]byte) {
+	ret_array = make([][]byte, 0, max_items)
+	tmp_chan := make(chan []byte)
+	go func() {
+		start_itm, err := st.col.GetItem(start, false)
+		if (start_itm == nil) || (err != nil) {
+			start_itm, err = st.col.MinItem(true)
+			check(err)
+		}
+		cnt := 0
+		st.col.VisitItemsAscend(start_itm.Key, true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.

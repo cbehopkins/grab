@@ -66,7 +66,7 @@ func (u Url) String() string {
 }
 
 func (v Url) ToBa() []byte {
-	return []byte(v.Url())
+	return []byte(v.UrlS)
 }
 
 // FromBa populates a url from the information in the input byte array
