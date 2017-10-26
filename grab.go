@@ -19,19 +19,19 @@ func check(err error) {
 		panic(err)
 	}
 }
-func ProgressBars(visited_urls *grab.UrlMap, unvisit_urls *grab.UrlMap, multi_fetch *grab.MultiFetch) *pb.Pool {
+func ProgressBars(r *grab.Runner, multi_fetch *grab.MultiFetch) *pb.Pool {
 	// First keep track of max of things
 	max_fc := multi_fetch.Count()
 
 	// Create instances of the progress bars
 	fet_bar := pb.New(multi_fetch.Count())
-	url_bar := pb.New(visited_urls.Count())
+	url_bar := pb.New(r.VisitCount())
 
 	// Name them
 	fet_bar.Prefix("Images to Fetch:")
 	url_bar.Prefix("Visited URLs :")
 	fet_bar.Total = int64(max_fc)
-	url_bar.Total = int64(unvisit_urls.Count() + visited_urls.Count())
+	url_bar.Total = int64(r.UnvisitCount() + r.UnvisitCount())
 	// and start them
 	pool, err := pb.StartPool(fet_bar, url_bar)
 	if err != nil {
@@ -49,8 +49,8 @@ func ProgressBars(visited_urls *grab.UrlMap, unvisit_urls *grab.UrlMap, multi_fe
 				fet_bar.Total = int64(max_fc)
 			}
 			fet_bar.Set(max_fc - multi_fetch.Count())
-			vc := visited_urls.Count()
-			url_bar.Total = int64(unvisit_urls.Count() + vc)
+			vc := r.VisitCount()
+			url_bar.Total = int64(r.UnvisitCount() + vc)
 			url_bar.Set(vc)
 		}
 	}()
@@ -59,7 +59,6 @@ func ProgressBars(visited_urls *grab.UrlMap, unvisit_urls *grab.UrlMap, multi_fe
 
 func shutdown(
 	pool *pb.Pool, // The Progress Bars
-	unvisit_urls, visited_urls *grab.UrlMap,
 	shutdown_in_progress *sync.Mutex,
 	multi_fetch *grab.MultiFetch,
 	runr *grab.Runner) {
@@ -79,17 +78,7 @@ func shutdown(
 	if debug_shutdown {
 		fmt.Println("Flush and Close")
 	}
-	var closing_wg sync.WaitGroup
-	closing_wg.Add(1)
-	go func() {
-		// Performance tweek - get the activity to disk started asap
-		unvisit_urls.Flush()
-		visited_urls.Flush()
-		unvisit_urls.Sync()
-		visited_urls.Sync()
-		closing_wg.Done()
-		fmt.Println("Done Flush and Sync")
-	}()
+
 	if debug_shutdown {
 		fmt.Println("Shutting down Grab Function")
 	}
@@ -101,9 +90,7 @@ func shutdown(
 
 	// Wait for hamster to complete
 	fmt.Println("Fetch Complete")
-	closing_wg.Wait()
-	unvisit_urls.Close()
-	visited_urls.Close()
+
 	shutdown_in_progress.Unlock()
 	fmt.Println("Shutdown Complete")
 }
@@ -131,6 +118,7 @@ func main() {
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
+  var linflg = flag.Bool("lin", false, "Linear Grab mode - sequentially progress through unvisited")
 	var autopaceflg = flag.Int("apace", 0, "Automatically Pace the download")
 	var rundurationflg = flag.Duration("dur", (2 * time.Hour), "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
@@ -142,36 +130,18 @@ func main() {
 	show_progress_bar := !*dbgflg
 	//show_progress_bar := false
 	signalChan := make(chan os.Signal, 1)
-	if false {
-		signal.Notify(signalChan, os.Interrupt)
-		// Used for debugging the compact memory issue
-		go func() {
 
-			for _ = range signalChan {
-
-				fmt.Println("Ctrl-C Detected")
-				mem_profile(*memprofile)
-				os.Exit(1)
-				return
-			}
-		}()
-	}
-	var wg sync.WaitGroup
 	download := !*nodownflg
 	multiple_fetchers := *mulflg && download
 	promiscuous := *prflg
 	if promiscuous {
 		fmt.Printf("*\n*\n*\n*\n*\n*\nPromiscuous mode activated\n*\n*\n*\n*\n*\n*\n\n")
-		time.Sleep(5 * time.Second)
+		//time.Sleep(5 * time.Second)
 	}
 	//shallow := !promiscuous
 	all_interesting := *intrflg
 	debug := *dbgflg
 
-	print_workload := false
-
-	visited_fname := *vdflg + "/visited.gkvlite"
-	unvisit_fname := *vdflg + "/unvisit.gkvlite"
 	url_fn := "in_urls.txt"
 	fetch_fn := "gob_fetch.txt"
 	bad_url_fn := "bad_urls.txt"
@@ -187,138 +157,37 @@ func main() {
 	}
 	chan_fetch_push := multi_fetch.InChan
 
-	var visited_urls *grab.UrlMap
-	var unvisit_urls *grab.UrlMap
-	// Open the maps and do not overwrite any we find
-	visited_urls = grab.NewUrlMap(visited_fname, false, *compactflg)
-	unvisit_urls = grab.NewUrlMap(unvisit_fname, false, *compactflg)
-	visited_urls.SetWriteCache()
-	visited_urls.SetReadCache()
-	unvisit_urls.SetWriteCache()
-	unvisit_urls.SetReadCache()
-	if *clearvisitedflg {
-		list := make([]grab.Url, 0, 10000)
-		s := grab.Spinner{}
-		cnt := 0
-		length := visited_urls.Count()
-		fmt.Println("Resetting Unvisited", length)
-		for visited_urls.Size() > 0 {
-			cnt_backup := cnt
-			visited_chan := visited_urls.Visit()
-			for v := range visited_chan {
-				list = append(list, v)
-				s.PrintSpin(cnt)
-				cnt++
-			}
-			cnt = cnt_backup
-			for _, v := range list {
-				visited_urls.Delete(v)
-				unvisit_urls.Set(v)
-				s.PrintSpin(cnt)
-				cnt++
-			}
-
-			// reset list to 0 length - but retain capacity
-			list = list[:0]
-		}
-		fmt.Println("Finsihed Resetting Unvisited")
-	}
-
-	if *dumpvisitedflg != "" {
-		the_chan := visited_urls.VisitAll()
-		grab.SaveFile(*dumpvisitedflg, the_chan, nil)
-	}
-	if *dumpunvisitflg != "" {
-		the_chan := unvisit_urls.VisitAll()
-		grab.SaveFile(*dumpunvisitflg, the_chan, nil)
-	}
-
-	// A DomVisit tracks what domains we're allowed to visit
-	// Any domains we come across not in this list will not be visited
-	dmv := grab.NewDomVisit()
-	defer dmv.Close()
-  // We expect to be able to write to the fetch channel, so start the worker
-	multi_fetch.Worker(dmv)
-
-	// The Hamster is the thing that goes out and
-	// Grabs stuff, looking for interesting things to fetch
-	hm := grab.NewHamster(
-		false,
-		false,
+	runr := grab.NewRunner(chan_fetch_push,
+		bad_url_fn, *vdflg,
+		*compactflg,
+		promiscuous,
 		all_interesting,
 		debug, // Print Urls
+		*politeflg,
 	)
-	//hm.ClearShallow()
-	if *politeflg {
-		hm.Polite()
-	}
-	hm.SetDv(dmv)
-	hm.SetFetchCh(chan_fetch_push)
+  if *linflg {
+  runr.SetLinear()
+  }
+	// We expect to be able to write to the fetch channel, so start the worker
+	multi_fetch.Worker(runr)
+	// If we have asked to dump the filenames to files
+	runr.Dump(*dumpunvisitflg, *dumpvisitedflg)
 
-	fmt.Println("Seeding URLs")
-	wg.Add(1) // one for badUrls
-	go func() {
-		bad_url_chan := *grab.NewUrlChannel()
-		go grab.LoadFile(bad_url_fn, bad_url_chan, nil, true, false)
-		for itm := range bad_url_chan {
-			dmv.AddBad(itm.Url())
-		}
-		wg.Done()
-	}()
 	// After being read from the file they might first be crawled
 	// alternatively this channel might not really exist at all
 	// urls read from a file and command line
-	src_url_chan := make(chan grab.Url)
 
-  wgrc := grab.RunChan(src_url_chan, visited_urls, unvisit_urls, "")
-	go func() {
-		seed_url_chan := *grab.NewUrlChannel()
-		go grab.LoadFile(url_fn, seed_url_chan, nil, true, false)
-		s := grab.Spinner{}
-    cnt:= 0
-    for itm := range seed_url_chan {
-			if debug {
-				fmt.Println("SeedURL:", itm)
-			}
-			if itm.Initialise() {
-				log.Fatal("URL needed initialising in nd", itm)
-			}
-			domain_i := itm.Base()
-			if domain_i != "" {
-				// Mark this as a domain we can Fetch from
-				_ = dmv.VisitedA(domain_i)
-				// send this URL for grabbing
-        if promiscuous {
-          itm.SetPromiscuous()
-        }
-        itm.SetShallow()
-        s.PrintSpin(cnt)
-				src_url_chan <- itm
-        cnt++
-        //fmt.Println(itm, "Sent")
-			}
-		}
-		fmt.Println("seed_url_chan seen closed")
-    close(src_url_chan)
-	}()
-
-	wg.Wait()
+	if *clearvisitedflg {
+		runr.ClearVisited()
+		fmt.Println("Finsihed Resetting Unvisited")
+	}
+	fmt.Println("Seeding URLs")
+	wgrc := runr.SeedWg(url_fn, promiscuous)
 	wgrc.Wait()
+
 	fmt.Println("Seed Phase complete")
 	multi_fetch.SetFileName(fetch_fn)
 
-	if print_workload {
-		fmt.Println("Printing Workload")
-		unvisit_urls.PrintWorkload()
-
-		go func() {
-			time.Sleep(10 * time.Minute)
-			unvisit_urls.PrintWorkload()
-			fmt.Println("")
-			fmt.Println("")
-		}()
-		fmt.Println("Workload Printed")
-	}
 	// Now we're up and running
 	// Start the profiler
 	if *cpuprofile != "" {
@@ -330,8 +199,6 @@ func main() {
 		defer f.Close()
 		defer pprof.StopCPUProfile()
 	}
-
-	runr := grab.NewRunner(hm, unvisit_urls, visited_urls)
 
 	if !*gofastflg {
 		runr.GoSlow()
@@ -346,7 +213,7 @@ func main() {
 	var pool *pb.Pool
 	if show_progress_bar {
 		// Show a progress bar
-		pool = ProgressBars(visited_urls, unvisit_urls, multi_fetch)
+		pool = ProgressBars(runr, multi_fetch)
 		defer pool.Stop()
 	}
 
@@ -362,7 +229,7 @@ func main() {
 			shutdown_run = true
 			mem_profile(*memprofile)
 			fmt.Println("Calling Shutdown")
-			shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
+			shutdown(pool, &shutdown_in_progress, multi_fetch, runr)
 		}()
 	}
 
@@ -377,7 +244,7 @@ func main() {
 					fmt.Println("Ctrl-C Detected")
 					shutdown_run = true
 					mem_profile(*memprofile)
-					shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
+					shutdown(pool, &shutdown_in_progress, multi_fetch, runr)
 				}()
 			} else {
 				os.Exit(1)
@@ -388,7 +255,7 @@ func main() {
 		go runr.AutoPace(multi_fetch, *autopaceflg)
 	}
 	//if *dbgflg {
-		fmt.Println("Waiting for runner to complete")
+	fmt.Println("Waiting for runner to complete")
 	//}
 	runr.Wait()
 	if *dbgflg {
@@ -406,7 +273,7 @@ func main() {
 	//}
 	if !shutdown_run {
 		mem_profile(*memprofile)
-		shutdown(pool, unvisit_urls, visited_urls, &shutdown_in_progress, multi_fetch, runr)
+		shutdown(pool, &shutdown_in_progress, multi_fetch, runr)
 	} else {
 		shutdown_in_progress.Unlock()
 	}

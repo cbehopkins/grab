@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -19,6 +18,74 @@ func check(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// CopyFile copies a file from src to dst. If src and dst files exist, and are
+// the same, then return success. Otherise, attempt to create a hard link
+// between the two files. If that fail, copy the file contents from src to dst.
+func CopyFile(src, dst string) (err error) {
+	sfi, err := os.Stat(src)
+	if err != nil {
+		return
+	}
+	if !sfi.Mode().IsRegular() {
+		// cannot copy non-regular files (e.g., directories,
+		// symlinks, devices, etc.)
+		return fmt.Errorf("CopyFile: non-regular source file %s (%q)", sfi.Name(), sfi.Mode().String())
+	}
+	dfi, err := os.Stat(dst)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return
+		}
+	} else {
+		if !(dfi.Mode().IsRegular()) {
+			return fmt.Errorf("CopyFile: non-regular destination file %s (%q)", dfi.Name(), dfi.Mode().String())
+		}
+		if os.SameFile(sfi, dfi) {
+			return
+		}
+	}
+	if err = os.Link(src, dst); err == nil {
+		return
+	}
+	err = copyFileContents(src, dst)
+	return
+}
+func MoveFile(src, dst string) (err error) {
+	err = CopyFile(src, dst)
+	if err != nil {
+		log.Fatalf("Copy problem\nType:%T\nVal:%v\n", err, err)
+	}
+	err = os.Remove(src)
+	return err
+}
+
+// copyFileContents copies the contents of the file named src to the file named
+// by dst. The file will be created if it does not already exist. If the
+// destination file exists, all it's contents will be replaced by the contents
+// of the source file.
+func copyFileContents(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+	if _, err = io.Copy(out, in); err != nil {
+		return
+	}
+	err = out.Sync()
+	return
 }
 
 // Helper function to pull the href attribute from a Token
@@ -232,118 +299,4 @@ func GetBase(urls string) string {
 	} else {
 		return hn
 	}
-}
-func runChanW(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_name string, wg *sync.WaitGroup) {
-	for urv := range input_chan {
-		if dbg_name != "" {
-			fmt.Printf("runChan, %s RX:%v\n", dbg_name, urv)
-		}
-		promiscuous, shallow, ok := visited_urls.Properties(urv)
-		new_shallow := urv.GetShallow() || urv.GetPromiscuous()
-		if ok && (!new_shallow || shallow || promiscuous) {
-			// If we've already visited it then nothing to do
-			if dbg_name != "" {
-				fmt.Printf("We've already visited %s\n", urv)
-			}
-		} else {
-			// If we previously visited this url
-			// but at the time we didn't fully grab it
-			if new_shallow && !shallow {
-				visited_urls.Delete(urv)
-			}
-			// If we haven't visited it, then add it to the list of places to visit
-			if dbg_name != "" {
-				fmt.Println("Adding as unvisited url:", urv)
-			}
-			unvisit_urls.Set(urv)
-		}
-		if dbg_name != "" {
-			fmt.Printf("runChan, %s, has been set\n", dbg_name)
-		}
-	}
-	wg.Done()
-}
-func RunChan(input_chan <-chan Url, visited_urls, unvisit_urls *UrlMap, dbg_name string) *sync.WaitGroup {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go runChanW(input_chan, visited_urls, unvisit_urls, dbg_name, &wg)
-	return &wg
-}
-
-func (mf *MultiFetch) FetchW(fetch_url Url) bool {
-	// We retun true if we have used network bandwidth.
-	// If we have not then it's okay to jump straight onto the next file
-	array := strings.Split(fetch_url.Url(), "/")
-
-	var fn string
-	if len(array) > 2 {
-		fn = array[len(array)-1]
-	} else {
-		return false
-	}
-	if strings.HasPrefix(fetch_url.Url(), "file") {
-		return false
-	}
-
-	fn = strings.TrimLeft(fn, ".php?")
-	// logically there must be http:// so therefore length>2
-	dir_struct := array[2 : len(array)-1]
-	dir_str := strings.Join(dir_struct, "/")
-	dir_str = strings.Replace(dir_str, "//", "/", -1)
-	dir_str = strings.Replace(dir_str, "%", "_", -1)
-	dir_str = strings.Replace(dir_str, "&", "_", -1)
-	dir_str = strings.Replace(dir_str, "?", "_", -1)
-	dir_str = strings.Replace(dir_str, "=", "_", -1)
-
-	re := regexp.MustCompile("(.*\\.jpg)(.*)")
-	t1 := re.FindStringSubmatch(fn)
-	if len(t1) > 1 {
-		fn = t1[1]
-	}
-	page_title := fetch_url.GetTitle()
-	if page_title != "" {
-		page_title = strings.Replace(page_title, "/", "_", -1)
-		if strings.HasSuffix(fn, ".mp4") {
-			fn = page_title + ".mp4"
-			//fmt.Println("Title set, so set filename to:", fn)
-		}
-	}
-	fn = strings.Replace(fn, "%", "_", -1)
-	fn = strings.Replace(fn, "&", "_", -1)
-	fn = strings.Replace(fn, "?", "_", -1)
-	fn = strings.Replace(fn, "=", "_", -1)
-	fn = strings.Replace(fn, "\"", "_", -1)
-	fn = strings.Replace(fn, "'", "_", -1)
-	fn = strings.Replace(fn, "!", "_", -1)
-	fn = strings.Replace(fn, ",", "_", -1)
-	potential_file_name := dir_str + "/" + fn
-	if strings.HasPrefix(potential_file_name, "/") {
-		return false
-	}
-	if _, err := os.Stat(potential_file_name); !os.IsNotExist(err) {
-		// For a file that does already exist
-		if mf.jpg_tk == nil {
-			// We're not testing all the jpgs for goodness
-			//fmt.Println("skipping downloading", potential_file_name)
-			return false
-		} else if strings.HasSuffix(fn, ".jpg") {
-			// Check if it is a corrupted file. If it is, then fetch again
-			//fmt.Println("yest jph", fn)
-			mf.jpg_tk.GetToken("jpg")
-			good_file := check_jpg(potential_file_name)
-			mf.jpg_tk.PutToken("jpg")
-			if good_file {
-				return false
-			}
-		} else {
-			// not a jpg and it already exists
-			return false
-		}
-
-	}
-
-	// For a file that doesn't already exist, then just fetch it
-	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
-	fetch_file(potential_file_name, dir_str, fetch_url)
-	return true
 }

@@ -3,6 +3,9 @@ package grab
 import (
 	"fmt"
 	"log"
+	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -276,4 +279,82 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	fmt.Println("Dispatch waiting for all the workers to complete")
 	oc.Wait()
 	//fmt.Println("All dispatch workers closed")
+}
+
+func (mf *MultiFetch) FetchW(fetch_url Url) bool {
+	// We retun true if we have used network bandwidth.
+	// If we have not then it's okay to jump straight onto the next file
+	array := strings.Split(fetch_url.Url(), "/")
+
+	var fn string
+	if len(array) > 2 {
+		fn = array[len(array)-1]
+	} else {
+		return false
+	}
+	if strings.HasPrefix(fetch_url.Url(), "file") {
+		return false
+	}
+
+	fn = strings.TrimLeft(fn, ".php?")
+	// logically there must be http:// so therefore length>2
+	dir_struct := array[2 : len(array)-1]
+	dir_str := strings.Join(dir_struct, "/")
+	dir_str = strings.Replace(dir_str, "//", "/", -1)
+	dir_str = strings.Replace(dir_str, "%", "_", -1)
+	dir_str = strings.Replace(dir_str, "&", "_", -1)
+	dir_str = strings.Replace(dir_str, "?", "_", -1)
+	dir_str = strings.Replace(dir_str, "=", "_", -1)
+
+	re := regexp.MustCompile("(.*\\.jpg)(.*)")
+	t1 := re.FindStringSubmatch(fn)
+	if len(t1) > 1 {
+		fn = t1[1]
+	}
+	page_title := fetch_url.GetTitle()
+	if page_title != "" {
+		page_title = strings.Replace(page_title, "/", "_", -1)
+		if strings.HasSuffix(fn, ".mp4") {
+			fn = page_title + ".mp4"
+			//fmt.Println("Title set, so set filename to:", fn)
+		}
+	}
+	fn = strings.Replace(fn, "%", "_", -1)
+	fn = strings.Replace(fn, "&", "_", -1)
+	fn = strings.Replace(fn, "?", "_", -1)
+	fn = strings.Replace(fn, "=", "_", -1)
+	fn = strings.Replace(fn, "\"", "_", -1)
+	fn = strings.Replace(fn, "'", "_", -1)
+	fn = strings.Replace(fn, "!", "_", -1)
+	fn = strings.Replace(fn, ",", "_", -1)
+	potential_file_name := dir_str + "/" + fn
+	if strings.HasPrefix(potential_file_name, "/") {
+		return false
+	}
+	if _, err := os.Stat(potential_file_name); !os.IsNotExist(err) {
+		// For a file that does already exist
+		if mf.jpg_tk == nil {
+			// We're not testing all the jpgs for goodness
+			//fmt.Println("skipping downloading", potential_file_name)
+			return false
+		} else if strings.HasSuffix(fn, ".jpg") {
+			// Check if it is a corrupted file. If it is, then fetch again
+			//fmt.Println("yest jph", fn)
+			mf.jpg_tk.GetToken("jpg")
+			good_file := check_jpg(potential_file_name)
+			mf.jpg_tk.PutToken("jpg")
+			if good_file {
+				return false
+			}
+		} else {
+			// not a jpg and it already exists
+			return false
+		}
+
+	}
+
+	// For a file that doesn't already exist, then just fetch it
+	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+	fetch_file(potential_file_name, dir_str, fetch_url)
+	return true
 }

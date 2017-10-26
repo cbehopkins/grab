@@ -49,7 +49,7 @@ func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, ma
 				log.Fatal("self check fail 0")
 			}
 		}
-		for v := range dkst.VisitAll() {
+		for v := range dkst.VisitAll(nil) {
 			key := v.Key()
 			//log.Println("Disk contains key:", key)
 			if !dkst.ExistS(key) {
@@ -67,7 +67,7 @@ func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, ma
 		time.Sleep(delay)
 	}
 	if test_disk_full {
-		for v := range dkst.VisitAll() {
+		for v := range dkst.VisitAll(nil) {
 			_, ok := backup_hash[v.Url()]
 			if !ok {
 				log.Fatal("Error, extra key in disk", v)
@@ -96,7 +96,7 @@ func (dkst *UrlMap) checkStoreD(backup_hash map[string]struct{}, num_entries, ma
 	}
 }
 
-func (dkst *DkStore) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
+func (dkst *DkCollection) checkStore(backup_hash map[string]struct{}, num_entries, max_str_len int) {
 
 	for v := range backup_hash {
 		if !dkst.Exist(NewUrl(v).ToBa()) {
@@ -266,10 +266,6 @@ func generalDiskPersist(max_str_len, num_entries int, use_rc, use_wc bool) {
 
 	// filename, overwrite, compact
 	dkst1 := NewUrlMap(test_filename, false, false)
-	err := dkst1.dkst.st.Flush()
-	check(err)
-
-	dkst1.dkst.Flush()
 
 	dkst1.Flush()
 	dkst1.checkStore(backup_hash, num_entries, max_str_len)
@@ -290,7 +286,7 @@ func generalDiskPersist(max_str_len, num_entries int, use_rc, use_wc bool) {
 	log.Println("2nd Reload check complete")
 
 	compact_filename := tempfilename()
-	dkst2.dkst.compact(compact_filename)
+	dkst2.dkst.ds.compact(compact_filename)
 
 	dkst2.Close()
 
@@ -305,10 +301,10 @@ func generalDiskPersist(max_str_len, num_entries int, use_rc, use_wc bool) {
 func TestDiskStore0(t *testing.T) {
 	test_filename := os.TempDir() + "/test.gkvlite"
 
-	dkst := NewDkStore(test_filename, true)
+	dkst := NewDkCollection(test_filename, true)
 	dkst.SetAny(23, "Hello")
 	dkst.SetAny(25, "Goodbye")
-	dkst.Flush()
+	dkst.ds.Flush()
 	log.Println("We say:", dkst.GetString(23))
 	log.Println("They say:", dkst.GetString(25))
 
@@ -316,16 +312,16 @@ func TestDiskStore0(t *testing.T) {
 	for key := range key_chan {
 		log.Println("The collection contains:", key)
 	}
-	dkst.Close()
+	dkst.ds.Close()
 }
 
 func TestDiskStore1(t *testing.T) {
 	test_filename := os.TempDir() + "/test.gkvlite"
 
-	dkst := NewDkStore(test_filename, true)
+	dkst := NewDkCollection(test_filename, true)
 	dkst.SetAny("Hello1", 23)
 	dkst.SetAny("Goodbye1", 25)
-	dkst.Flush()
+	dkst.ds.Flush()
 	log.Println("We say:", dkst.GetInt("Hello1"))
 	log.Println("They say:", dkst.GetInt("Goodbye1"))
 
@@ -333,14 +329,14 @@ func TestDiskStore1(t *testing.T) {
 	for key := range key_chan {
 		log.Println("The collection contains:", string(key))
 	}
-	dkst.Close()
+	dkst.ds.Close()
 }
 
 func TestDiskStore2(t *testing.T) {
 	test_filename := os.TempDir() + "/test.gkvlite"
 
-	dkst := NewDkStore(test_filename, true)
-	defer dkst.Close()
+	dkst := NewDkCollection(test_filename, true)
+	defer dkst.ds.Close()
 
 	// Let's pretend to have some urls
 	var url_0 Url
@@ -367,7 +363,7 @@ func TestDiskStore2(t *testing.T) {
 	if dkst.Exist(url_2) {
 		log.Fatal("2 does exist")
 	}
-	dkst.Flush()
+	dkst.ds.Flush()
 	key_chan := dkst.GetAnyKeys()
 	for key := range key_chan {
 		log.Println("The collection contains:", string(key))
@@ -389,8 +385,8 @@ func TestDiskStore2(t *testing.T) {
 }
 func TestDiskStore3(t *testing.T) {
 	test_filename := os.TempDir() + "/test.gkvlite"
-	dkst := NewDkStore(test_filename, true)
-	defer dkst.Close()
+	dkst := NewDkCollection(test_filename, true)
+	defer dkst.ds.Close()
 	// Let's pretend to have some urls
 	var url_0 Url
 	var url_1 Url
@@ -425,4 +421,22 @@ func TestDiskStore3(t *testing.T) {
 		log.Fatal("We should not be promiscuous")
 	}
 
+}
+
+func TestDiskRandom0(t *testing.T) {
+	test_filename := os.TempDir() + "/test.gkvlite"
+
+	dkst := NewDkCollection(test_filename, true)
+	dkst.SetAny(23, "Hello")
+	dkst.SetAny(24, "Goodbye")
+	dkst.SetAny(25, "Goodbye")
+	dkst.SetAny(26, "Goodbye")
+	log.Println("We say:", dkst.GetString(23))
+	log.Println("They say:", dkst.GetString(25))
+
+	key_chan := dkst.GetAnyKeysRand()
+	for key := range key_chan {
+		log.Println("The collection contains:", string(key))
+	}
+	dkst.ds.Close()
 }

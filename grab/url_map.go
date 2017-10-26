@@ -2,7 +2,6 @@ package grab
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"sync"
@@ -14,95 +13,34 @@ type UrlMap struct {
 	disk_lock sync.Mutex
 	// something in mp must be on the disk - it is a cache
 	// something in mp_tow is not on the disk
-	mp            map[string]Url // Doubles up as local read cache when using disk
-	mp_tow        map[string]Url // URLs waiting to be written
+	mp            map[string]Url // Local Read Cache
+	mp_tow        map[string]Url // Local Write Cache
 	closed        bool
-	dkst          *DkStore
+	dkst          *DkCollection
 	cachewg       *sync.WaitGroup
 	UseReadCache  bool
 	UseWriteCache bool
 }
 
-// CopyFile copies a file from src to dst. If src and dst files exist, and are
-// the same, then return success. Otherise, attempt to create a hard link
-// between the two files. If that fail, copy the file contents from src to dst.
-func CopyFile(src, dst string) (err error) {
-	sfi, err := os.Stat(src)
-	if err != nil {
-		return
-	}
-	if !sfi.Mode().IsRegular() {
-		// cannot copy non-regular files (e.g., directories,
-		// symlinks, devices, etc.)
-		return fmt.Errorf("CopyFile: non-regular source file %s (%q)", sfi.Name(), sfi.Mode().String())
-	}
-	dfi, err := os.Stat(dst)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return
-		}
-	} else {
-		if !(dfi.Mode().IsRegular()) {
-			return fmt.Errorf("CopyFile: non-regular destination file %s (%q)", dfi.Name(), dfi.Mode().String())
-		}
-		if os.SameFile(sfi, dfi) {
-			return
-		}
-	}
-	if err = os.Link(src, dst); err == nil {
-		return
-	}
-	err = copyFileContents(src, dst)
-	return
-}
-
-// copyFileContents copies the contents of the file named src to the file named
-// by dst. The file will be created if it does not already exist. If the
-// destination file exists, all it's contents will be replaced by the contents
-// of the source file.
-func copyFileContents(src, dst string) (err error) {
-	in, err := os.Open(src)
-	if err != nil {
-		return
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return
-	}
-	defer func() {
-		cerr := out.Close()
-		if err == nil {
-			err = cerr
-		}
-	}()
-	if _, err = io.Copy(out, in); err != nil {
-		return
-	}
-	err = out.Sync()
-	return
-}
-
 func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 	itm := new(UrlMap)
 	itm.mp = make(map[string]Url)
-	itm.dkst = NewDkStore(filename, overwrite)
+	itm.dkst = NewDkCollection(filename, overwrite)
 	if compact {
 		fmt.Println("Compacting Database:", filename)
 		// Compact the current store and write to temp file
-		itm.dkst.compact(os.TempDir() + "/compact.gkvlite")
-		itm.dkst.Close() // Close before:
+		compactFilename := os.TempDir() + "/compact.gkvlite"
+		itm.dkst.ds.compact(compactFilename)
+		itm.dkst.ds.Close() // Close before:
 		// move temp to current
 
-		//err := os.Rename(os.TempDir()+"/compact.gkvlite", filename)
-		err := CopyFile(os.TempDir()+"/compact.gkvlite", filename)
+		err := MoveFile(compactFilename, filename)
 		if err != nil {
-			log.Fatalf("Copy problem\nType:%T\nVal:%v\n", err, err)
+			log.Fatalf("Move problem\nType:%T\nVal:%v\n", err, err)
 		}
-		err = os.Remove(os.TempDir() + "/compact.gkvlite")
-		check(err)
+
 		// load in the new smaller file
-		itm.dkst = NewDkStore(filename, false)
+		itm.dkst = NewDkCollection(filename, false)
 		fmt.Println("Compact Complete")
 	}
 	go itm.flusher()
@@ -111,7 +49,6 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 	// when we suspect problems loading the array
 	self_read := false
 	if self_read {
-		//fmt.Println("loafing:", filename)
 		for range itm.dkst.GetAnyKeys() {
 		}
 		fmt.Println("done:", filename)
@@ -159,7 +96,7 @@ func (um *UrlMap) localFlush() {
 	}
 }
 func (um *UrlMap) diskFlush() {
-	um.dkst.Flush()
+	um.dkst.ds.Flush()
 }
 
 // Flush from local cache to the disk
@@ -174,7 +111,7 @@ func (um *UrlMap) Flush() {
 // Sync the disk data to the file system
 func (um *UrlMap) Sync() {
 	um.disk_lock.Lock()
-	um.dkst.Sync()
+	um.dkst.ds.Sync()
 	um.disk_lock.Unlock()
 }
 
@@ -187,8 +124,8 @@ func (um *UrlMap) Close() {
 	um.localFlush()
 	um.disk_lock.Lock()
 	um.diskFlush()
-	um.dkst.Sync()
-	um.dkst.Close()
+	um.dkst.ds.Sync()
+	um.dkst.ds.Close()
 	um.closed = true
 	um.disk_lock.Unlock()
 	um.Unlock()
@@ -326,27 +263,13 @@ func (um *UrlMap) Set(key_u Url) {
 	//fmt.Println("Lock Returned for:", key)
 }
 
-//func (um *UrlMap) SetS(key string) {
-//	//fmt.Println("Get lock for:", key)
-//	um.Lock()
-//	//fmt.Println("Got Lock")
-//	if um.UseWriteCache {
-//    log.Fatal("Not Supported")
-//		//.mp_tow[key] =
-//	} else {
-//		um.dkst.SetAny(key, "")
-//	}
-//	um.Unlock()
-//	//fmt.Println("Lock Returned for:", key)
-//}
-
 // Check is a useful test function
 // Allows you to check if something is in the
 // map by visiting every one manually
 // rather than doing an actual lookup.
 func (um *UrlMap) Check(key Url) bool {
 	// Be 100% sure things work as we expect!
-	src_chan := um.VisitAll()
+	src_chan := um.VisitAll(nil)
 	found := false
 	for v := range src_chan {
 		if v == key {
@@ -391,7 +314,7 @@ func (um *UrlMap) Size() int {
 // This will lock any updates to the database until we have read them all
 // If this is a problem use Visit() which reads a limited number into
 // a buffer first
-func (um *UrlMap) VisitAll() chan Url {
+func (um *UrlMap) VisitAll(closeChan chan struct{}) chan Url {
 	ret_chan := make(chan Url)
 	//fmt.Println("Called Visit")
 
@@ -402,15 +325,30 @@ func (um *UrlMap) VisitAll() chan Url {
 		um.Unlock()
 		um.RLock()
 		//fmt.Println("Got Lock")
-		if !um.closed {
-			for ba := range um.dkst.GetAnyKeys() {
+		tmpChan := um.dkst.GetAnyKeys()
+		var finished bool
+		for !um.closed && !finished {
+			select {
+			case _, ok := <-closeChan:
+				if !ok {
+					//fmt.Println("closeChan has requested we abort visitAll")
+					finished = true
+				} else {
+					log.Fatal("Odd! Data on channel closer is not expected")
+				}
+			case ba, ok := <-tmpChan:
 				//fmt.Println("Visit Url:", v)
-				ret_chan <- um.dkst.UrlFromBa(ba)
+				if ok {
+					ret_chan <- um.dkst.UrlFromBa(ba)
+				} else {
+					//fmt.Println("Run out of urls to visit")
+					finished = true
+				}
 			}
 		}
+
 		um.RUnlock()
 
-		//fmt.Println("Closing Visit Chan")
 		close(ret_chan)
 	}()
 	return ret_chan
@@ -463,8 +401,10 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	if um.closed {
 		um.RUnlock()
 	} else {
+		//fmt.Println("Getting 10000 items")
 		// Get up to 100 things that aren't on the TokenChan
 		ret_map_url := um.dkst.GetMissing(10000, refr)
+		//fmt.Println("Got 1000 items")
 		um.RUnlock()
 		s := Spinner{scaler: 100}
 		cnt := 0
@@ -517,5 +457,9 @@ func (um *UrlMap) PrintWorkload() {
 	um.Unlock()
 	um.RLock()
 	um.dkst.PrintWorkload()
+	um.RUnlock()
+}
+func (um *UrlMap) LockTest() {
+	um.RLock()
 	um.RUnlock()
 }

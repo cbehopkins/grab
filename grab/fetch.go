@@ -85,8 +85,12 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 			return
 		case syscall.EINVAL:
 			log.Fatal("Error in os create, invalid name")
+		case syscall.ENOENT:
+			// No such file or directory
+			return
 		default:
-			log.Fatal("Unhandled syscall error")
+			log.Println("%x", syscall.ENOENT)
+			log.Fatalf("Unhandled syscall error:%x,%v\n", en, en)
 		}
 	}
 

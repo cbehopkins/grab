@@ -13,26 +13,42 @@ import (
 // Domains Visited structure
 type DomVisit struct {
 	sm              *sync.RWMutex
+	wg              *sync.WaitGroup
 	domains_visited *map[string]struct{}
 	bad_domains     *map[string]struct{}
 	bad_file        *os.File
 	re              *regexp.Regexp
 }
 
-func NewDomVisit() *DomVisit {
+func NewDomVisit(bad_fname string) *DomVisit {
 	var itm *DomVisit
 	itm = new(DomVisit)
 	itm.sm = new(sync.RWMutex)
 	dv := make(map[string]struct{})
 	bd := make(map[string]struct{})
-
+	itm.wg = new(sync.WaitGroup)
 	itm.re = regexp.MustCompile("([a-zA-Z0-9_\\-\\.]*?)([a-zA-Z0-9_\\-]+\\.\\w+)/?$")
 	itm.domains_visited = &dv
 	itm.bad_domains = &bd
 	var err error
 	itm.bad_file, err = os.OpenFile("badf.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	check(err)
+	itm.LoadBadFiles(bad_fname)
 	return itm
+}
+func (dv *DomVisit) WaitLoad() {
+	dv.wg.Wait()
+}
+func (dv *DomVisit) LoadBadFiles(bad_url_fn string) {
+	dv.wg.Add(1) // one for badUrls
+	go func() {
+		bad_url_chan := *NewUrlChannel()
+		go LoadFile(bad_url_fn, bad_url_chan, nil, true, false)
+		for itm := range bad_url_chan {
+			dv.AddBad(itm.Url())
+		}
+		dv.wg.Done()
+	}()
 }
 func (dv DomVisit) Close() {
 	dv.bad_file.Close()
@@ -198,4 +214,42 @@ type DomVisitI interface {
 	GoodUrl(url_in Url) bool
 	VisitedQ(url_in string) bool
 	VisitedA(url_in string) bool
+	Seed(url_fn string, promiscuous bool) chan Url
+}
+
+// Seed will seed the domains we're allowed to visit
+// from a filename and write it to the
+func (dmv DomVisit) Seed(url_fn string, promiscuous bool) chan Url {
+	src_url_chan := make(chan Url)
+	go func() {
+		seed_url_chan := *NewUrlChannel()
+		go LoadFile(url_fn, seed_url_chan, nil, true, false)
+		s := Spinner{}
+		cnt := 0
+		for itm := range seed_url_chan {
+			if false {
+				fmt.Println("SeedURL:", itm)
+			}
+			if itm.Initialise() {
+				log.Fatal("URL needed initialising in nd", itm)
+			}
+			domain_i := itm.Base()
+			if domain_i != "" {
+				// Mark this as a domain we can Fetch from
+				_ = dmv.VisitedA(domain_i)
+				// send this URL for grabbing
+				if promiscuous {
+					itm.SetPromiscuous()
+				}
+				itm.SetShallow()
+				s.PrintSpin(cnt)
+				src_url_chan <- itm
+				cnt++
+				//fmt.Println(itm, "Sent")
+			}
+		}
+		fmt.Println("seed_url_chan seen closed")
+		close(src_url_chan)
+	}()
+	return src_url_chan
 }

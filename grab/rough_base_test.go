@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func (st *DkStore) checkBase(url, base string) bool {
+func (st *DkCollection) checkBase(url, base string) bool {
 	if st.roughBase(url) == base {
 		return true
 	} else {
@@ -14,11 +14,11 @@ func (st *DkStore) checkBase(url, base string) bool {
 	}
 }
 func TestCheckBase0(t *testing.T) {
-	st := NewDkStore(os.TempDir()+"/bob", true)
+	st := NewDkCollection(os.TempDir()+"/bob", true)
 	st.checkBase("http://play.google.com", "play.google.com")
 }
 func TestCheckBase1(t *testing.T) {
-	st := NewDkStore(os.TempDir()+"/bob", true)
+	st := NewDkCollection(os.TempDir()+"/bob", true)
 	test_strings := []string{
 		"http://play.google.com",
 		"https://play.google.com",
