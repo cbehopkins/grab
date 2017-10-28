@@ -2,7 +2,7 @@ package grab
 
 import "strings"
 
-func (st *DkCollection) roughBase(url string) string {
+func (dc *DkCollection) roughBase(url string) string {
 	//url_back := url
 	if strings.HasPrefix(url, "http://") {
 		url = url[7:]
@@ -20,11 +20,10 @@ func (st *DkCollection) roughBase(url string) string {
 	}
 	return url
 }
-func (st *DkCollection) oldRoughBase(url string) string {
-	t1 := st.re.FindStringSubmatch(url)
+func (dc *DkCollection) oldRoughBase(url string) string {
+	t1 := dc.re.FindStringSubmatch(url)
 	if len(t1) > 2 {
 		return t1[2]
-	} else {
-		return url
 	}
+	return url
 }

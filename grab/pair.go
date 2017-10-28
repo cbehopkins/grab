@@ -1,10 +1,12 @@
 package grab
 
+// Pair encapsulates a seach kay value pair
 type Pair struct {
 	Key   string
 	Value int
 }
 
+// PairList is a chicken! No sorry, it's a list of Pairs - sorry.
 type PairList []Pair
 
 func (p PairList) Len() int           { return len(p) }

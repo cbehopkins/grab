@@ -2,133 +2,161 @@ package grab
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
 
+// Runner is the main starting point for the grab engine
 type Runner struct {
 	wg sync.WaitGroup
 	hm *Hamster
 
-	recycle_time time.Duration
-	ust          *uniStore
-	grab_closer  chan struct{}
-	counter      int
-	st           time.Time
-	grab_slowly  bool
-	pause_lk     sync.Mutex
-	pause        bool
-	linear       bool
+	recycleTime time.Duration
+	ust         *uniStore
+	grabCloser  chan struct{}
+	counter     int
+	st          time.Time
+	grabSlowly  bool
+	pauseLk     sync.Mutex
+	pause       bool
+	linear      bool
 }
 
+// NewRunner - Create a new Runner
 func NewRunner(
-	chan_fetch_push chan<- Url,
-	bad_url_fn, dir string,
-	compact,
-	promiscuous,
-	all_interesting,
+	chanFetchPush chan<- URL, // Where should we send itmes to fetch
+	badURLFn, dir string, // where should we store the bad urls found
+	compact, // Should we compact the databases on startup
+	promiscuous, // explore everything linked within the domain
+	allInteresting, // explore everything linked
 	debug, // Print Urls
-	polite bool,
+	polite bool, // resepct robots.txt
 ) *Runner {
 	itm := new(Runner)
 	// A DomVisit tracks what domains we're allowed to visit
 	// Any domains we come across not in this list will not be visited
-	itm.ust = newUniStore(dir, compact, bad_url_fn)
+	itm.ust = newUniStore(dir, compact, badURLFn)
 
 	// The Hamster is the thing that goes out and
 	// Grabs stuff, looking for interesting things to fetch
 	itm.hm = NewHamster(
 		promiscuous,
-		all_interesting,
+		allInteresting,
 		debug, // Print Urls
 		polite,
 	)
 	itm.hm.SetDv(itm.ust.getDv())
-	itm.hm.SetFetchCh(chan_fetch_push)
-	itm.recycle_time = 1 * time.Millisecond
+	itm.hm.SetFetchCh(chanFetchPush)
+	itm.recycleTime = 1 * time.Millisecond
 	itm.st = time.Now()
 	return itm
 }
 
-func (r *Runner) SeedWg(url_fn string, promiscuous bool) *sync.WaitGroup {
-	src_url_chan := r.hm.dv.Seed(url_fn, promiscuous)
-	wgrc := r.RunChan(src_url_chan, "")
+// SeedWg seeds the runner from a specified filename
+// returns a sync.WaitGroup to wait on to know it is finished
+func (r *Runner) SeedWg(urlFn string, promiscuous bool) *sync.WaitGroup {
+	srcURLChan := r.hm.dv.Seed(urlFn, promiscuous)
+	wgrc := r.RunChan(srcURLChan, "")
 	r.ust.waitLoad()
 	return wgrc
 }
+
+// LockTest self check function
 func (r *Runner) LockTest() {
 	r.ust.lockTest()
 }
+
+// FlushSync Flush and sync all the databases
 func (r *Runner) FlushSync() *sync.WaitGroup {
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		r.ust.flushSync()
 		wg.Done()
-		fmt.Println("Done Flush and Sync")
 	}()
 	return wg
 }
+
+// VisitCount returns the count of the number of places we've visited
 func (r *Runner) VisitCount() int {
 	return r.ust.visitCount()
 }
+
+// UnvisitCount returns the count of the nuimber of places we have yet to visit
 func (r *Runner) UnvisitCount() int {
 	return r.ust.unvisitCount()
 }
-func (r *Runner) RunChan(input_chan <-chan Url, dbg_name string) *sync.WaitGroup {
-	return r.ust.runChan(input_chan, dbg_name)
+
+// RunChan given a channel to read from will add those items to unvisited
+// returns a wait group to wait on
+// TBD can this be consolidated into the main wait group?
+func (r *Runner) RunChan(inputChan <-chan URL, dbgName string) *sync.WaitGroup {
+	return r.ust.runChan(inputChan, dbgName)
 }
+
+// Wait for everything to finish
 func (r *Runner) Wait() {
-	log.Println("Waiting for Runner")
+	//log.Println("Waiting for Runner")
 	r.wg.Wait()
-	log.Println("Done Waiting for Runner")
+	//log.Println("Done Waiting for Runner")
 }
-func (r *Runner) Close() {
+
+// close down the runner
+func (r *Runner) close() {
 	//if r.grab_closer != nil {
-	close(r.grab_closer)
+	close(r.grabCloser)
 	//}
 }
+
+// GoSlow says we should run in slow mode
 func (r *Runner) GoSlow() {
-	r.grab_slowly = true
+	r.grabSlowly = true
 }
+
+// PrintThroughput - performance stats
 func (r *Runner) PrintThroughput() {
 	elapsed := time.Since(r.st).Seconds()
 	//fmt.Printf("%d items in %v seconds",r.counter,elapsed)
 	tp := float64(r.counter) / elapsed
-	tp_int := int64(tp)
-	fmt.Printf("\n\n%v Items per Second\n", tp_int)
+	tpInt := int64(tp)
+	fmt.Printf("\n\n%v Items per Second\n", tpInt)
 }
+
+// Resume after a pause
 func (r *Runner) Resume() {
-	r.pause_lk.Lock()
+	r.pauseLk.Lock()
 	if r.pause {
 		fmt.Printf("\nResuming Grabber\n\n\n")
 	}
 	r.pause = false
-	r.pause_lk.Unlock()
+	r.pauseLk.Unlock()
 }
+
+// Pause running until resume called
 func (r *Runner) Pause() {
-	r.pause_lk.Lock()
+	r.pauseLk.Lock()
 	if !r.pause {
 		fmt.Printf("\nPausing Grabber\n\n\n")
 	}
 	r.pause = true
-	r.pause_lk.Unlock()
+	r.pauseLk.Unlock()
 }
+
+// Shutdown the operation
 func (r *Runner) Shutdown() {
-	var closing_wg *sync.WaitGroup
-	closing_wg = r.FlushSync()
+	var closingWg *sync.WaitGroup
+	closingWg = r.FlushSync()
 
 	// We may have paused the runner as part of our throughput limits
 	r.Resume()
-	r.pause_lk.Lock() // Prevent us pausing again until shutdown
-	defer r.pause_lk.Unlock()
+	r.pauseLk.Lock() // Prevent us pausing again until shutdown
+	defer r.pauseLk.Unlock()
 	fmt.Println("Close Runneri")
-	r.Close()
+	r.close()
 	fmt.Println("Close completer")
 	r.Wait() // Once we've closed it make sure it is closeda
 	fmt.Println("Waited for runner, closing_wg")
-	closing_wg.Wait()
+	closingWg.Wait()
 	fmt.Println("Close universal store")
 	r.ust.closeS()
 
@@ -137,16 +165,20 @@ func (r *Runner) Shutdown() {
 	r.ust.closeDv()
 	fmt.Println("Closed Dv")
 }
+
+// SetRTime - set the recycle time
 func (r *Runner) SetRTime(rt time.Duration) {
-	r.recycle_time = rt
-}
-func (r *Runner) GrabRunner(num_p_fetch int) {
-	r.wg.Add(1)
-	r.grab_closer = make(chan struct{})
-	go r.grabRunner(num_p_fetch)
+	r.recycleTime = rt
 }
 
-func (r *Runner) grabRunner(num_p_fetch int) {
+// GrabRunner launches the grab process with up to numPFetch running at once per domain
+func (r *Runner) GrabRunner(numPFetch int) {
+	r.wg.Add(1)
+	r.grabCloser = make(chan struct{})
+	go r.grabRunner(numPFetch)
+}
+
+func (r *Runner) grabRunner(numPFetch int) {
 	fmt.Println("Starting Hamster")
 	defer func() {
 		r.wg.Done()
@@ -157,79 +189,77 @@ func (r *Runner) grabRunner(num_p_fetch int) {
 		r.hm.Close()
 		fmt.Println("Hamster Closed")
 	}()
-	grab_tk_rep := NewTokenChan(num_p_fetch, "grab")
+	grabTkRep := NewTokenChan(numPFetch, "grab")
 
 	if r.linear {
-		r.linGrab(grab_tk_rep)
+		r.linGrab(grabTkRep)
 	} else {
-		r.multiGrab(grab_tk_rep)
+		r.multiGrab(grabTkRep)
 	}
 }
-func (r *Runner) linGrab(grab_tk_rep *TokenChan) {
-	r.genericMiddle(grab_tk_rep, linGrabMiddle)
+func (r *Runner) linGrab(grabTkRep *TokenChan) {
+	r.genericMiddle(grabTkRep, r.linGrabMiddle)
 }
-func (r *Runner) genericMiddle(grab_tk_rep *TokenChan, midFunc func(r *Runner, grab_tk_rep *TokenChan, out_count *OutCounter, tmp_chan chan Url) bool) bool {
-	out_count := NewOutCounter()
-	out_count.initDc()
-	tmp_chan := make(chan Url)
+func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc func(grabTkRep *TokenChan, out_count *OutCounter, tmpChan chan URL) bool) bool {
+	outCount := NewOutCounter()
+	outCount.initDc()
+	tmpChan := make(chan URL)
 	// Create the worker to sort any new Urls into the  two bins
-	wgt := r.ust.runChan(tmp_chan, "")
+	wgt := r.ust.runChan(tmpChan, "")
 
-	cc := midFunc(r, grab_tk_rep, out_count, tmp_chan)
+	cc := midFunc(grabTkRep, outCount, tmpChan)
 	if UseParallelGrab {
-		out_count.Wait()
+		outCount.Wait()
 	}
 	fmt.Println("Waiting for runChan to finish adding")
-	close(tmp_chan)
+	close(tmpChan)
 	wgt.Wait()
-	time.Sleep(r.recycle_time)
+	time.Sleep(r.recycleTime)
 	return cc
 }
-func (r *Runner) multiGrab(grab_tk_rep *TokenChan) {
-	var chan_closed bool
-
-	for !chan_closed {
+func (r *Runner) multiGrab(grabTkRep *TokenChan) {
+	var chanClosed bool
+	for !chanClosed {
 		if r.ust.unvisitSize() <= 0 {
 			return
-		} else {
-			select {
-			case _, ok := <-r.grab_closer:
-				if !ok {
-					chan_closed = true
-					continue
-				}
-			default:
-			}
-			r.pause_lk.Lock()
-			we_pause := r.pause
-			r.pause_lk.Unlock()
-
-			if we_pause {
-				time.Sleep(10 * time.Second)
+		}
+		select {
+		case _, ok := <-r.grabCloser:
+			if !ok {
+				chanClosed = true
 				continue
 			}
-
-			cc := r.genericMiddle(grab_tk_rep, multiGrabMiddle)
-
-			if cc {
-				chan_closed = true
-			}
+		default:
 		}
+		r.pauseLk.Lock()
+		wePause := r.pause
+		r.pauseLk.Unlock()
+
+		if wePause {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+
+		cc := r.genericMiddle(grabTkRep, r.multiGrabMiddle)
+		if cc {
+			chanClosed = true
+		}
+
 	}
 }
-func linGrabMiddle(r *Runner, grabTkRep *TokenChan, out_count *OutCounter, tmpChan chan Url) bool {
-	grabSlowly := r.grab_slowly
+func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
+	grabSlowly := r.grabSlowly
 	var chanClosed bool
 	somethingSkipped := true
-	var lastUrl Url
+	var lastURL URL
 	for somethingSkipped {
-		var delList []Url
+		var delList []URL
 		somethingSkipped = false
-		urlChan := r.ust.VisitFrom(lastUrl)
+		urlChan := r.ust.VisitFrom(lastURL)
 		chanClosed = false
 		for !chanClosed {
 			select {
-			case _, ok := <-r.grab_closer:
+			case _, ok := <-r.grabCloser:
 				if !ok {
 					somethingSkipped = false
 					chanClosed = true
@@ -238,12 +268,12 @@ func linGrabMiddle(r *Runner, grabTkRep *TokenChan, out_count *OutCounter, tmpCh
 				if !ok {
 					chanClosed = true
 				} else {
-					if r.hm.grabItWork(urv, out_count, grabTkRep, tmpChan) {
+					if r.hm.grabItWork(urv, outCount, grabTkRep, tmpChan) {
 						delList = append(delList, urv)
 						// while we are using Visit, not VisitAll
 						somethingSkipped = true
 					} else {
-						lastUrl = urv
+						lastURL = urv
 						somethingSkipped = true
 					}
 				}
@@ -261,12 +291,12 @@ func linGrabMiddle(r *Runner, grabTkRep *TokenChan, out_count *OutCounter, tmpCh
 				// get a nice balanced system
 				time.Sleep(10 * time.Millisecond)
 			}
-		} else if !chanClosed && lastUrl.Url() != "" {
-			// It's possible lastUrl is set to the last thing in the array
+		} else if !chanClosed && lastURL.URL() != "" {
+			// It's possible lastURL is set to the last thing in the array
 			// but that there are still lots of things to visit
 			// In which case we should reset to the beginning
 			somethingSkipped = true
-			lastUrl = NewUrl("")
+			lastURL = NewURL("")
 		}
 		if chanClosed {
 			return true
@@ -274,34 +304,34 @@ func linGrabMiddle(r *Runner, grabTkRep *TokenChan, out_count *OutCounter, tmpCh
 	}
 	return false
 }
-func multiGrabMiddle(r *Runner, grab_tk_rep *TokenChan, outCount *OutCounter, tmp_chan chan Url) bool {
-	var chan_closed bool
-	missing_map_string := r.ust.getMissing(grab_tk_rep)
+func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
+	var chanClosed bool
+	missingMapString := r.ust.getMissing(grabTkRep)
 	r.ust.flushSync()
 	//fmt.Println("Missing string rxd")
 	// Convert into a map of urls rather than string
-	missing_map := make(map[Url]struct{})
-	for urv := range missing_map_string {
-		new_url := r.ust.retrieveUnvisted(urv)
-		if new_url != nil {
-			missing_map[*new_url] = struct{}{}
+	missingMap := make(map[URL]struct{})
+	for urv := range missingMapString {
+		newURL := r.ust.retrieveUnvisted(urv)
+		if newURL != nil {
+			missingMap[*newURL] = struct{}{}
 		}
 	}
-	fmt.Printf("Runnin iter loop with %v\n", len(missing_map))
-	for iterCnt := 0; !chan_closed && (iterCnt < 100) && (len(missing_map) > 0); iterCnt++ {
-		closeR := r.runMultiGrabMap(missing_map, outCount, grab_tk_rep, tmp_chan)
+	fmt.Printf("Runnin iter loop with %v\n", len(missingMap))
+	for iterCnt := 0; !chanClosed && (iterCnt < 100) && (len(missingMap) > 0); iterCnt++ {
+		closeR := r.runMultiGrabMap(missingMap, outCount, grabTkRep, tmpChan)
 		if closeR {
 			return true
 		}
 	}
 	return false
 }
-func (r *Runner) runMultiGrabMap(missing_map map[Url]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan Url) bool {
-	grabSuccess, closeChan := r.workMultiMap(missing_map, outCount, grabTkRep, tmpChan)
-	grabSlowly := r.grab_slowly
+func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) bool {
+	grabSuccess, closeChan := r.workMultiMap(missingMap, outCount, grabTkRep, tmpChan)
+	grabSlowly := r.grabSlowly
 	for _, urv := range grabSuccess {
 		r.counter++
-		delete(missing_map, urv)
+		delete(missingMap, urv)
 	}
 	if closeChan {
 		return true
@@ -316,17 +346,17 @@ func (r *Runner) runMultiGrabMap(missing_map map[Url]struct{}, outCount *OutCoun
 	}
 	return false
 }
-func (r *Runner) workMultiMap(missingMap map[Url]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmp_chan chan Url) (grabSuccess []Url, closeChan bool) {
-	grabSuccess = make([]Url, 0, len(missingMap))
+func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
+	grabSuccess = make([]URL, 0, len(missingMap))
 	for urv := range missingMap {
 		urv.Base()
 		select {
-		case _, ok := <-r.grab_closer:
+		case _, ok := <-r.grabCloser:
 			if !ok {
 				return grabSuccess, true
 			}
 		default:
-			if r.getConditional(urv, outCount, grabTkRep, tmp_chan) {
+			if r.getConditional(urv, outCount, grabTkRep, tmpChan) {
 				// If we sucessfully grab this (get a token etc)
 				// then delete it fro the store
 				//One we haven't visited we need to run a grab on
@@ -338,68 +368,78 @@ func (r *Runner) workMultiMap(missingMap map[Url]struct{}, outCount *OutCounter,
 	return grabSuccess, false
 }
 
-func (runr *Runner) AutoPace(multi_fetch *MultiFetch, target int) {
-	// When activated pace the runner.
-	// when there is more than target things to fetch. Pause the runner
-	// then less, then activate it
-
-	run_auto := true
-	for current := multi_fetch.Count(); run_auto; current = multi_fetch.Count() {
+// AutoPace - automatically pause and resume runner
+// When activated pace the runner.
+// when there is more than target things to fetch. Pause the runner
+// then less, then activate it
+func (r *Runner) AutoPace(multiFetch *MultiFetch, target int) {
+	runAuto := true
+	for current := multiFetch.Count(); runAuto; current = multiFetch.Count() {
 		select {
-		case _, ok := <-runr.grab_closer:
+		case _, ok := <-r.grabCloser:
 			if !ok {
-				run_auto = false
+				runAuto = false
 			}
 		default:
 			if current > target {
-				runr.Pause()
+				r.Pause()
 				time.Sleep(10 * time.Second)
 			} else {
-				runr.Resume()
+				r.Resume()
 				time.Sleep(1 * time.Second)
 			}
 		}
 	}
-
 }
-func (r *Runner) getConditional(urs Url, out_count *OutCounter, crawl_chan *TokenChan, tmp_chan chan<- Url) bool {
-	if r.hm.grabItWork(urs, out_count, crawl_chan, tmp_chan) {
+func (r *Runner) getConditional(urs URL, outCount *OutCounter, crawlChan *TokenChan, tmpChan chan<- URL) bool {
+	if r.hm.grabItWork(urs, outCount, crawlChan, tmpChan) {
 		r.ust.setVisited(urs)
 		return true
 	}
 	return false
 }
 
-func (r *Runner) Dump(unvisit_filename, visit_filename string) {
-	if unvisit_filename != "" {
-		r.ust.dumpUnvisited(unvisit_filename)
+// Dump the databases ount into human readable format
+func (r *Runner) Dump(unvisitFilename, visitFilename string) {
+	if unvisitFilename != "" {
+		r.ust.dumpUnvisited(unvisitFilename)
 	}
-	if visit_filename != "" {
-		r.ust.dumpVisited(visit_filename)
+	if visitFilename != "" {
+		r.ust.dumpVisited(visitFilename)
 	}
-}
-func (r *Runner) Seed(url_fn string, promiscuous bool) chan Url {
-	return r.ust.Seed(url_fn, promiscuous)
 }
 
+// Seed the databases from a file
+func (r *Runner) Seed(urlFn string, promiscuous bool) chan URL {
+	return r.ust.Seed(urlFn, promiscuous)
+}
+
+// ClearVisited move all visited locations into unvisited
 func (r *Runner) ClearVisited() {
 	r.ust.clearVisited()
 }
 
-func (r *Runner) GoodUrl(url_in Url) bool {
-	return r.ust.GoodUrl(url_in)
-}
-func (r *Runner) VisitedQ(url_in string) bool {
-	return r.ust.VisitedQ(url_in)
+// GoodURL returnhs true if a url is Good (probably)
+func (r *Runner) GoodURL(urlIn URL) bool {
+	return r.ust.GoodURL(urlIn)
 }
 
-func (r *Runner) VisitedA(url_in string) bool {
-	return r.ust.VisitedA(url_in)
+// VisitedQ - Question: have we visited this?
+func (r *Runner) VisitedQ(urlIn string) bool {
+	return r.ust.VisitedQ(urlIn)
 }
 
+// VisitedA - Add if we haven't visited it
+func (r *Runner) VisitedA(urlIn string) bool {
+	return r.ust.VisitedA(urlIn)
+}
+
+// SetLinear - activates linear fetch mode
 func (r *Runner) SetLinear() {
 	r.linear = true
 }
+
+// ClearLinear - deactivate linear fetch mode
 func (r *Runner) ClearLinear() {
 	r.linear = false
 }

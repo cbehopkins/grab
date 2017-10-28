@@ -7,28 +7,32 @@ import (
 	"time"
 )
 
-var CsLockDebug = false
+var csLockDebug = false
 
-// A Concurrent safe file structure
+// ConcSafe inplements a Concurrent safe file structure
 // Trades off some memory use for speed
 type ConcSafe struct {
-	lk         *sync.Mutex
-	write_lock *sync.Mutex
-	osf        *os.File
+	lk        *sync.Mutex
+	writeLock *sync.Mutex
+	osf       *os.File
 
-	write_queue chan TxRequest
-	read_queue  chan TxRequest
-	read_ret    chan ReadReturn
+	writeQueue chan TxRequest
+	readQueue  chan TxRequest
+	readRet    chan ReadReturn
 
 	// These structures allow multiple outstanding writes
 	tagLk        *sync.Mutex
-	out_writes   map[int64]struct{}
+	outWrites    map[int64]struct{}
 	tagBroadcast chan struct{}
 }
+
+// TxRequest - what do you want to transmit
 type TxRequest struct {
 	B   []byte
 	Off int64
 }
+
+// ReadReturn - What comes back fwith a read
 type ReadReturn struct {
 	N   int
 	Err error
@@ -36,14 +40,17 @@ type ReadReturn struct {
 
 func (cs *ConcSafe) init() {
 	cs.lk = new(sync.Mutex)
-	cs.write_lock = new(sync.Mutex)
-	cs.write_queue = make(chan TxRequest)
-	cs.read_queue = make(chan TxRequest)
-	cs.read_ret = make(chan ReadReturn)
-	cs.out_writes = make(map[int64]struct{})
+	cs.writeLock = new(sync.Mutex)
+	cs.writeQueue = make(chan TxRequest)
+	cs.readQueue = make(chan TxRequest)
+	cs.readRet = make(chan ReadReturn)
+	cs.outWrites = make(map[int64]struct{})
 	cs.tagBroadcast = make(chan struct{})
 	cs.tagLk = new(sync.Mutex)
 }
+
+// NewConcSafe - a new instance of a concsafe
+// pass it a filename and you get a file
 func NewConcSafe(ff string) (cs *ConcSafe, err error) {
 	cs = new(ConcSafe)
 	cs.init()
@@ -51,6 +58,9 @@ func NewConcSafe(ff string) (cs *ConcSafe, err error) {
 	go cs.worker()
 	return
 }
+
+// OpenConcSafe same as NewConcSafe
+// but for existing files
 func OpenConcSafe(ff string) (cs *ConcSafe, err error) {
 	cs = new(ConcSafe)
 	cs.init()
@@ -67,19 +77,20 @@ func (cs ConcSafe) ccWriteAt(b []byte, off int64) (n int, err error) {
 	return cs.osf.WriteAt(b, off)
 }
 
-var CsWriteQueue = true
-var CsReadQueue = true
+var csWriteQueue = true
+var csReadQueue = true
 
+// WriteAt implements the standard WriteAt interface speify where you want to write int he file
 func (cs ConcSafe) WriteAt(b []byte, off int64) (n int, err error) {
-	if CsWriteQueue {
+	if csWriteQueue {
 		qreq := TxRequest{B: b, Off: off}
 		// For performance I think this could be a RWLock
 		// i.e. there could be several queuing for access to the queue
 		// But still allow the exclusive Lock to take place
 		// when we wasnt to flush the queue
-		cs.write_lock.Lock()
-		cs.write_queue <- qreq
-		cs.write_lock.Unlock()
+		cs.writeLock.Lock()
+		cs.writeQueue <- qreq
+		cs.writeLock.Unlock()
 		n = len(b)
 		err = nil
 	} else {
@@ -92,12 +103,14 @@ func (cs ConcSafe) ccReadAt(b []byte, off int64) (n int, err error) {
 	defer cs.lk.Unlock()
 	return cs.osf.ReadAt(b, off)
 }
+
+// ReadAt implements the Standard ReadAt interface - specify where you want to write in file
 func (cs ConcSafe) ReadAt(b []byte, off int64) (n int, err error) {
 
-	if CsReadQueue {
-		read_request := TxRequest{B: b, Off: off}
-		cs.read_queue <- read_request
-		rret := <-cs.read_ret
+	if csReadQueue {
+		readRequest := TxRequest{B: b, Off: off}
+		cs.readQueue <- readRequest
+		rret := <-cs.readRet
 		n = rret.N
 		err = rret.Err
 	} else {
@@ -110,6 +123,9 @@ func (cs ConcSafe) ccTruncate(size int64) error {
 	defer cs.lk.Unlock()
 	return cs.osf.Truncate(size)
 }
+
+// Truncate implements the  Standard Truncate interface
+// specify how long you want to truncate the file to
 func (cs ConcSafe) Truncate(size int64) error {
 	return cs.ccTruncate(size)
 }
@@ -118,15 +134,17 @@ func (cs ConcSafe) ccStat() (os.FileInfo, error) {
 	defer cs.lk.Unlock()
 	return cs.osf.Stat()
 }
+
+// Stat implements the Standard os.FileInfo statistics
 func (cs ConcSafe) Stat() (os.FileInfo, error) {
-	if CsLockDebug {
+	if csLockDebug {
 		log.Println("Stat Write Lock")
 	}
-	cs.write_lock.Lock()
-	if CsLockDebug {
+	cs.writeLock.Lock()
+	if csLockDebug {
 		log.Println("Stat Write Locked")
 	}
-	defer cs.write_lock.Unlock()
+	defer cs.writeLock.Unlock()
 	cs.flushWriteCache()
 	cs.flushWriteQ()
 	return cs.ccStat()
@@ -136,33 +154,38 @@ func (cs ConcSafe) ccSync() error {
 	defer cs.lk.Unlock()
 	return cs.osf.Sync()
 }
+
+// Sync implements the Standard file sync interface
+// sync changes to disk
 func (cs ConcSafe) Sync() error {
 
-	if CsLockDebug {
+	if csLockDebug {
 		log.Println("Sync Write Lock")
 	}
-	cs.write_lock.Lock()
-	if CsLockDebug {
+	cs.writeLock.Lock()
+	if csLockDebug {
 		log.Println("Sync Write Locked")
 	}
-	defer cs.write_lock.Unlock()
+	defer cs.writeLock.Unlock()
 	cs.flushWriteCache()
 	cs.flushWriteQ()
 	return cs.ccSync()
 }
+
+// Close an open file
 func (cs ConcSafe) Close() error {
-	if CsLockDebug {
+	if csLockDebug {
 		log.Println("Close Write Lock")
 	}
-	cs.write_lock.Lock()
-	if CsLockDebug {
+	cs.writeLock.Lock()
+	if csLockDebug {
 		log.Println("Close Write Locked")
 	}
 	cs.flushWriteCache()
 	cs.flushWriteQ()
-	close(cs.read_queue)
-	close(cs.write_queue)
-	cs.write_lock.Unlock()
+	close(cs.readQueue)
+	close(cs.writeQueue)
+	cs.writeLock.Unlock()
 	return cs.osf.Close()
 }
 func (cs ConcSafe) flushWriteCache() {
@@ -178,13 +201,13 @@ func (cs ConcSafe) flushWriteQ() {
 
 	for {
 		select {
-		case wr_req, ok := <-cs.write_queue:
+		case wrReq, ok := <-cs.writeQueue:
 			// Drain the write queue
 			if !ok {
 				return
 			}
-			b := wr_req.B
-			off := wr_req.Off
+			b := wrReq.B
+			off := wrReq.Off
 			cs.ccWriteDelayed(b, off)
 		default:
 			// The write queue must be empty
@@ -193,26 +216,28 @@ func (cs ConcSafe) flushWriteQ() {
 	}
 }
 
+// TagWidth specifies number of bytes in a tag
 // To reduce the workload we store a reference to the
 const TagWidth = 16 // Ech tag holds 16 bytes
+// l2TagWidth number of bits needed for tag width
 const l2TagWidth = 4
 
-func getTag(b []byte, off int64) (r_len int, r_off int64) {
-	len_b := len(b)
-	r_off = off >> l2TagWidth
-	r_len = len_b >> l2TagWidth
+func getTag(b []byte, off int64) (rLen int, rOff int64) {
+	lenB := len(b)
+	rOff = off >> l2TagWidth
+	rLen = lenB >> l2TagWidth
 	return
 }
 
 // Returns true if the described transaction exists in the cache
 func (cs ConcSafe) testTag(b []byte, off int64) bool {
-	r_len, r_off := getTag(b, off)
-	for r_len++; r_len > 0; r_len-- {
-		_, ok := cs.out_writes[r_off]
+	rLen, rOff := getTag(b, off)
+	for rLen++; rLen > 0; rLen-- {
+		_, ok := cs.outWrites[rOff]
 		if ok {
 			return true
 		}
-		r_off++
+		rOff++
 	}
 	return false
 }
@@ -252,7 +277,7 @@ func (cs *ConcSafe) waitTag(b []byte, off int64) {
 func (cs *ConcSafe) waitAllTag() {
 	// This MUST happen outside this function
 	//cs.tagLk.Lock()
-	for len(cs.out_writes) > 0 {
+	for len(cs.outWrites) > 0 {
 		// Wait for the instruction to wake up and check if we have been woken
 		cs.tagLk.Unlock()
 		cs.waitBroadcast()
@@ -264,32 +289,32 @@ func (cs *ConcSafe) waitAllTag() {
 // Take a file access request and set the appropriate bytes in the tag
 func (cs ConcSafe) setTag(b []byte, off int64) {
 	// Translate the incomming into out reduced for the tag format
-	r_len, r_off := getTag(b, off)
+	rLen, rOff := getTag(b, off)
 
 	// if the length is 0 we still want to do 1
 	// access. Otherise do one for every line remenining
-	for r_len++; r_len > 0; r_len-- {
-		_, ok := cs.out_writes[r_off]
+	for rLen++; rLen > 0; rLen-- {
+		_, ok := cs.outWrites[rOff]
 		if ok {
-			log.Fatal("Accessing an offset that already exists", r_off)
+			log.Fatal("Accessing an offset that already exists", rOff)
 		}
-		cs.out_writes[r_off] = struct{}{}
-		r_off++
+		cs.outWrites[rOff] = struct{}{}
+		rOff++
 	}
 }
 func (cs ConcSafe) clearTag(b []byte, off int64) {
 	// Translate the incomming into out reduced for the tag format
-	r_len, r_off := getTag(b, off)
+	rLen, rOff := getTag(b, off)
 
 	// if the length is 0 we still want to do 1
 	// access. Otherise do one for every line remenining
-	for r_len++; r_len > 0; r_len-- {
-		_, ok := cs.out_writes[r_off]
+	for rLen++; rLen > 0; rLen-- {
+		_, ok := cs.outWrites[rOff]
 		if !ok {
-			log.Fatal("Clearing an offset that doesn't exist", r_off)
+			log.Fatal("Clearing an offset that doesn't exist", rOff)
 		}
-		delete(cs.out_writes, r_off)
-		r_off++
+		delete(cs.outWrites, rOff)
+		rOff++
 	}
 }
 
@@ -310,7 +335,7 @@ func (cs *ConcSafe) delayedWrite(b []byte, off int64) {
 
 // Equivalent to normal write function
 // but using the delayed write mechanism
-func (cs *ConcSafe) ccWriteDelayed(b []byte, off int64) (out_len int) {
+func (cs *ConcSafe) ccWriteDelayed(b []byte, off int64) (outLen int) {
 	// Get the lock on the delayed write structure
 	cs.tagLk.Lock()
 	// If the entry already exists
@@ -322,7 +347,7 @@ func (cs *ConcSafe) ccWriteDelayed(b []byte, off int64) (out_len int) {
 	// So update the struct with the write
 	cs.setTag(b, off)
 	// While we have the lock, get the current length of the pending queue
-	out_len = len(cs.out_writes)
+	outLen = len(cs.outWrites)
 	// No more use for the lock
 	cs.tagLk.Unlock()
 	// Do the write at your leisure
@@ -331,46 +356,46 @@ func (cs *ConcSafe) ccWriteDelayed(b []byte, off int64) (out_len int) {
 }
 
 func (cs *ConcSafe) worker() {
-	parallel_mode := false
-	var out_len int
-	var re_count int
+	parallelMode := false
+	var outLen int
+	var reCount int
 	for {
-		if out_len > 1024 {
+		if outLen > 1024 {
 			time.Sleep(10 * time.Millisecond)
 			cs.tagLk.Lock()
-			out_len = len(cs.out_writes)
+			outLen = len(cs.outWrites)
 			cs.tagLk.Unlock()
-			re_count++
-			if re_count > 100 {
+			reCount++
+			if reCount > 100 {
 				log.Fatal("conc_safe retry count error")
 			}
 		} else {
-			re_count = 0
+			reCount = 0
 			select {
-			case wr_req := <-cs.write_queue:
+			case wrReq := <-cs.writeQueue:
 				// Get the lock to the file system
-				b := wr_req.B
-				off := wr_req.Off
+				b := wrReq.B
+				off := wrReq.Off
 
-				if parallel_mode {
+				if parallelMode {
 					//cs.lk.Lock()
 					// This is returning the number of oustanding/delayed write transactions
-					out_len = cs.ccWriteDelayed(b, off)
+					outLen = cs.ccWriteDelayed(b, off)
 					//cs.lk.Unlock()
 				} else {
 					cs.lk.Lock()
 					cs.ccWriteAt(b, off)
 					cs.lk.Unlock()
 				}
-			case rd_req := <-cs.read_queue:
-				b := rd_req.B
-				off := rd_req.Off
+			case rdReq := <-cs.readQueue:
+				b := rdReq.B
+				off := rdReq.Off
 
-				if CsLockDebug {
+				if csLockDebug {
 					log.Println("Attempting Read Worker Lock")
 				}
-				cs.write_lock.Lock()
-				if CsLockDebug {
+				cs.writeLock.Lock()
+				if csLockDebug {
 					log.Println("Read worker Lock achieved")
 				}
 				// Make sure any pending writes are out of the queue
@@ -378,7 +403,7 @@ func (cs *ConcSafe) worker() {
 				cs.flushWriteQ()
 				// Safe to add things to the queue as logically they will
 				// now occur after this transaction
-				cs.write_lock.Unlock()
+				cs.writeLock.Unlock()
 
 				// Wait until the requested read is not in the write cache
 				// Other things could be in the cache, as long as this isn't
@@ -389,7 +414,7 @@ func (cs *ConcSafe) worker() {
 				// Perform the read
 				n, err := cs.ccReadAt(b, off)
 				rret := ReadReturn{N: n, Err: err}
-				cs.read_ret <- rret
+				cs.readRet <- rret
 			}
 		}
 	}

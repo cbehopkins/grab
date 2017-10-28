@@ -7,53 +7,53 @@ import (
 	"testing"
 )
 
-func UrlSrc(cnt int) (chan Url, map[string]struct{}) {
-	the_chan := make(chan Url)
-	the_map := make(map[string]struct{})
-	max_str_len := 300
+func URLSrc(cnt int) (chan URL, map[string]struct{}) {
+	theChan := make(chan URL)
+	theMap := make(map[string]struct{})
+	maxStrLen := 300
 	go func() {
 		for i := 0; i < cnt; i++ {
 
-			str_len := rand.Int31n(int32(max_str_len)) + 1
-			tst_string := RandStringBytesMaskImprSrc(int(str_len))
-			the_map[tst_string] = struct{}{}
-			tmp_url := NewUrl(tst_string)
+			strLen := rand.Int31n(int32(maxStrLen)) + 1
+			tstString := RandStringBytesMaskImprSrc(int(strLen))
+			theMap[tstString] = struct{}{}
+			tmpURL := NewURL(tstString)
 
-			the_chan <- tmp_url
+			theChan <- tmpURL
 		}
-		close(the_chan)
+		close(theChan)
 	}()
-	return the_chan, the_map
+	return theChan, theMap
 }
 
 func TestGobWrite0(t *testing.T) {
-	out_count := NewOutCounter()
-	out_count.Add()
+	outCount := NewOutCounter()
+	outCount.Add()
 
 	filename := "gob_test.txt"
-	the_chan, the_map := UrlSrc(100000)
+	theChan, theMap := URLSrc(100000)
 
-	go SaveGob(filename, the_chan, out_count)
+	go SaveGob(filename, theChan, outCount)
 	defer os.Remove(filename)
-	out_count.Wait()
+	outCount.Wait()
 	log.Println("Write Success!")
 
-	the_chan = make(chan Url)
+	theChan = make(chan URL)
 
-	go LoadGob(filename, the_chan, out_count, true, false)
+	go LoadGob(filename, theChan, outCount, true)
 
-	found_items := make(map[string]struct{})
-	for v := range the_chan {
-		urlf := v.Url()
-		found_items[urlf] = struct{}{}
-		_, ok := the_map[urlf]
+	foundItems := make(map[string]struct{})
+	for v := range theChan {
+		urlf := v.URL()
+		foundItems[urlf] = struct{}{}
+		_, ok := theMap[urlf]
 
 		if !ok {
-			log.Fatal("Missing Key", v.Url())
+			log.Fatal("Missing Key", v.URL())
 		}
 	}
 
-	if len(found_items) != len(the_map) {
-		log.Fatal("Incorrect length", len(found_items), len(the_map))
+	if len(foundItems) != len(theMap) {
+		log.Fatal("Incorrect length", len(foundItems), len(theMap))
 	}
 }

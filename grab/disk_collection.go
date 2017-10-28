@@ -6,22 +6,30 @@ import (
 	"sort"
 	"strconv"
 
+	"fmt"
+
 	"github.com/cbehopkins/gkvlite"
 )
 
-// Disk Collection of int to string map
+// DkCollection Disk Collection
+// Wraps up the dis store and colleciton into a usable whole
 type DkCollection struct {
 	ds  *DkStore
 	col *gkvlite.Collection
 	re  *regexp.Regexp
 }
 
+// UseCollection specifies the name of the colleciton we should use
 func (dc *DkCollection) UseCollection(name string) {
 	dc.col = dc.ds.st.GetCollection(name)
 	if dc.col == nil {
 		dc.col = dc.ds.st.SetCollection(name, nil)
 	}
 }
+
+// NewDkCollection - create a new collection
+// at the specified filename
+// overwriting if needed
 func NewDkCollection(filename string, overwrite bool) *DkCollection {
 	itm := new(DkCollection)
 	itm.re = regexp.MustCompile("(http[s]?://)([^/]*)")
@@ -32,229 +40,259 @@ func NewDkCollection(filename string, overwrite bool) *DkCollection {
 	return itm
 }
 
-func (st *DkCollection) SetAny(key, val interface{}) {
-	key_bs := toBa(key)
-	val_bs := toBa(val)
-	st.col.Set(key_bs, val_bs)
+// SetAny - Set the value of any type
+func (dc *DkCollection) SetAny(key, val interface{}) {
+	keyBs := toBa(key)
+	valBs := toBa(val)
+	dc.col.Set(keyBs, valBs)
 }
 
-func (st *DkCollection) GetAny(key interface{}) []byte {
-	key_bs := toBa(key)
-	ret_val, err := st.col.Get(key_bs)
+// GetAny - Get a value of any type
+func (dc *DkCollection) GetAny(key interface{}) []byte {
+	keyBs := toBa(key)
+	retVal, err := dc.col.Get(keyBs)
 	check(err)
-	return ret_val
+	return retVal
 }
-func (st *DkCollection) GetUrl(key string) Url {
-	return st.UrlFromBa([]byte(key))
+
+// GetURL returns the full url structure stored in the colleciton
+func (dc *DkCollection) GetURL(key string) URL {
+	return dc.URLFromBa([]byte(key))
 }
-func (st *DkCollection) SetUrl(in Url) {
+
+// SetURL sets the url as one in the collection
+func (dc *DkCollection) SetURL(in URL) {
 	key := in.Key()
-	key_ba := []byte(key)
+	keyBa := []byte(key)
 	output, err := in.goMarshalJSON()
 	if err == nil {
-		st.SetAny(key_ba, output)
+		dc.SetAny(keyBa, output)
 	} else {
 		log.Fatal("JSON Marshall error")
 	}
 }
-func (st *DkCollection) UrlFromBa(in []byte) Url {
-	var itm Url
+
+// URLFromBa Creates a new URL from the supplied byte array
+func (dc *DkCollection) URLFromBa(in []byte) URL {
+	var itm URL
 	var ok bool
 
-	ok = st.Exist(in)
+	ok = dc.Exist(in)
 	if !ok {
-		itm = NewUrlFromBa(in)
+		itm = NewURLFromBa(in)
 		return itm
 	}
-	itm_ba := st.GetAny(in)
-	if string(itm_ba) == "" {
-		return NewUrlFromBa(in)
+	itmBa := dc.GetAny(in)
+	if string(itmBa) == "" {
+		return NewURLFromBa(in)
 	}
 	//log.Fatal("Puzzling, this is not possible")
-	var tmpUrl Url
-	tmpUrl.goUnMarshalJSON(itm_ba)
-	tmpUrl.UrlS = string(in)
-	tmpUrl.Initialise()
-	return tmpUrl
-}
-func (st *DkCollection) Delete(key interface{}) bool {
-	key_bs := toBa(key)
-	was_deleted, err := st.col.Delete(key_bs)
-	check(err)
-	return was_deleted
+	var tmpURL URL
+	tmpURL.goUnMarshalJSON(itmBa)
+	tmpURL.URLs = string(in)
+	tmpURL.Initialise()
+	return tmpURL
 }
 
-func (st *DkCollection) Exist(key interface{}) bool {
-	key_bs := toBa(key)
-	val, _ := st.col.GetItem(key_bs, false)
+// Delete returns true if we managed to delete the supplied key
+func (dc *DkCollection) Delete(key interface{}) bool {
+	keyBs := toBa(key)
+	wasDeleted, err := dc.col.Delete(keyBs)
+	check(err)
+	return wasDeleted
+}
+
+// Exist returns true if a supplied key exists
+func (dc *DkCollection) Exist(key interface{}) bool {
+	keyBs := toBa(key)
+	val, _ := dc.col.GetItem(keyBs, false)
 	return val != nil
 }
-func (st *DkCollection) GetString(key interface{}) string {
-	return string(st.GetAny(key))
+
+// GetString Get values of string type
+func (dc *DkCollection) GetString(key interface{}) string {
+	return string(dc.GetAny(key))
 }
-func (st *DkCollection) GetInt(key interface{}) int {
-	val, err := strconv.Atoi(st.GetString(key))
+
+// GetInt Get values of integer type
+func (dc *DkCollection) GetInt(key interface{}) int {
+	val, err := strconv.Atoi(dc.GetString(key))
 	check(err)
 	return val
 }
 
-func (st *DkCollection) GetIntKeys() (ret_chan chan int) {
-	ret_chan = make(chan int)
+// GetIntKeys get keys of integer type
+func (dc *DkCollection) GetIntKeys() (retChan chan int) {
+	retChan = make(chan int)
 	go func() {
 
-		for ba := range st.GetAnyKeys() {
+		for ba := range dc.GetAnyKeys() {
 			key, err := strconv.Atoi(string(ba))
 			check(err)
-			ret_chan <- key
+			retChan <- key
 		}
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 
 }
 
-func (st *DkCollection) GetAnyValues() (ret_chan chan []byte) {
-	ret_chan = make(chan []byte)
+// GetAnyValues Get Values of any type
+// return in an array
+func (dc *DkCollection) GetAnyValues() (retChan chan []byte) {
+	retChan = make(chan []byte)
 	go func() {
-		st.col.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
+		dc.col.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
-			ret_chan <- st.GetAny(i.Key)
+			retChan <- dc.GetAny(i.Key)
 			return true
 		})
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 }
-func (st *DkCollection) GetAnyKeysArray(max_items int) (ret_array [][]byte) {
-	ret_array = make([][]byte, 0, max_items)
-	tmp_chan := make(chan []byte)
+
+// GetAnyKeysArray Get keys of any type
+// return in an array
+func (dc *DkCollection) GetAnyKeysArray(maxItems int) (retArray [][]byte) {
+	retArray = make([][]byte, 0, maxItems)
+	tmpChan := make(chan []byte)
 	go func() {
 		cnt := 0
-		min_itm, err := st.col.MinItem(true)
+		minItm, err := dc.col.MinItem(true)
 		check(err)
-		st.col.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+		dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
-			tmp_chan <- i.Key
+			tmpChan <- i.Key
 			// keep going until we have got n items
 			cnt++
-			return cnt < max_items
+			return cnt < maxItems
 		})
-		close(tmp_chan)
+		close(tmpChan)
 	}()
 
-	for v := range tmp_chan {
-		ret_array = append(ret_array, v)
+	for v := range tmpChan {
+		retArray = append(retArray, v)
 	}
-	return ret_array
+	return retArray
 }
-func (st *DkCollection) GetAnyKeysArrayFrom(max_items int, start []byte) (ret_array [][]byte) {
-	ret_array = make([][]byte, 0, max_items)
-	tmp_chan := make(chan []byte)
+
+// GetAnyKeysArrayFrom Get keys of any type
+// return in an array
+// starting the search From the specified location
+func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArray [][]byte) {
+	retArray = make([][]byte, 0, maxItems)
+	tmpChan := make(chan []byte)
 	go func() {
-		start_itm, err := st.col.GetItem(start, false)
-		if (start_itm == nil) || (err != nil) {
-			start_itm, err = st.col.MinItem(true)
+		startItm, err := dc.col.GetItem(start, false)
+		if (startItm == nil) || (err != nil) {
+			startItm, err = dc.col.MinItem(true)
 			check(err)
 		}
 		cnt := 0
-		st.col.VisitItemsAscend(start_itm.Key, true, func(i *gkvlite.Item) bool {
+		dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
-			tmp_chan <- i.Key
+			tmpChan <- i.Key
 			// keep going until we have got n items
 			cnt++
-			return cnt < max_items
+			return cnt < maxItems
 		})
-		close(tmp_chan)
+		close(tmpChan)
 	}()
 
-	for v := range tmp_chan {
-		ret_array = append(ret_array, v)
+	for v := range tmpChan {
+		retArray = append(retArray, v)
 	}
-	return ret_array
+	return retArray
 }
-func (st *DkCollection) GetAnyKeys() (ret_chan chan []byte) {
-	ret_chan = make(chan []byte)
+
+// GetAnyKeys Get keys of any data type
+func (dc *DkCollection) GetAnyKeys() (retChan chan []byte) {
+	retChan = make(chan []byte)
 	go func() {
-		min_itm, err := st.col.MinItem(true)
+		minItm, err := dc.col.MinItem(true)
 		check(err)
-		if min_itm != nil {
-			st.col.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+		if minItm != nil {
+			dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 				// This visitor callback will be invoked with every item
 				// If we want to stop visiting, return false;
 				// otherwise return true to keep visiting.
-				ret_chan <- i.Key
+				retChan <- i.Key
 				return true
 			})
 		}
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 }
-func (st *DkCollection) GetAnyKeysRand() (ret_chan chan []byte) {
-	ret_chan = make(chan []byte)
+
+// GetAnyKeysRand Ger keys of any type in a random order
+// This is a work in progress
+func (dc *DkCollection) GetAnyKeysRand() (retChan chan []byte) {
+	retChan = make(chan []byte)
 	go func() {
-		min_itm, err := st.col.MinItem(true)
+		minItm, err := dc.col.MinItem(true)
 		check(err)
-		if min_itm != nil {
-			st.col.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+		if minItm != nil {
+			dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 				// This visitor callback will be invoked with every item
 				// If we want to stop visiting, return false;
 				// otherwise return true to keep visiting.
-				ret_chan <- i.Key
+				retChan <- i.Key
 				return true
 			})
 		}
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 }
-func (st *DkCollection) getMissingChan(max_items int, refr *TokenChan) chan string {
+func (dc *DkCollection) getMissingChan(maxItems int, refr *TokenChan) chan string {
 	uc := make(chan string)
-	go st.getMissingChanWorker(uc, max_items, refr)
+	go dc.getMissingChanWorker(uc, maxItems, refr)
 	return uc
 }
-func (st *DkCollection) getMissingChanWorker(url_chan chan string, max_items int, refr *TokenChan) {
-	defer close(url_chan)
+func (dc *DkCollection) getMissingChanWorker(urlChan chan string, maxItems int, refr *TokenChan) {
+	defer close(urlChan)
 	// we will allow up to max_same of the same basename to go through
 	// This is so we can fetch several things fromt he same host at once
 	// But not too many!
 	// It wants to be slightly more than the number of tokens we allow
 	// for each basename
-	if st == nil {
+	if dc == nil {
 		log.Fatal("Invalid Stoer")
 	}
-	if st.col == nil {
+	if dc.col == nil {
 		log.Fatal("Invalid collection")
 	}
-	max_same := max_items / 10 // fetch at least 10 domains worth to work with
+	maxSame := maxItems / 10 // fetch at least 10 domains worth to work with
 
-	check_tk := false
+	checkTk := false
 	cnt := 0
-	min_itm, err := st.col.MinItem(true)
+	minItm, err := dc.col.MinItem(true)
 	check(err)
-	if min_itm == nil {
+	if minItm == nil {
 		return
 	}
-	unique_array := make(map[string]int)
-	explore_func := func(i *gkvlite.Item) bool {
+	uniqueArray := make(map[string]int)
+	exploreFunc := func(i *gkvlite.Item) bool {
 		// This visitor callback will be invoked with every item
 		// If we want to stop visiting, return false;
 		// otherwise return true to keep visiting.
 		if i == nil {
 			log.Fatal("WTF!")
 		}
-		tmp_val := string(i.Key)
+		tmpVal := string(i.Key)
 		// If the token for this is in use
 		// Then it won't fetch this pass, so don't let it through
-		tmp_base := st.roughBase(tmp_val)
-		if check_tk {
-			ok := refr.BaseExist(tmp_base)
+		tmpBase := dc.roughBase(tmpVal)
+		if checkTk {
+			ok := refr.BaseExist(tmpBase)
 			if ok {
 				// Keep going, look for something not in the map
 				return true
@@ -264,8 +302,8 @@ func (st *DkCollection) getMissingChanWorker(url_chan chan string, max_items int
 
 		// We don't need exactly the correct and tollerant answer
 		// a rough go will be fast enough
-		val, ok := unique_array[tmp_base]
-		if ok && (val >= max_same) {
+		val, ok := uniqueArray[tmpBase]
+		if ok && (val >= maxSame) {
 			return true
 		}
 		if !ok {
@@ -274,39 +312,43 @@ func (st *DkCollection) getMissingChanWorker(url_chan chan string, max_items int
 			val++
 		}
 		// Store it with the count of how many times we've visited
-		unique_array[tmp_base] = val
+		uniqueArray[tmpBase] = val
 
 		// We've found something interesting so increment the count
 		cnt++
 		// send the interesting thing
 		//fmt.Println("Interesting item", tmp_val)
-		url_chan <- tmp_val
+		urlChan <- tmpVal
 		// keep going until we have got n items
-		return cnt < max_items
+		return cnt < maxItems
 	}
-	st.col.VisitItemsAscend(min_itm.Key, true, explore_func)
-}
-func (st *DkCollection) GetMissing(max_items int, refr *TokenChan) (ret_map map[string]struct{}) {
-	ret_map = make(map[string]struct{})
-	for tmp_val := range st.getMissingChan(max_items, refr) {
-		ret_map[tmp_val] = struct{}{}
-	}
-	return ret_map
+	dc.col.VisitItemsAscend(minItm.Key, true, exploreFunc)
 }
 
-func (st *DkCollection) Size() int {
+// GetMissing items from the collection
+// i.e. populate a return map with at most maxItems, moderated by tokenChan
+func (dc *DkCollection) GetMissing(maxItems int, refr *TokenChan) (retMap map[string]struct{}) {
+	retMap = make(map[string]struct{})
+	for tmpVal := range dc.getMissingChan(maxItems, refr) {
+		retMap[tmpVal] = struct{}{}
+	}
+	return retMap
+}
+
+// Size returns the size of the collection
+func (dc *DkCollection) Size() int {
 	size := 0
-	if st.col == nil {
+	if dc.col == nil {
 		// The collection has not been set up yet
 		return 0
 	}
-	min_itm, err := st.col.MinItem(true)
+	minItm, err := dc.col.MinItem(true)
 	check(err)
-	if min_itm == nil {
+	if minItm == nil {
 		//mpty list if no minimum
 		return size
 	}
-	st.col.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+	dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 		// This visitor callback will be invoked with every item
 		// If we want to stop visiting, return false;
 		// otherwise return true to keep visiting.
@@ -317,12 +359,13 @@ func (st *DkCollection) Size() int {
 	return size
 }
 
-func (st *DkCollection) Count() int {
-	if st.col == nil {
+// Count the number of items in the collection
+func (dc *DkCollection) Count() int {
+	if dc.col == nil {
 		// The collection has not been set up yet
 		return 0
 	}
-	numItems, _, err := st.col.GetTotals()
+	numItems, _, err := dc.col.GetTotals()
 	check(err)
 	return int(numItems)
 }
@@ -338,36 +381,46 @@ func rankByWordCount(wordFrequencies map[string]int) PairList {
 	return pl
 }
 
-func (st *DkCollection) PrintWorkload() {
-	min_itm, err := st.col.MinItem(true)
+// Workload - output the current workload
+func (dc *DkCollection) Workload(spin bool) string {
+	minItm, err := dc.col.MinItem(true)
 	check(err)
-	unique_array := make(map[string]int)
+	uniqueArray := make(map[string]int)
 	s := Spinner{scaler: 1000}
 	var cnt int
-	st.col.VisitItemsAscend(min_itm.Key, true, func(i *gkvlite.Item) bool {
+	dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 		// This visitor callback will be invoked with every item
 		// If we want to stop visiting, return false;
 		// otherwise return true to keep visiting.
-		tmp_val := string(i.Key)
-		tmp_base := GetBase(tmp_val)
-		val, ok := unique_array[tmp_base]
+		tmpVal := string(i.Key)
+		tmpBase := GetBase(tmpVal)
+		val, ok := uniqueArray[tmpBase]
 		if !ok {
 			val = 0
 		} else {
 			val++
 		}
-		s.PrintSpin(cnt)
+		if spin {
+			s.PrintSpin(cnt)
+		}
 		cnt++
 		// Store it with the count of how many times we've visited
-		unique_array[tmp_base] = val
+		uniqueArray[tmpBase] = val
 
 		return true
 	})
-	log.Println("Printing Current Workload")
-
-	for _, itm := range rankByWordCount(unique_array) {
+	var retString string
+	for _, itm := range rankByWordCount(uniqueArray) {
 		key := itm.Key
 		value := itm.Value
-		log.Printf("%8d:%s\n", value, key)
+		retString += fmt.Sprintf("%8d:%s\n", value, key)
 	}
+	return retString
+}
+
+// PrintWorkload output the cirrent workload
+func (dc *DkCollection) PrintWorkload() {
+	log.Println("Printing Current Workload")
+	log.Printf(dc.Workload(true))
+
 }

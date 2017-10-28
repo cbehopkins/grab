@@ -5,94 +5,101 @@ import (
 	"sync"
 )
 
+// uniStore is a universal store collecting the vivisted and unvisited structures
 type uniStore struct {
-	unvisit_urls *UrlMap
-	visited_urls *UrlMap
-	dv           *DomVisit
+	unvisitUrls *URLMap
+	visitedUrls *URLMap
+	dv          *DomVisit
 }
 
-func newUniStore(dir string, compact bool, bad_url_fn string) *uniStore {
+func newUniStore(dir string, compact bool, badURLFn string) *uniStore {
 	itm := new(uniStore)
-	itm.dv = NewDomVisit(bad_url_fn)
-	visited_fname := dir + "/visited.gkvlite"
-	unvisit_fname := dir + "/unvisit.gkvlite"
+	itm.dv = NewDomVisit(badURLFn)
+	visitedFname := dir + "/visited.gkvlite"
+	unvisitFname := dir + "/unvisit.gkvlite"
 
 	// Open the maps and do not overwrite any we find
-	itm.visited_urls = NewUrlMap(visited_fname, false, compact)
-	itm.unvisit_urls = NewUrlMap(unvisit_fname, false, compact)
+	itm.visitedUrls = NewURLMap(visitedFname, false, compact)
+	itm.unvisitUrls = NewURLMap(unvisitFname, false, compact)
 
-	itm.visited_urls.SetWriteCache()
-	itm.visited_urls.SetReadCache()
-	itm.unvisit_urls.SetWriteCache()
-	itm.unvisit_urls.SetReadCache()
+	itm.visitedUrls.SetWriteCache()
+	itm.visitedUrls.SetReadCache()
+	itm.unvisitUrls.SetWriteCache()
+	itm.unvisitUrls.SetReadCache()
 	return itm
 }
 func (usr uniStore) getDv() *DomVisit {
 	return usr.dv
 }
-func (usr uniStore) Seed(url_fn string, promiscuous bool) chan Url {
-	return usr.dv.Seed(url_fn, promiscuous)
+
+// Seed exported
+func (usr uniStore) Seed(urlFn string, promiscuous bool) chan URL {
+	return usr.dv.Seed(urlFn, promiscuous)
 }
 
-func (usr uniStore) GoodUrl(url_in Url) bool {
-	return usr.dv.GoodUrl(url_in)
-}
-func (usr uniStore) VisitedQ(url_in string) bool {
-	return usr.dv.VisitedQ(url_in)
+// GoodURL exported
+func (usr uniStore) GoodURL(urlIn URL) bool {
+	return usr.dv.GoodURL(urlIn)
 }
 
-func (usr uniStore) VisitedA(url_in string) bool {
-	return usr.dv.VisitedA(url_in)
+// VisitedQ exported
+func (usr uniStore) VisitedQ(urlIn string) bool {
+	return usr.dv.VisitedQ(urlIn)
+}
+
+// VisitedA exported
+func (usr uniStore) VisitedA(urlIn string) bool {
+	return usr.dv.VisitedA(urlIn)
 }
 
 func (usr uniStore) closeS() {
-	usr.unvisit_urls.Close()
-	usr.visited_urls.Close()
+	usr.unvisitUrls.Close()
+	usr.visitedUrls.Close()
 }
 func (usr uniStore) closeDv() {
 	usr.dv.Close()
 }
 func (usr uniStore) visitSize() int {
-	return usr.visited_urls.Size()
+	return usr.visitedUrls.Size()
 }
 func (usr uniStore) visitCount() int {
-	return usr.visited_urls.Count()
+	return usr.visitedUrls.Count()
 }
 func (usr uniStore) unvisitCount() int {
-	return usr.unvisit_urls.Count()
+	return usr.unvisitUrls.Count()
 }
 func (usr uniStore) unvisitSize() int {
-	return usr.unvisit_urls.Size()
+	return usr.unvisitUrls.Size()
 }
 func (usr uniStore) waitLoad() {
 	usr.dv.WaitLoad()
 }
 func (usr uniStore) flushSync() {
-	usr.unvisit_urls.Flush()
-	usr.visited_urls.Flush()
-	usr.unvisit_urls.Sync()
-	usr.visited_urls.Sync()
+	usr.unvisitUrls.Flush()
+	usr.visitedUrls.Flush()
+	usr.unvisitUrls.Sync()
+	usr.visitedUrls.Sync()
 }
-func (usr uniStore) Visit() chan Url {
-	return usr.unvisit_urls.Visit()
+func (usr uniStore) Visit() chan URL {
+	return usr.unvisitUrls.Visit()
 }
-func (usr uniStore) VisitAll(closeChan chan struct{}) chan Url {
-	return usr.unvisit_urls.VisitAll(closeChan)
+func (usr uniStore) VisitAll(closeChan chan struct{}) chan URL {
+	return usr.unvisitUrls.VisitAll(closeChan)
 }
-func (usr uniStore) VisitFrom(startUrl Url) chan Url {
-	return usr.unvisit_urls.VisitFrom(startUrl)
+func (usr uniStore) VisitFrom(startURL URL) chan URL {
+	return usr.unvisitUrls.VisitFrom(startURL)
 }
 func (usr uniStore) getMissing(refr *TokenChan) map[string]struct{} {
-	return usr.unvisit_urls.VisitMissing(refr)
+	return usr.unvisitUrls.VisitMissing(refr)
 }
 
-func (usr uniStore) setVisited(urs Url) {
+func (usr uniStore) setVisited(urs URL) {
 	//fmt.Println("**********Setting")
-	usr.visited_urls.Set(urs)
+	usr.visitedUrls.Set(urs)
 	//fmt.Println("**********Delete Test")
-	if usr.unvisit_urls != nil {
+	if usr.unvisitUrls != nil {
 		//fmt.Println("Calling Delete")
-		usr.unvisit_urls.Delete(urs)
+		usr.unvisitUrls.Delete(urs)
 	}
 	//fmt.Println("***********Set Complete")
 }
@@ -100,88 +107,86 @@ func (usr uniStore) setVisited(urs Url) {
 // runChan will run through the inputs you give it
 // and store it into unvisted (unless it already has been visited)
 // Some sophistication needed to make sure it was the correct type of visit
-func (usr uniStore) runChan(input_chan <-chan Url, dbg_name string) *sync.WaitGroup {
+func (usr uniStore) runChan(inputChan <-chan URL, dbgName string) *sync.WaitGroup {
 	//usr.visited_urls.LockTest()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go usr.runChanW(input_chan, dbg_name, &wg)
+	go usr.runChanW(inputChan, dbgName, &wg)
 	return &wg
 }
-func (usr uniStore) retrieveUnvisted(urv string) *Url {
-	if usr.visited_urls.ExistS(urv) {
-		usr.unvisit_urls.DeleteS(urv)
+func (usr uniStore) retrieveUnvisted(urv string) *URL {
+	if usr.visitedUrls.ExistS(urv) {
+		usr.unvisitUrls.DeleteS(urv)
 		return nil
-	} else {
-		// Get the url structure off disk
-		new_url := usr.unvisit_urls.GetUrl(urv)
-		//_ = new_url.Base()
-		return &new_url
 	}
-
+	// Get the url structure off disk
+	newURL := usr.unvisitUrls.GetURL(urv)
+	//_ = new_url.Base()
+	return &newURL
 }
 
 // The worker funciton for runChan
-func (usr uniStore) runChanW(input_chan <-chan Url, dbg_name string, wg *sync.WaitGroup) {
-	for urv := range input_chan {
-		if dbg_name != "" {
-			fmt.Printf("runChan, %s RX:%v\n", dbg_name, urv)
+func (usr uniStore) runChanW(inputChan <-chan URL, dbgName string, wg *sync.WaitGroup) {
+	for urv := range inputChan {
+		if dbgName != "" {
+			fmt.Printf("runChan, %s RX:%v\n", dbgName, urv)
 		}
-		promiscuous, shallow, ok := usr.visited_urls.Properties(urv)
-		new_shallow := urv.GetShallow() || urv.GetPromiscuous()
-		if ok && (!new_shallow || shallow || promiscuous) {
+		promiscuous, shallow, ok := usr.visitedUrls.Properties(urv)
+		newShallow := urv.GetShallow() || urv.GetPromiscuous()
+		if ok && (!newShallow || shallow || promiscuous) {
 			// If we've already visited it then nothing to do
-			if dbg_name != "" {
+			if dbgName != "" {
 				fmt.Printf("We've already visited %s\n", urv)
 			}
 		} else {
 			// If we previously visited this url
 			// but at the time we didn't fully grab it
-			if new_shallow && !shallow {
-				usr.visited_urls.Delete(urv)
+			if newShallow && !shallow {
+				usr.visitedUrls.Delete(urv)
 			}
 			// If we haven't visited it, then add it to the list of places to visit
-			if dbg_name != "" {
+			if dbgName != "" {
 				fmt.Println("Adding as unvisited url:", urv)
 			}
-			usr.unvisit_urls.Set(urv)
+			usr.unvisitUrls.Set(urv)
 		}
-		if dbg_name != "" {
-			fmt.Printf("runChan, %s, has been set\n", dbg_name)
+		if dbgName != "" {
+			fmt.Printf("runChan, %s, has been set\n", dbgName)
 		}
 	}
 	wg.Done()
 }
 func (usr *uniStore) lockTest() {
-	usr.visited_urls.LockTest()
-	usr.unvisit_urls.LockTest()
+	usr.visitedUrls.LockTest()
+	usr.unvisitUrls.LockTest()
 }
 func (usr *uniStore) dumpVisited(filename string) {
-	the_chan := usr.visited_urls.VisitAll(nil)
-	SaveFile(filename, the_chan, nil)
+	theChan := usr.visitedUrls.VisitAll(nil)
+	SaveFile(filename, theChan, nil)
 }
 func (usr *uniStore) dumpUnvisited(filename string) {
-	the_chan := usr.unvisit_urls.VisitAll(nil)
-	SaveFile(filename, the_chan, nil)
+	theChan := usr.unvisitUrls.VisitAll(nil)
+	SaveFile(filename, theChan, nil)
 }
 func (usr *uniStore) clearVisited() {
-	list := make([]Url, 0, 10000)
+	list := make([]URL, 0, 10000)
 	s := Spinner{}
 	cnt := 0
-	length := usr.visited_urls.Count()
+	length := usr.visitedUrls.Count()
 	fmt.Println("Resetting Unvisited", length)
-	for usr.visited_urls.Size() > 0 {
-		cnt_backup := cnt
-		visited_chan := usr.visited_urls.Visit()
-		for v := range visited_chan {
+	for usr.visitedUrls.Size() > 0 {
+		cntBackup := cnt
+		visitedChan := usr.visitedUrls.Visit()
+		for v := range visitedChan {
 			list = append(list, v)
 			s.PrintSpin(cnt)
 			cnt++
 		}
-		cnt = cnt_backup
+		cnt = cntBackup
 		for _, v := range list {
-			usr.visited_urls.Delete(v)
-			usr.unvisit_urls.Set(v)
+			usr.visitedUrls.Delete(v)
+			usr.unvisitUrls.Set(v)
 			s.PrintSpin(cnt)
 			cnt++
 		}

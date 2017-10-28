@@ -8,13 +8,15 @@ import (
 	"time"
 )
 
-type UrlMap struct {
+// URLMap represents the prototype of a map from url string(key)  to the struct
+// Used to track each of visited and unvisited urls
+type URLMap struct {
 	sync.RWMutex
-	disk_lock sync.Mutex
+	diskLock sync.Mutex
 	// something in mp must be on the disk - it is a cache
 	// something in mp_tow is not on the disk
-	mp            map[string]Url // Local Read Cache
-	mp_tow        map[string]Url // Local Write Cache
+	mp            map[string]URL // Local Read Cache
+	mpTow         map[string]URL // Local Write Cache
 	closed        bool
 	dkst          *DkCollection
 	cachewg       *sync.WaitGroup
@@ -22,9 +24,10 @@ type UrlMap struct {
 	UseWriteCache bool
 }
 
-func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
-	itm := new(UrlMap)
-	itm.mp = make(map[string]Url)
+// NewURLMap creates a new map
+func NewURLMap(filename string, overwrite, compact bool) *URLMap {
+	itm := new(URLMap)
+	itm.mp = make(map[string]URL)
 	itm.dkst = NewDkCollection(filename, overwrite)
 	if compact {
 		fmt.Println("Compacting Database:", filename)
@@ -47,8 +50,8 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 
 	// Self read is a debug function
 	// when we suspect problems loading the array
-	self_read := false
-	if self_read {
+	selfRead := false
+	if selfRead {
 		for range itm.dkst.GetAnyKeys() {
 		}
 		fmt.Println("done:", filename)
@@ -56,51 +59,54 @@ func NewUrlMap(filename string, overwrite, compact bool) *UrlMap {
 
 	return itm
 }
-func (um *UrlMap) ageCache() {
+func (um *URLMap) ageCache() {
 	// remove items from  the cache
 	// remove half of them
-	num_to_remove := len(um.mp) >> 1
+	numToRemove := len(um.mp) >> 1
 
 	i := 0
 	for key := range um.mp {
 		delete(um.mp, key)
-		if i >= num_to_remove {
+		if i >= numToRemove {
 			return
-		} else {
-			i++
 		}
+		i++
 	}
 }
-func (um *UrlMap) SetReadCache() {
+
+// SetReadCache activates the read cacheing
+func (um *URLMap) SetReadCache() {
 	um.UseReadCache = true
 	if um.UseReadCache {
 		um.cachewg = new(sync.WaitGroup)
 	}
 }
-func (um *UrlMap) SetWriteCache() {
+
+// SetWriteCache activates the write caching
+func (um *URLMap) SetWriteCache() {
 	um.UseWriteCache = true
-	um.mp_tow = make(map[string]Url)
+	um.mpTow = make(map[string]URL)
 
 }
 
 // We have a local version of things to write
 // Get that on the disk
-func (um *UrlMap) localFlush() {
+func (um *URLMap) localFlush() {
 	if um.UseWriteCache {
-		for _, val := range um.mp_tow {
+		for _, val := range um.mpTow {
 			//fmt.Println("Adding Key:", key)
 			//um.dkst.SetAny(key, "")
-			um.dkst.SetUrl(val)
+			um.dkst.SetURL(val)
 		}
-		um.mp_tow = make(map[string]Url)
+		um.mpTow = make(map[string]URL)
 	}
 }
-func (um *UrlMap) diskFlush() {
+func (um *URLMap) diskFlush() {
 	um.dkst.ds.Flush()
 }
 
 // Flush from local cache to the disk
-func (um *UrlMap) Flush() {
+func (um *URLMap) Flush() {
 	um.Lock()
 	um.localFlush() // Local write cache
 	um.diskFlush()  // The store itself
@@ -109,32 +115,32 @@ func (um *UrlMap) Flush() {
 }
 
 // Sync the disk data to the file system
-func (um *UrlMap) Sync() {
-	um.disk_lock.Lock()
+func (um *URLMap) Sync() {
+	um.diskLock.Lock()
 	um.dkst.ds.Sync()
-	um.disk_lock.Unlock()
+	um.diskLock.Unlock()
 }
 
 // Close the disk off
-func (um *UrlMap) Close() {
+func (um *URLMap) Close() {
 	// Close is a special case that operates on
 	// both the collection and the disk itself
 	// so we need both locks
 	um.Lock()
 	um.localFlush()
-	um.disk_lock.Lock()
+	um.diskLock.Lock()
 	um.diskFlush()
 	um.dkst.ds.Sync()
 	um.dkst.ds.Close()
 	um.closed = true
-	um.disk_lock.Unlock()
+	um.diskLock.Unlock()
 	um.Unlock()
 }
 
 // Occasionally flush and sync
 // keeps memory down?
 // Means that if things crash we don't lose everything
-func (um *UrlMap) flusher() {
+func (um *URLMap) flusher() {
 	for {
 		time.Sleep(100 * time.Second)
 		// we don't bother to get a single lock here for both operations as
@@ -152,27 +158,30 @@ func (um *UrlMap) flusher() {
 	}
 }
 
-func (um *UrlMap) Properties(key_u Url) (promiscuous, shallow, exist bool) {
-	exist = um.Exist(key_u)
+// Properties of the url
+func (um *URLMap) Properties(keyU URL) (promiscuous, shallow, exist bool) {
+	exist = um.Exist(keyU)
 	if exist {
-		key := key_u.Key()
-		tmp_url := um.GetUrl(key)
-		promiscuous = tmp_url.GetPromiscuous()
-		shallow = tmp_url.GetShallow()
+		key := keyU.Key()
+		tmpURL := um.GetURL(key)
+		promiscuous = tmpURL.GetPromiscuous()
+		shallow = tmpURL.GetShallow()
 	}
 	return
 }
 
-func (um *UrlMap) Exist(key_u Url) bool {
+// Exist returns true if the url exists in the map
+func (um *URLMap) Exist(keyU URL) bool {
 	if true {
-		key := key_u.Key()
+		key := keyU.Key()
 		return um.ExistS(key)
-	} else {
-		key_ba := key_u.ToBa()
-		return um.ExistS(string(key_ba))
 	}
+	keyBa := keyU.ToBa()
+	return um.ExistS(string(keyBa))
 }
-func (um *UrlMap) ExistS(key string) bool {
+
+// ExistS as Exist but give it a string
+func (um *URLMap) ExistS(key string) bool {
 	//fmt.Println("Exist lock for:", key)
 	um.RLock()
 	var ok bool
@@ -182,7 +191,7 @@ func (um *UrlMap) ExistS(key string) bool {
 	}
 
 	if um.UseWriteCache && !ok {
-		_, ok = um.mp_tow[key]
+		_, ok = um.mpTow[key]
 	}
 	var dkOk bool
 	if !ok {
@@ -196,7 +205,7 @@ func (um *UrlMap) ExistS(key string) bool {
 		go func() {
 			// add it to the cache
 			um.Lock()
-			um.mp[key] = um.GetUrlDisk(key)
+			um.mp[key] = um.getURLDisk(key)
 			um.Unlock()
 			um.cachewg.Done()
 		}()
@@ -206,14 +215,18 @@ func (um *UrlMap) ExistS(key string) bool {
 	//fmt.Println("Exist Returned for:", key)
 	return ok
 }
-func (um *UrlMap) GetUrlDisk(key string) Url {
-	itm := um.dkst.GetUrl(key)
+
+// getURLDisk explicitly gets it from the disk
+func (um *URLMap) getURLDisk(key string) URL {
+	itm := um.dkst.GetURL(key)
 	//itm.Initialise()
 	return itm
 }
-func (um *UrlMap) GetUrl(key string) Url {
+
+// GetURL from wherever it lies
+func (um *URLMap) GetURL(key string) URL {
 	if true {
-		var itm Url
+		var itm URL
 		var ok bool
 		um.RLock()
 		defer um.RUnlock()
@@ -225,39 +238,37 @@ func (um *UrlMap) GetUrl(key string) Url {
 			}
 		}
 		if um.UseWriteCache && !ok {
-			itm, ok = um.mp_tow[key]
+			itm, ok = um.mpTow[key]
 			if ok {
 				//um.RUnlock()
 				return itm
 			}
 		}
 		//um.RUnlock()
-		itm = um.GetUrlDisk(key)
+		itm = um.getURLDisk(key)
 		return itm
 
-	} else {
-		// Not looking up, just return a new one
-		tmp := NewUrl(key)
-		tmp.Base()
-		return tmp
 	}
+	// Not looking up, just return a new one
+	tmp := NewURL(key)
+	tmp.Base()
+	return tmp
+
 }
 
-//func (um *UrlMap) Set(key_u Url) {
-//	um.SetBa(key_u.ToBa())
-//}
-func (um *UrlMap) Set(key_u Url) {
-	key_ba := key_u.ToBa()
-	key_string := string(key_ba)
+// Set the url as one of interest
+func (um *URLMap) Set(keyU URL) {
+	keyBa := keyU.ToBa()
+	keyString := string(keyBa)
 	//fmt.Println("Get lock for:", key)
 	um.Lock()
 	//fmt.Println("Got Lock")
 	if um.UseWriteCache {
-		um.mp_tow[key_string] = key_u
+		um.mpTow[keyString] = keyU
 	} else {
 		//um.dkst.SetAny(key_ba, "")
 		//fmt.Println("Storing URL:", key_u)
-		um.dkst.SetUrl(key_u)
+		um.dkst.SetURL(keyU)
 	}
 	um.Unlock()
 	//fmt.Println("Lock Returned for:", key)
@@ -267,11 +278,11 @@ func (um *UrlMap) Set(key_u Url) {
 // Allows you to check if something is in the
 // map by visiting every one manually
 // rather than doing an actual lookup.
-func (um *UrlMap) Check(key Url) bool {
+func (um *URLMap) Check(key URL) bool {
 	// Be 100% sure things work as we expect!
-	src_chan := um.VisitAll(nil)
+	srcChan := um.VisitAll(nil)
 	found := false
-	for v := range src_chan {
+	for v := range srcChan {
 		if v == key {
 			found = true
 		}
@@ -281,7 +292,7 @@ func (um *UrlMap) Check(key Url) bool {
 
 // Count is what you should be using to get an
 // accurate count of the number of items
-func (um *UrlMap) Count() int {
+func (um *URLMap) Count() int {
 	um.RLock()
 	defer um.RUnlock()
 	if um.closed {
@@ -289,7 +300,7 @@ func (um *UrlMap) Count() int {
 	}
 	size := um.dkst.Count()
 	if um.UseWriteCache {
-		size += len(um.mp_tow)
+		size += len(um.mpTow)
 	}
 	return size
 }
@@ -297,7 +308,7 @@ func (um *UrlMap) Count() int {
 // Size provides a backwards compatable interface.
 // For performancs it returns 1 if Count()>0
 // This saves trawling the whole tree
-func (um *UrlMap) Size() int {
+func (um *URLMap) Size() int {
 	um.RLock()
 	defer um.RUnlock()
 	if um.closed {
@@ -305,17 +316,17 @@ func (um *UrlMap) Size() int {
 	}
 	size := um.dkst.Size()
 	if um.UseWriteCache {
-		size += len(um.mp_tow)
+		size += len(um.mpTow)
 	}
 	return size
 }
 
-// Return a channel that we can read the (current) list of Urls From
+// VisitAll will return a channel that we can read the (current) list of Urls From
 // This will lock any updates to the database until we have read them all
 // If this is a problem use Visit() which reads a limited number into
 // a buffer first
-func (um *UrlMap) VisitAll(closeChan chan struct{}) chan Url {
-	ret_chan := make(chan Url)
+func (um *URLMap) VisitAll(closeChan chan struct{}) chan URL {
+	retChan := make(chan URL)
 	//fmt.Println("Called Visit")
 
 	go func() {
@@ -337,27 +348,25 @@ func (um *UrlMap) VisitAll(closeChan chan struct{}) chan Url {
 					log.Fatal("Odd! Data on channel closer is not expected")
 				}
 			case ba, ok := <-tmpChan:
-				//fmt.Println("Visit Url:", v)
+				//fmt.Println("Visit URL:", v)
 				if ok {
-					ret_chan <- um.dkst.UrlFromBa(ba)
+					retChan <- um.dkst.URLFromBa(ba)
 				} else {
 					//fmt.Println("Run out of urls to visit")
 					finished = true
 				}
 			}
 		}
-
 		um.RUnlock()
-
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 }
 
 // Visit (some of) the Urls
 // Return a channel to read them from
-func (um *UrlMap) Visit() chan Url {
-	ret_chan := make(chan Url)
+func (um *URLMap) Visit() chan URL {
+	retChan := make(chan URL)
 	//fmt.Println("Called Visit")
 
 	go func() {
@@ -369,22 +378,23 @@ func (um *UrlMap) Visit() chan Url {
 		//fmt.Println("Got Lock")
 		if um.closed {
 			um.RUnlock()
-			close(ret_chan)
+			close(retChan)
 			return
-		} else {
-			string_array := um.dkst.GetAnyKeysArray(100)
-			um.RUnlock()
-			for _, ba := range string_array {
-				ret_chan <- um.dkst.UrlFromBa(ba)
-			}
+		}
+		stringArray := um.dkst.GetAnyKeysArray(100)
+		um.RUnlock()
+		for _, ba := range stringArray {
+			retChan <- um.dkst.URLFromBa(ba)
 		}
 		//fmt.Println("Closing Visit Chan")
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 }
-func (um *UrlMap) VisitFrom(startUrl Url) chan Url {
-	ret_chan := make(chan Url)
+
+// VisitFrom start a visit but from a specified start location
+func (um *URLMap) VisitFrom(startURL URL) chan URL {
+	retChan := make(chan URL)
 	//fmt.Println("Called Visit")
 
 	go func() {
@@ -396,33 +406,34 @@ func (um *UrlMap) VisitFrom(startUrl Url) chan Url {
 		//fmt.Println("Got Lock")
 		if um.closed {
 			um.RUnlock()
-			close(ret_chan)
+			close(retChan)
 			return
-		} else {
-			string_array := um.dkst.GetAnyKeysArrayFrom(100, startUrl.ToBa())
-			um.RUnlock()
-			for _, ba := range string_array {
-				ret_chan <- um.dkst.UrlFromBa(ba)
-			}
+		}
+		stringArray := um.dkst.GetAnyKeysArrayFrom(100, startURL.ToBa())
+		um.RUnlock()
+		for _, ba := range stringArray {
+			retChan <- um.dkst.URLFromBa(ba)
 		}
 		//fmt.Println("Closing Visit Chan")
-		close(ret_chan)
+		close(retChan)
 	}()
-	return ret_chan
+	return retChan
 }
-func (um *UrlMap) FlushWrites() {
+
+// flushWrites as it says
+func (um *URLMap) flushWrites() {
 	um.Lock()
 	um.localFlush() // Ensure the write cache is up to date
 	um.Unlock()
-	//um.cachewg.Wait() // Ensure the read cache is up to date
+	//um.cachewg.wait() // Ensure the read cache is up to date
 }
 
-// Similar to Visit() but we supply the map of references
+// VisitMissing is similar to Visit() but we supply the map of references
 // This attempts to search through the database
 // finding a good selection of URLs
-func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
-	ret_map := make(map[string]struct{})
-	um.FlushWrites() // Flush writes will happen later with go um.Flush()
+func (um *URLMap) VisitMissing(refr *TokenChan) map[string]struct{} {
+	retMap := make(map[string]struct{})
+	um.flushWrites() // Flush writes will happen later with go um.Flush()
 
 	um.RLock()
 	if um.closed {
@@ -430,29 +441,33 @@ func (um *UrlMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	} else {
 		//fmt.Println("Getting 10000 items")
 		// Get up to 100 things that aren't on the TokenChan
-		ret_map_url := um.dkst.GetMissing(10000, refr)
+		retMapURL := um.dkst.GetMissing(10000, refr)
 		//fmt.Println("Got 1000 items")
 		um.RUnlock()
 		s := Spinner{scaler: 100}
 		cnt := 0
-		for key, value := range ret_map_url {
+		for key, value := range retMapURL {
 			if false {
 				cnt++
 				s.PrintSpin(cnt)
 			}
-			ret_map[key] = value
+			retMap[key] = value
 		}
 		// We've done reading, so write out the cache
 		// while the disk is not busy
 		go um.Flush()
 	}
-	return ret_map
+	return retMap
 }
-func (um *UrlMap) Delete(key_u Url) {
-	key := key_u.Key()
+
+// Delete the specified item from the map
+func (um *URLMap) Delete(keyU URL) {
+	key := keyU.Key()
 	um.DeleteS(key)
 }
-func (um *UrlMap) DeleteS(key string) {
+
+// DeleteS as delete, but specify as a string
+func (um *URLMap) DeleteS(key string) {
 	if um.UseReadCache {
 		um.cachewg.Wait()
 	}
@@ -460,9 +475,9 @@ func (um *UrlMap) DeleteS(key string) {
 	if !um.closed {
 		var ok bool
 		if um.UseWriteCache {
-			_, ok = um.mp_tow[key]
+			_, ok = um.mpTow[key]
 			if ok {
-				delete(um.mp_tow, key)
+				delete(um.mpTow, key)
 			}
 		}
 		if um.UseReadCache {
@@ -478,7 +493,8 @@ func (um *UrlMap) DeleteS(key string) {
 	um.Unlock()
 }
 
-func (um *UrlMap) PrintWorkload() {
+// PrintWorkload usage statistics
+func (um *URLMap) PrintWorkload() {
 	um.Lock()
 	um.localFlush()
 	um.Unlock()
@@ -486,7 +502,9 @@ func (um *UrlMap) PrintWorkload() {
 	um.dkst.PrintWorkload()
 	um.RUnlock()
 }
-func (um *UrlMap) LockTest() {
+
+// LockTest tests that we can lock and unlock correctly
+func (um *URLMap) LockTest() {
 	um.RLock()
 	um.RUnlock()
 }

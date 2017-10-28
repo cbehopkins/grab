@@ -13,8 +13,10 @@ import (
 )
 
 const (
+	// FetchTimeout - set timeout for fetchs
 	FetchTimeout = 30 * time.Minute
-	GrabTimeout  = 5 * time.Second
+	// GrabTimeout - Set timeut for grabs
+	GrabTimeout = 5 * time.Second
 )
 
 // Test the jpeg for validity
@@ -30,46 +32,47 @@ func exists(path string) (bool, error) {
 	return true, err
 }
 
+// Block of constants around file permissions
 const (
-	OS_READ        = 04
-	OS_WRITE       = 02
-	OS_EX          = 01
-	OS_USER_SHIFT  = 6
-	OS_GROUP_SHIFT = 3
-	OS_OTH_SHIFT   = 0
+	OsRead       = 04
+	OsWrite      = 02
+	OsEx         = 01
+	OsUserShift  = 6
+	OsGroupShift = 3
+	OsOthShift   = 0
 
-	OS_USER_R   = OS_READ << OS_USER_SHIFT
-	OS_USER_W   = OS_WRITE << OS_USER_SHIFT
-	OS_USER_X   = OS_EX << OS_USER_SHIFT
-	OS_USER_RW  = OS_USER_R | OS_USER_W
-	OS_USER_RWX = OS_USER_RW | OS_USER_X
+	OsUserR   = OsRead << OsUserShift
+	OsUserW   = OsWrite << OsUserShift
+	OsUserX   = OsEx << OsUserShift
+	OsUserRW  = OsUserR | OsUserW
+	OsUserRWX = OsUserRW | OsUserX
 
-	OS_GROUP_R   = OS_READ << OS_GROUP_SHIFT
-	OS_GROUP_W   = OS_WRITE << OS_GROUP_SHIFT
-	OS_GROUP_X   = OS_EX << OS_GROUP_SHIFT
-	OS_GROUP_RW  = OS_GROUP_R | OS_GROUP_W
-	OS_GROUP_RWX = OS_GROUP_RW | OS_GROUP_X
+	OsGroupR   = OsRead << OsGroupShift
+	OsGroupW   = OsWrite << OsGroupShift
+	OsGroupX   = OsEx << OsGroupShift
+	OsGroupRW  = OsGroupR | OsGroupW
+	OsGroupRWX = OsGroupRW | OsGroupX
 
-	OS_OTH_R   = OS_READ << OS_OTH_SHIFT
-	OS_OTH_W   = OS_WRITE << OS_OTH_SHIFT
-	OS_OTH_X   = OS_EX << OS_OTH_SHIFT
-	OS_OTH_RW  = OS_OTH_R | OS_OTH_W
-	OS_OTH_RWX = OS_OTH_RW | OS_OTH_X
+	OsOthR   = OsRead << OsOthShift
+	OsOthW   = OsWrite << OsOthShift
+	OsOthX   = OsEx << OsOthShift
+	OsOthRW  = OsOthR | OsOthW
+	OsOthRWX = OsOthRW | OsOthX
 
-	OS_ALL_R   = OS_USER_R | OS_GROUP_R | OS_OTH_R
-	OS_ALL_W   = OS_USER_W | OS_GROUP_W | OS_OTH_W
-	OS_ALL_X   = OS_USER_X | OS_GROUP_X | OS_OTH_X
-	OS_ALL_RW  = OS_ALL_R | OS_ALL_W
-	OS_ALL_RWX = OS_ALL_RW | OS_GROUP_X
+	OsAllR   = OsUserR | OsGroupR | OsOthR
+	OsAllW   = OsUserW | OsGroupW | OsOthW
+	OsAllX   = OsUserX | OsGroupX | OsOthX
+	OsAllRW  = OsAllR | OsAllW
+	OsAllRWX = OsAllRW | OsGroupX
 )
 
-func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
+func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	// Create any directories needed to put this file in them
-	var dir_file_mode os.FileMode
-	dir_file_mode = os.ModeDir | (OS_USER_RWX | OS_ALL_R)
-	os.MkdirAll(dir_str, dir_file_mode)
+	var dirFileMode os.FileMode
+	dirFileMode = os.ModeDir | (OsUserRWX | OsAllR)
+	os.MkdirAll(dirStr, dirFileMode)
 
-	out, err := os.Create(potential_file_name)
+	out, err := os.Create(potentialFileName)
 	if err != nil {
 		var pe = err.(*os.PathError)        // let it panic or use the ,ok trick as below
 		var en, ok = pe.Err.(syscall.Errno) // not a Go 1 Compat guarantee, so handle failed type assertion
@@ -96,7 +99,7 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 
 	defer out.Close()
 
-	if fetch_url.Url() == "" {
+	if fetchURL.URL() == "" {
 		//fmt.Println("null fetch")
 		return
 	}
@@ -104,16 +107,16 @@ func fetch_file(potential_file_name string, dir_str string, fetch_url Url) {
 	client := http.Client{
 		Timeout: timeout,
 	}
-	resp, err := client.Get(fetch_url.Url())
+	resp, err := client.Get(fetchURL.URL())
 	if err != nil {
 		return
 	}
-	_ = DecodeHttpError(err)
+	_ = DecodeHTTPError(err)
 	defer resp.Body.Close()
 	_, _ = io.Copy(out, resp.Body)
 	//check(err)
 }
-func check_jpg(filename string) bool {
+func checkJpg(filename string) bool {
 	out, err := os.Open(filename)
 	check(err)
 	defer out.Close()

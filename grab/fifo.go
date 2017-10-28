@@ -5,66 +5,81 @@ import (
 	"log"
 )
 
+// FifoProto - is the prototype for a fifo
+// contains the structures that allow us to operate on an array
+// of generic tyoe
+// by out standard interface to that tyupe
 type FifoProto struct {
 	rp  int
 	wp  int
 	cap int
 }
 
-func (fp *FifoProto) SetCap(ini_cap int) {
-	fp.cap = ini_cap
-}
-
+// FifoInt Is the interface a type needs to implement
+// to support a fifo
 type FifoInt interface {
 	// In order to function as a fifoable structure
 	// an origionating data type must implement the following methods
-	DataResize(a, b, c, d, new_capacity int)
+	DataResize(a, b, c, d, newCapacity int)
+}
+
+// SetCap - Set the capacity of the fifo
+func (fp *FifoProto) SetCap(iniCap int) {
+	fp.cap = iniCap
 }
 
 func (fp FifoProto) String() string {
 	return fmt.Sprintf("Rd=%d,Wp=%d\n", fp.rp, fp.wp)
 }
-func (fp FifoProto) fifo_items() int {
+func (fp FifoProto) fifoItems() int {
 	// The number of items in the fifo
-	q_cap := fp.cap
-	rd_norm := fp.rp % q_cap
-	wr_norm := fp.wp % q_cap
+	qCap := fp.cap
+	rdNorm := fp.rp % qCap
+	wrNorm := fp.wp % qCap
 
 	if fp.rp == fp.wp {
 		return 0
-	} else if fp.rp%q_cap == fp.wp%q_cap {
-		return q_cap
-	} else if rd_norm < wr_norm {
+	} else if fp.rp%qCap == fp.wp%qCap {
+		return qCap
+	} else if rdNorm < wrNorm {
 		// Easy case, the write pointer is larer
-		return wr_norm - rd_norm
-	} else if wr_norm < rd_norm {
-		return q_cap - rd_norm + wr_norm
+		return wrNorm - rdNorm
+	} else if wrNorm < rdNorm {
+		return qCap - rdNorm + wrNorm
 	}
 	return 0
 }
+
+// DataItems Return the count of the number of items in the fifo
 func (fp FifoProto) DataItems() int {
-	return fp.fifo_items()
+	return fp.fifoItems()
 }
+
+// DataValid returns true if there is valid data in the fifo
 func (fp FifoProto) DataValid() bool {
 	// Canonically this is the point of the function
 	//return (fp.fifo_items() >0)
-	return (fp.rp != fp.wp)
+	return fp.rp != fp.wp
 }
 
-func (fp FifoProto) fifo_free() int {
+func (fp FifoProto) fifoFree() int {
 	// Simply the capacity of the data store - the number of items in it
-	return fp.cap - fp.fifo_items()
+	return fp.cap - fp.fifoItems()
 }
 
+// AddHead Add an item to the fifo
+// Note this only operates on the pointers
+// Returns the location one should use in the array
+// and a new proto structure
 func (fp FifoProto) AddHead(inter FifoInt) (int, FifoProto) {
 	// add an item into the main store
 	location := fp.wp % fp.cap
-	if fp.fifo_free() > 0 {
+	if fp.fifoFree() > 0 {
 		fp.wp++
 		if fp.wp >= (fp.cap << 1) {
 			fp.wp = 0
 		}
-	} else if fp.fifo_items() < 0 {
+	} else if fp.fifoItems() < 0 {
 		log.Fatal("Error negative queue size")
 	} else {
 		fp = fp.GrowStore(inter)
@@ -74,10 +89,14 @@ func (fp FifoProto) AddHead(inter FifoInt) (int, FifoProto) {
 	}
 	return location, fp
 }
+
+// GetTail returns the tail of the current fifo
 func (fp FifoProto) GetTail() (int, bool) {
-	q_cap := fp.cap
-	return fp.rp % q_cap, fp.rp != fp.wp
+	qCap := fp.cap
+	return fp.rp % qCap, fp.rp != fp.wp
 }
+
+// AdvanceTail moves the tail on by one
 func (fp FifoProto) AdvanceTail(inter FifoInt) FifoProto {
 	fp.rp++
 	// TBD put check in here to look for it the queue is underutilized
@@ -89,6 +108,8 @@ func (fp FifoProto) AdvanceTail(inter FifoInt) FifoProto {
 	return fp
 }
 
+// GrowStore Grows the store specified
+// Returns a new proto for that store
 func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 	debug := false
 	// Now we have it copy the new data into it
@@ -98,13 +119,13 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 	if fp.rp == fp.wp {
 		log.Fatal("Stupid sod you're telling me to grow an empty queue")
 	}
-	q_cap := fp.cap
-	rd_norm := fp.rp % q_cap
-	wr_norm := fp.wp % q_cap
-	if rd_norm != wr_norm {
+	qCap := fp.cap
+	rdNorm := fp.rp % qCap
+	wrNorm := fp.wp % qCap
+	if rdNorm != wrNorm {
 		log.Fatal("You are running grow with a none full queue")
 	} else if fp.rp > fp.wp {
-		if fp.rp > q_cap {
+		if fp.rp > qCap {
 			// There is valid data from the read pointer
 			// to the end of the buffer
 			// then from the start of the buffer to the write pointer
@@ -113,7 +134,7 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Rp>Wp")
 			}
-			inter.DataResize(rd_norm, q_cap, 0, wr_norm, q_cap<<1)
+			inter.DataResize(rdNorm, qCap, 0, wrNorm, qCap<<1)
 		} else {
 			// Data starts at read pointer and goes on until the write pointer
 			// How is this possible?
@@ -121,12 +142,12 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Rp>Wp, Weird case")
 
-				log.Printf("Cap=%d\nWP=%d,RP=%d\nnWP=%d,nRP=%d\n", q_cap, fp.wp, fp.rp, wr_norm, rd_norm)
+				log.Printf("Cap=%d\nWP=%d,RP=%d\nnWP=%d,nRP=%d\n", qCap, fp.wp, fp.rp, wrNorm, rdNorm)
 			}
-			inter.DataResize(rd_norm, wr_norm, 0, 0, q_cap<<1)
+			inter.DataResize(rdNorm, wrNorm, 0, 0, qCap<<1)
 		}
 	} else /*write pointer is larger*/ {
-		if fp.wp >= q_cap {
+		if fp.wp >= qCap {
 			// There is data that starts at the read pointer and goes to the end of the buffer
 			// then data that start at the buffer and goes to the write pointer
 			// i.e. we wrote in some data that wrapped over into the upper region
@@ -136,7 +157,7 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Complex Wp>Rp")
 			}
-			inter.DataResize(rd_norm, q_cap, 0, wr_norm, q_cap<<1)
+			inter.DataResize(rdNorm, qCap, 0, wrNorm, qCap<<1)
 		} else {
 			// there is data that starts at the read pointer and goes on until the write pointer
 			// i.e. we wrote some data in (and didn't wrap) and read some of that
@@ -144,11 +165,11 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 			if debug {
 				log.Println("Simple Wp>Rp,")
 			}
-			inter.DataResize(rd_norm, wr_norm, 0, 0, q_cap<<1)
+			inter.DataResize(rdNorm, wrNorm, 0, 0, qCap<<1)
 		}
 	}
 	fp.rp = 0
-	fp.wp = q_cap
-	fp.cap = q_cap << 1
+	fp.wp = qCap
+	fp.cap = qCap << 1
 	return fp
 }

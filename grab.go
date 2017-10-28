@@ -19,39 +19,39 @@ func check(err error) {
 		panic(err)
 	}
 }
-func ProgressBars(r *grab.Runner, multi_fetch *grab.MultiFetch) *pb.Pool {
+func progressBars(r *grab.Runner, multiFetch *grab.MultiFetch) *pb.Pool {
 	// First keep track of max of things
-	max_fc := multi_fetch.Count()
+	maxFc := multiFetch.Count()
 
 	// Create instances of the progress bars
-	fet_bar := pb.New(multi_fetch.Count())
-	url_bar := pb.New(r.VisitCount())
+	fetBar := pb.New(multiFetch.Count())
+	urlBar := pb.New(r.VisitCount())
 
 	// Name them
-	fet_bar.Prefix("Images to Fetch:")
-	url_bar.Prefix("Visited URLs :")
-	fet_bar.Total = int64(max_fc)
-	url_bar.Total = int64(r.UnvisitCount() + r.UnvisitCount())
+	fetBar.Prefix("Images to Fetch:")
+	urlBar.Prefix("Visited URLs :")
+	fetBar.Total = int64(maxFc)
+	urlBar.Total = int64(r.UnvisitCount() + r.UnvisitCount())
 	// and start them
-	pool, err := pb.StartPool(fet_bar, url_bar)
+	pool, err := pb.StartPool(fetBar, urlBar)
 	if err != nil {
 		panic(err)
 	}
 	// Start a routine that will occasionally update them
 	go func() {
-		fet_bar.Total = int64(multi_fetch.TotCnt())
+		fetBar.Total = int64(multiFetch.TotCnt())
 		for {
 			time.Sleep(10 * time.Second)
 
 			// TBD If equal then zero both
-			if multi_fetch.TotCnt() > max_fc {
-				max_fc = multi_fetch.TotCnt()
-				fet_bar.Total = int64(max_fc)
+			if multiFetch.TotCnt() > maxFc {
+				maxFc = multiFetch.TotCnt()
+				fetBar.Total = int64(maxFc)
 			}
-			fet_bar.Set(max_fc - multi_fetch.Count())
+			fetBar.Set(maxFc - multiFetch.Count())
 			vc := r.VisitCount()
-			url_bar.Total = int64(r.UnvisitCount() + vc)
-			url_bar.Set(vc)
+			urlBar.Total = int64(r.UnvisitCount() + vc)
+			urlBar.Set(vc)
 		}
 	}()
 	return pool
@@ -59,44 +59,44 @@ func ProgressBars(r *grab.Runner, multi_fetch *grab.MultiFetch) *pb.Pool {
 
 func shutdown(
 	pool *pb.Pool, // The Progress Bars
-	shutdown_in_progress *sync.Mutex,
-	multi_fetch *grab.MultiFetch,
+	shutdownInProgress *sync.Mutex,
+	multiFetch *grab.MultiFetch,
 	runr *grab.Runner) {
 
 	// Flag to get out debug
-	debug_shutdown := true
-	if debug_shutdown {
+	debugShutdown := true
+	if debugShutdown {
 		fmt.Println("Shutdown process started")
 	}
 
 	if pool != nil {
-		if debug_shutdown {
+		if debugShutdown {
 			fmt.Println("Stop Progress Bar")
 		}
 		pool.Stop()
 	}
-	if debug_shutdown {
+	if debugShutdown {
 		fmt.Println("Flush and Close")
 	}
 
-	if debug_shutdown {
+	if debugShutdown {
 		fmt.Println("Shutting down Grab Function")
 	}
 	runr.Shutdown()
-	if debug_shutdown {
+	if debugShutdown {
 		fmt.Println("Shutdown the Fetch Function")
 	}
-	multi_fetch.Shutdown()
+	multiFetch.Shutdown()
 
 	// Wait for hamster to complete
 	fmt.Println("Fetch Complete")
 
-	shutdown_in_progress.Unlock()
+	shutdownInProgress.Unlock()
 	fmt.Println("Shutdown Complete")
 }
-func mem_profile(mem_prf_fn string) {
-	if mem_prf_fn != "" {
-		f, err := os.Create(mem_prf_fn)
+func memProfile(memPrfFn string) {
+	if memPrfFn != "" {
+		f, err := os.Create(memPrfFn)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -118,58 +118,58 @@ func main() {
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
-  var linflg = flag.Bool("lin", false, "Linear Grab mode - sequentially progress through unvisited")
+	var linflg = flag.Bool("lin", false, "Linear Grab mode - sequentially progress through unvisited")
 	var autopaceflg = flag.Int("apace", 0, "Automatically Pace the download")
-	var rundurationflg = flag.Duration("dur", (2 * time.Hour), "Specify Run Duration")
+	var rundurationflg = flag.Duration("dur", 2*time.Hour, "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
 	var dumpunvisitflg = flag.String("dumpu", "", "Write Unvisited URLs to file")
 	var vdflg = flag.String("vd", os.TempDir(), "Visited Directory")
-	var num_p_fetch int
-	flag.IntVar(&num_p_fetch, "numpar", 4, "Number of parallel fetches per domain")
+	var numPFetch int
+	flag.IntVar(&numPFetch, "numpar", 4, "Number of parallel fetches per domain")
 	flag.Parse()
-	show_progress_bar := !*dbgflg
+	showProgressBar := !*dbgflg
 	//show_progress_bar := false
 	signalChan := make(chan os.Signal, 1)
 
 	download := !*nodownflg
-	multiple_fetchers := *mulflg && download
+	multipleFetchers := *mulflg && download
 	promiscuous := *prflg
 	if promiscuous {
 		fmt.Printf("*\n*\n*\n*\n*\n*\nPromiscuous mode activated\n*\n*\n*\n*\n*\n*\n\n")
 		//time.Sleep(5 * time.Second)
 	}
 	//shallow := !promiscuous
-	all_interesting := *intrflg
+	allInteresting := *intrflg
 	debug := *dbgflg
 
-	url_fn := "in_urls.txt"
-	fetch_fn := "gob_fetch.txt"
-	bad_url_fn := "bad_urls.txt"
+	urlFn := "in_urls.txt"
+	fetchFn := "gob_fetch.txt"
+	badURLFn := "bad_urls.txt"
 
 	// A fetch channel that goes away and writes intersting things to disk
-	multi_fetch := grab.NewMultiFetch(multiple_fetchers)
+	multiFetch := grab.NewMultiFetch(multipleFetchers)
 
 	if download {
-		multi_fetch.SetDownload()
+		multiFetch.SetDownload()
 	}
 	if *testjpgflg {
-		multi_fetch.SetTestJpg(2)
+		multiFetch.SetTestJpg(2)
 	}
-	chan_fetch_push := multi_fetch.InChan
+	chanFetchPush := multiFetch.InChan
 
-	runr := grab.NewRunner(chan_fetch_push,
-		bad_url_fn, *vdflg,
+	runr := grab.NewRunner(chanFetchPush,
+		badURLFn, *vdflg,
 		*compactflg,
 		promiscuous,
-		all_interesting,
+		allInteresting,
 		debug, // Print Urls
 		*politeflg,
 	)
-  if *linflg {
-  runr.SetLinear()
-  }
+	if *linflg {
+		runr.SetLinear()
+	}
 	// We expect to be able to write to the fetch channel, so start the worker
-	multi_fetch.Worker(runr)
+	multiFetch.Worker(runr)
 	// If we have asked to dump the filenames to files
 	runr.Dump(*dumpunvisitflg, *dumpvisitedflg)
 
@@ -182,11 +182,11 @@ func main() {
 		fmt.Println("Finsihed Resetting Unvisited")
 	}
 	fmt.Println("Seeding URLs")
-	wgrc := runr.SeedWg(url_fn, promiscuous)
+	wgrc := runr.SeedWg(urlFn, promiscuous)
 	wgrc.Wait()
 
 	fmt.Println("Seed Phase complete")
-	multi_fetch.SetFileName(fetch_fn)
+	multiFetch.SetFileName(fetchFn)
 
 	// Now we're up and running
 	// Start the profiler
@@ -207,44 +207,44 @@ func main() {
 		fmt.Println("Rapid Grab")
 	}
 	runr.GrabRunner(
-		num_p_fetch,
+		numPFetch,
 	)
 
 	var pool *pb.Pool
-	if show_progress_bar {
+	if showProgressBar {
 		// Show a progress bar
-		pool = ProgressBars(runr, multi_fetch)
+		pool = progressBars(runr, multiFetch)
 		defer pool.Stop()
 	}
 
-	var shutdown_in_progress sync.Mutex
-	var shutdown_run bool
+	var shutdownInProgress sync.Mutex
+	var shutdownRun bool
 
 	if rundurationflg != nil {
 		go func() {
 			// Run the main thing for no more than 100 Seconds/Minutes
 			time.Sleep(*rundurationflg)
 			fmt.Println("\n\nRuntime Exceeded\n\n")
-			shutdown_in_progress.Lock()
-			shutdown_run = true
-			mem_profile(*memprofile)
+			shutdownInProgress.Lock()
+			shutdownRun = true
+			memProfile(*memprofile)
 			fmt.Println("Calling Shutdown")
-			shutdown(pool, &shutdown_in_progress, multi_fetch, runr)
+			shutdown(pool, &shutdownInProgress, multiFetch, runr)
 		}()
 	}
 
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
-		cc_cnt := 0
-		for _ = range signalChan {
-			cc_cnt++
-			if cc_cnt == 1 {
-				shutdown_in_progress.Lock()
+		ccCnt := 0
+		for range signalChan {
+			ccCnt++
+			if ccCnt == 1 {
+				shutdownInProgress.Lock()
 				go func() {
 					fmt.Println("Ctrl-C Detected")
-					shutdown_run = true
-					mem_profile(*memprofile)
-					shutdown(pool, &shutdown_in_progress, multi_fetch, runr)
+					shutdownRun = true
+					memProfile(*memprofile)
+					shutdown(pool, &shutdownInProgress, multiFetch, runr)
 				}()
 			} else {
 				os.Exit(1)
@@ -252,7 +252,7 @@ func main() {
 		}
 	}()
 	if *autopaceflg != 0 {
-		go runr.AutoPace(multi_fetch, *autopaceflg)
+		go runr.AutoPace(multiFetch, *autopaceflg)
 	}
 	//if *dbgflg {
 	fmt.Println("Waiting for runner to complete")
@@ -261,20 +261,20 @@ func main() {
 	if *dbgflg {
 		fmt.Println("Runner complete. Waiting for fetch to complete")
 	}
-	multi_fetch.Close()
-	multi_fetch.Wait()
+	multiFetch.Close()
+	multiFetch.Wait()
 	//if *dbgflg {
 	fmt.Println("Fetch complete. Waiting for shutdown lock")
 	//}
 
-	shutdown_in_progress.Lock()
+	shutdownInProgress.Lock()
 	//if *dbgflg {
 	fmt.Println("Got shutdown lock. Adios!")
 	//}
-	if !shutdown_run {
-		mem_profile(*memprofile)
-		shutdown(pool, &shutdown_in_progress, multi_fetch, runr)
+	if !shutdownRun {
+		memProfile(*memprofile)
+		shutdown(pool, &shutdownInProgress, multiFetch, runr)
 	} else {
-		shutdown_in_progress.Unlock()
+		shutdownInProgress.Unlock()
 	}
 }

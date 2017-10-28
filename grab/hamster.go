@@ -14,17 +14,20 @@ import (
 )
 
 const (
+	// UseParallelGrab says that we want many grabbers if possible
+	// if possible defined by unique domains
 	UseParallelGrab = true
 )
 
-// A hamster is our struture for the the things that grabs and prepares things for storing
+// Hamster is our struture for the the things that grabs and prepares things for storing
+// picture a little hamster going exploring and stuffing interesting things into its cheeks for later processing
 type Hamster struct {
 	// Output counter interface
 	oc *OutCounter
 	// The Domains we are allowed to visit
 	dv DomVisitI
 	// Channel we should send Further Urls to grab to
-	fetch_chan chan<- Url
+	fetchChan chan<- URL
 
 	re  *regexp.Regexp
 	re1 *regexp.Regexp
@@ -37,18 +40,19 @@ type Hamster struct {
 	shallow bool
 	// All Urls we find are interesting
 	// vs they need to be from an allowed domain
-	all_interesting bool
+	allInteresting bool
 	// Debug
-	print_urls  bool
+	printUrls   bool
 	robotsCache *RobotCache
 }
 
-func NewHamster(promiscuous, all_interesting, print_urls, polite bool) *Hamster {
+// NewHamster returns a new hamster
+func NewHamster(promiscuous, allInteresting, printUrls, polite bool) *Hamster {
 	itm := new(Hamster)
 	itm.promiscuous = promiscuous
 
-	itm.all_interesting = all_interesting
-	itm.print_urls = print_urls
+	itm.allInteresting = allInteresting
+	itm.printUrls = printUrls
 	itm.re = regexp.MustCompile("'http.*'")
 	// For our purposes, anything after the ? is an annoyance
 	itm.re1 = regexp.MustCompile("'?(.*)\\?")
@@ -57,44 +61,54 @@ func NewHamster(promiscuous, all_interesting, print_urls, polite bool) *Hamster 
 	}
 	return itm
 }
+
+// Polite says this should be a polite hamster
+// i.e. respect robots.txt
 func (hm *Hamster) Polite() {
 	hm.robotsCache = NewRobotCache()
 }
 
-func (hm *Hamster) Copy() *Hamster {
+// Duplicate one Hamster function into anoter
+func (hm *Hamster) Duplicate() *Hamster {
 	itm := new(Hamster)
 	itm.oc = hm.oc
 	itm.dv = hm.dv
-	itm.fetch_chan = hm.fetch_chan
+	itm.fetchChan = hm.fetchChan
 	itm.re = hm.re
 	itm.re1 = hm.re1
 
 	itm.promiscuous = hm.promiscuous
-	itm.all_interesting = hm.all_interesting
-	itm.print_urls = hm.print_urls
+	itm.allInteresting = hm.allInteresting
+	itm.printUrls = hm.printUrls
 	return itm
 }
 
-func (hm *Hamster) SetOc(oc *OutCounter) {
-	hm.oc = oc
-}
+// Set the Out Counter to work on for this hamster
+//func (hm *Hamster) SetOc(oc *OutCounter) {
+//	hm.oc = oc
+//}
+
+// SetDv Sets the Domain Visit structure to use
 func (hm *Hamster) SetDv(dv DomVisitI) {
 	hm.dv = dv
 }
-func (hm *Hamster) SetFetchCh(fetch_chan chan<- Url) {
-	hm.fetch_chan = fetch_chan
+
+// SetFetchCh sets the channel we should put anything we think we should fetch
+func (hm *Hamster) SetFetchCh(fetchChan chan<- URL) {
+	hm.fetchChan = fetchChan
 }
 
+// Close down the Hamster
 func (hm *Hamster) Close() {
 	if hm.robotsCache != nil {
 		hm.robotsCache.Close()
 	}
 }
-func (hm *Hamster) GrabT(
-	url_in Url, // The URL we are tasked with crawling
-	token_name string,
-	crawl_chan *TokenChan,
-	grab_chan chan<- Url,
+func (hm *Hamster) grabWithToken(
+	urlIn URL, // The URL we are tasked with crawling
+	tokenName string,
+	crawlChan *TokenChan,
+	grabChan chan<- URL,
 ) {
 	// Make sure we delete the counter/marker
 	// on the tracker of the nummber of outstanding processes
@@ -102,25 +116,23 @@ func (hm *Hamster) GrabT(
 		defer hm.oc.Dec()
 	}
 	// And return the crawl token for re-use
-	defer crawl_chan.PutToken(token_name)
-	if !hm.dv.GoodUrl(url_in) {
-		//fmt.Printf("%s is not a Good Url\n", url_in)
+	defer crawlChan.PutToken(tokenName)
+	if !hm.dv.GoodURL(urlIn) {
+		//fmt.Printf("%s is not a Good URL\n", url_in)
 		return
 	}
 
-	if hm.print_urls {
-		fmt.Printf("Analyzing UR: %s\n", url_in)
-		defer fmt.Println("Done with URL:", url_in)
+	if hm.printUrls {
+		fmt.Printf("Analyzing UR: %s\n", urlIn)
+		defer fmt.Println("Done with URL:", urlIn)
 	}
 
 	if hm.robotsCache != nil {
-		if !hm.robotsCache.AllowUrl(url_in) {
+		if !hm.robotsCache.AllowURL(urlIn) {
 			return
 		}
 	}
 
-	// Flag saying we should printout
-	domain_i := url_in.Base()
 	// Add to the list of domains we have visited (and should visit again)
 	// this current URL
 	//_ = ur.VisitedA(domain_i)
@@ -129,15 +141,12 @@ func (hm *Hamster) GrabT(
 		Timeout: timeout,
 	}
 
-	//fmt.Println("Getting:", url_in)
-	resp, err := client.Get(url_in.Url())
-	//fmt.Println("Got:", url_in)
-
+	resp, err := client.Get(urlIn.URL())
 	if err != nil {
-		if hm.print_urls {
-			fmt.Println("ERROR: Failed to crawl \"" + url_in.Url() + "\"")
+		if hm.printUrls {
+			fmt.Println("ERROR: Failed to crawl \"" + urlIn.URL() + "\"")
 		}
-		DecodeHttpError(err)
+		DecodeHTTPError(err)
 		return
 	}
 
@@ -145,77 +154,78 @@ func (hm *Hamster) GrabT(
 	defer b.Close() // Defer close to after discard
 	defer io.Copy(ioutil.Discard, b)
 	z := html.NewTokenizer(b)
-	hm.tokenhandle(z, url_in, domain_i, grab_chan)
+	domainI := urlIn.Base()
+	hm.tokenhandle(z, urlIn, domainI, grabChan)
 }
-func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text string, grab_chan chan<- Url) {
+func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText string, grabChan chan<- URL) {
 	// I need to get this into an absolute URL again
-	base := url_in.Parse()
-	u := linked_url.Parse()
+	base := urlIn.Parse()
+	u := linkedURL.Parse()
 	// Need to re-check for ""
 	// as Parse will nil the strings if parse errors
-	if linked_url.Url() == "" || url_in.Url() == "" || base == nil || u == nil {
+	if linkedURL.URL() == "" || urlIn.URL() == "" || base == nil || u == nil {
 		return
 	}
 	// Re-write an relative URLs
-	relinked_url_string := base.ResolveReference(u).String()
-	linked_url = NewUrl(relinked_url_string)
+	relinkedURLString := base.ResolveReference(u).String()
+	linkedURL = NewURL(relinkedURLString)
 
-	domain_j := linked_url.Base()
-	if domain_j == "" {
+	domainJ := linkedURL.Base()
+	if domainJ == "" {
 		//fmt.Println("Unable to get base,", linked_url)
 		return
 	}
 
-	is_jpg := strings.Contains(relinked_url_string, ".jpg")
-	is_mpg := strings.Contains(relinked_url_string, ".mpg")
-	is_mp4 := strings.Contains(relinked_url_string, ".mp4")
-	is_avi := strings.Contains(relinked_url_string, ".avi")
+	isJpg := strings.Contains(relinkedURLString, ".jpg")
+	isMpg := strings.Contains(relinkedURLString, ".mpg")
+	isMp4 := strings.Contains(relinkedURLString, ".mp4")
+	isAvi := strings.Contains(relinkedURLString, ".avi")
 	switch {
-	case is_jpg:
-		relinked_url_string = strings.TrimLeft(relinked_url_string, ".jpg")
+	case isJpg:
+		relinkedURLString = strings.TrimLeft(relinkedURLString, ".jpg")
 		if hm.oc != nil {
 			hm.oc.Add()
 		}
-		if hm.print_urls {
+		if hm.printUrls {
 			//fmt.Printf("Found jpg:%s\n", relinked_url_string)
 		}
 		//fmt.Println("sending to fetch")
-		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			hm.fetch_chan <- NewUrl(relinked_url_string)
+		if hm.allInteresting || hm.dv.VisitedQ(domainJ) {
+			hm.fetchChan <- NewURL(relinkedURLString)
 			//fmt.Println("sent")
 		}
 
-	case is_mpg, is_mp4, is_avi:
+	case isMpg, isMp4, isAvi:
 		//fmt.Println("MPG found:", linked_url)
-		if hm.all_interesting || hm.dv.VisitedQ(domain_j) {
-			tmp_ur := linked_url
-			tmp_ur.SetTitle(title_text)
-			hm.fetch_chan <- tmp_ur
+		if hm.allInteresting || hm.dv.VisitedQ(domainJ) {
+			tmpUr := linkedURL
+			tmpUr.SetTitle(titleText)
+			hm.fetchChan <- tmpUr
 			//fmt.Println("sent", linked_url)
 		}
 	default:
-		grabAllowed := hm.promiscuous || url_in.GetPromiscuous() || url_in.GetShallow()
+		grabAllowed := hm.promiscuous || urlIn.GetPromiscuous() || urlIn.GetShallow()
 		if hm.promiscuous {
-			linked_url.SetPromiscuous()
+			linkedURL.SetPromiscuous()
 		}
 		if grabAllowed {
-			interestingUrl := hm.all_interesting || hm.dv.VisitedQ(domain_j) || (domain_i == domain_j)
-			if interestingUrl {
-				if hm.print_urls {
-					fmt.Printf("Interesting url, %s, %s\n", linked_url, url_in)
+			interestingURL := hm.allInteresting || hm.dv.VisitedQ(domainJ) || (domainI == domainJ)
+			if interestingURL {
+				if hm.printUrls {
+					fmt.Printf("Interesting url, %s, %s\n", linkedURL, urlIn)
 				}
-				if !hm.dv.GoodUrl(url_in) {
+				if !hm.dv.GoodURL(urlIn) {
 					return
 				}
 				if hm.oc != nil {
 					hm.oc.Add()
 				}
 				//fmt.Printf("Send %s grab\n", linked_url)
-				grab_chan <- linked_url
+				grabChan <- linkedURL
 				//fmt.Println("Sent %s to grab\n",linked_url)
 
-				if hm.print_urls {
-					//fmt.Printf("Uninteresting url, %s, %s, %s\n", domain_i, domain_j, linked_url)
+				if hm.printUrls {
+					//fmt.Printf("Uninteresting url, %s, %s, %s\n", domainI, domainJ, linkedURL)
 				}
 			}
 		}
@@ -224,44 +234,45 @@ func (hm *Hamster) urlProc(linked_url, url_in Url, domain_i string, title_text s
 
 }
 func (hm *Hamster) anchorProc(t html.Token,
-	url_in Url,
-	domain_i string, title_text string,
-	grab_chan chan<- Url,
+	urlIn URL,
+	domainI string, titleText string,
+	grabChan chan<- URL,
 ) {
 
 	// Extract the href value, if there is one
-	ok, linked_url := getHref(t)
+	ok, linkedURL := getHref(t)
 	if !ok {
 		return
 	}
-	if linked_url == "" {
+	if linkedURL == "" {
 		return
 	}
-	hm.urlProc(NewUrl(linked_url), url_in, domain_i, title_text, grab_chan)
+	hm.urlProc(NewURL(linkedURL), urlIn, domainI, titleText, grabChan)
 }
-func resolveUrl(url_in Url) string {
-	base := url_in.Parse()
-	return base.String()
-}
+
+//func resolveUrl(url_in URL) string {
+//	base := url_in.Parse()
+//	return base.String()
+//}
 func (hm *Hamster) scriptProc(t html.Token,
-	script_text string,
-	url_in Url,
-	domain_i string, title_text string,
-	grab_chan chan<- Url,
+	scriptText string,
+	urlIn URL,
+	domainI string, titleText string,
+	grabChan chan<- URL,
 ) {
 
-	if strings.Contains(script_text, "http") {
+	if strings.Contains(scriptText, "http") {
 		//t0 := script_text
-		t0 := hm.re.FindAllString(script_text, -1)
+		t0 := hm.re.FindAllString(scriptText, -1)
 
 		for _, v := range t0 {
 			t1 := hm.re1.FindStringSubmatch(v)
 			if len(t1) > 1 {
-				linked_url := NewUrl(t1[1])
-				linked_url.Parse()
-				if linked_url.String() != "" {
+				linkedURL := NewURL(t1[1])
+				linkedURL.Parse()
+				if linkedURL.String() != "" {
 					//fmt.Println("URL:", linked_url)
-					hm.urlProc(linked_url, url_in, domain_i, title_text, grab_chan)
+					hm.urlProc(linkedURL, urlIn, domainI, titleText, grabChan)
 				}
 			}
 		}
@@ -271,10 +282,10 @@ func (hm *Hamster) scriptProc(t html.Token,
 	}
 }
 
-func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in Url, domain_i string,
-	grab_chan chan<- Url,
+func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
+	grabChan chan<- URL,
 ) {
-	title_text := ""
+	titleText := ""
 	for {
 		tt := z.Next()
 		//fmt.Println("Processing token")
@@ -294,36 +305,36 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in Url, domain_i string,
 				//fmt.Println("Found A")
 				hm.anchorProc(
 					t,
-					url_in,
-					domain_i,
-					title_text,
-					grab_chan,
+					urlIn,
+					domainI,
+					titleText,
+					grabChan,
 				)
 			} // end Anchor processing
 			if isScript {
 				//fmt.Println("Found S")
-				curr_tok := t
-				next_token := z.Next()
-				if next_token == html.TextToken {
-					n_t := z.Token()
-					script_text := n_t.Data
+				currTok := t
+				nextToken := z.Next()
+				if nextToken == html.TextToken {
+					nT := z.Token()
+					scriptText := nT.Data
 					hm.scriptProc(
-						curr_tok,
-						script_text,
-						url_in,
-						domain_i,
-						title_text,
-						grab_chan,
+						currTok,
+						scriptText,
+						urlIn,
+						domainI,
+						titleText,
+						grabChan,
 					)
 				}
 			}
 			if isTitle {
 				//fmt.Println("Found T")
 				//curr_tok := t
-				next_token := z.Next()
-				if next_token == html.TextToken {
-					n_t := z.Token()
-					title_text = n_t.Data
+				nextToken := z.Next()
+				if nextToken == html.TextToken {
+					nT := z.Token()
+					titleText = nT.Data
 
 					//fmt.Println("The title of the webpage is:", title_text)
 				}
@@ -332,39 +343,39 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, url_in Url, domain_i string,
 	}
 }
 
-func (hm *Hamster) grabItWork(urs Url, out_count *OutCounter, crawl_chan *TokenChan, tmp_chan chan<- Url) bool {
-	token_got := urs.Base()
+func (hm *Hamster) grabItWork(urs URL, outCount *OutCounter, crawlChan *TokenChan, tmpChan chan<- URL) bool {
+	tokenGot := urs.Base()
 
-	if crawl_chan.TryGetToken(token_got) {
+	if crawlChan.TryGetToken(tokenGot) {
 		// If we successfully got the token
-		if hm.print_urls {
+		if hm.printUrls {
 			fmt.Println("Grab:", urs)
 		}
 		if UseParallelGrab {
-			out_count.Add()
+			outCount.Add()
 
 			go func() {
 				// Before we can send this, we need to take a copy of hm
 				// so that we can parrallelise this
-				hmp := hm.Copy()
-				hmp.GrabT(urs, // The URL we are tasked with crawling
-					token_got,
-					crawl_chan,
-					tmp_chan,
+				hmp := hm.Duplicate()
+				hmp.grabWithToken(urs, // The URL we are tasked with crawling
+					tokenGot,
+					crawlChan,
+					tmpChan,
 				)
-				if hm.print_urls {
+				if hm.printUrls {
 					fmt.Println("Grabbed:", urs)
 				}
-				// we don't want GrabT doing this as in
+				// we don't want grabWithToken doing this as in
 				// None Nil mode it will also add, which
 				//we don't want for this design
-				out_count.Dec()
+				outCount.Dec()
 			}()
 		} else {
-			hm.GrabT(urs, // The URL we are tasked with crawling
-				token_got,
-				crawl_chan,
-				tmp_chan,
+			hm.grabWithToken(urs, // The URL we are tasked with crawling
+				tokenGot,
+				crawlChan,
+				tmpChan,
 			)
 		}
 		return true

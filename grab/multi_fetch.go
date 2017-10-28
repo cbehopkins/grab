@@ -10,108 +10,128 @@ import (
 	"time"
 )
 
-// One multi-Fetcher does all files!
+// MultiFetch is a parallel fetch engine
 type MultiFetch struct {
+	// We ar protected by a simple mutex
 	sync.Mutex
 	wg sync.WaitGroup
-	// Gob Wait Group
+	// Gob wait Group
 	// Ensure we wait for gob to have finished before we close the fetch channel
 	// That gob will be trying to write to
-	gwg            sync.WaitGroup
-	InChan         chan Url // Write Urls to here
-	dump_chan      chan Url
-	in_chan_closed bool
-	scrammed       bool
-	scram_chan     chan struct{} // Simply close this channel to scram to filename
-	fifo           *UrlStore     // stored here
-	ff_map         map[string]*UrlStore
-	filename       string
-	multi_mode     bool
-	download       bool
-	counter        int
-	fc_lk          sync.Mutex
-	st             time.Time
-	jpg_tk         *TokenChan
+	gwg          sync.WaitGroup
+	InChan       chan URL // Write Urls to here
+	dumpChan     chan URL
+	inChanClosed bool
+	scrammed     bool
+	scramChan    chan struct{} // Simply close this channel to saveProgress to filename
+	fifo         *URLStore     // stored here
+	ffMap        map[string]*URLStore
+	filename     string
+	multiMode    bool
+	download     bool
+	counter      int
+	fcLk         sync.Mutex
+	st           time.Time
+	jpgTk        *TokenChan
 }
 
+// NewMultiFetch - create a new fetch engine - specify if it should use multi mode
 func NewMultiFetch(mm bool) *MultiFetch {
 	itm := new(MultiFetch)
-	itm.fifo = NewUrlStore()
-	itm.ff_map = make(map[string]*UrlStore)
-	itm.multi_mode = mm
+	itm.fifo = NewURLStore()
+	itm.ffMap = make(map[string]*URLStore)
+	itm.multiMode = mm
 	if !mm {
 		itm.InChan = itm.fifo.PushChannel
 	} else {
-		itm.InChan = make(chan Url)
+		itm.InChan = make(chan URL)
 	}
-	itm.scram_chan = make(chan struct{})
+	itm.scramChan = make(chan struct{})
 	itm.st = time.Now()
 	return itm
 }
+
+// SetTestJpg Allow up to cnt JPG checks to be happening at once
+// too small and you're wasting cpu potential
+// too high and you're thrashing the file system
 func (mf *MultiFetch) SetTestJpg(cnt int) {
-	// Allow up to cnt JPG checks to be happening at once
-	mf.jpg_tk = NewTokenChan(cnt, "jpg checker")
+	mf.jpgTk = NewTokenChan(cnt, "jpg checker")
 }
-func (mf *MultiFetch) IncCount() {
-	mf.fc_lk.Lock()
+
+// Keep tack of the nuber that are running
+func (mf *MultiFetch) incCount() {
+	mf.fcLk.Lock()
 	mf.counter++
-	mf.fc_lk.Unlock()
+	mf.fcLk.Unlock()
 }
+
+// TotCnt includes the ones we've completed
 func (mf *MultiFetch) TotCnt() int {
 	return mf.counter + mf.Count()
 }
+
+// Count returns the number of items we're waiting to fetch
 func (mf *MultiFetch) Count() int {
-	// Return the number of items we're waiting to fetch
-	running_total := mf.fifo.Count()
-	for _, v := range mf.ff_map {
-		running_total += v.Count()
+	runningTotal := mf.fifo.Count()
+	for _, v := range mf.ffMap {
+		runningTotal += v.Count()
 	}
-	return running_total
+	return runningTotal
 }
+
+// SetFileName of the file to read in history from
 func (mf *MultiFetch) SetFileName(fn string) {
 	mf.filename = fn
 	mf.gwg.Add(1)
 	go func() {
 		// Because in Multi-Mode re read direct from InChan
 		// Maks sure we write there
-		LoadGob(mf.filename, mf.InChan, nil, false, false)
+		LoadGob(mf.filename, mf.InChan, nil, false)
 		fmt.Println("Finished reading in Gob fully*************************")
 		mf.gwg.Done()
 	}()
 }
+
+// SetDownload marks that we should download items rather than just accrue them
 func (mf *MultiFetch) SetDownload() {
 	mf.download = true
 }
+
+// Scram means stop the download process now
+// I guess Close would be a more common word
+// Ther's an overlap of functions here - we could tidy this up
+// But I like the idea of saveProgress!
 func (mf *MultiFetch) Scram() {
 	fmt.Println("Scram Requested", mf.Count())
 	mf.Lock()
-	if !mf.in_chan_closed {
+	if !mf.inChanClosed {
 		close(mf.InChan)
-		mf.in_chan_closed = true
+		mf.inChanClosed = true
 	}
 	if !mf.scrammed {
-		close(mf.scram_chan)
+		close(mf.scramChan)
 		mf.scrammed = true
 	}
 	mf.Unlock()
 }
+
+// Close down the multi fetcher
 func (mf *MultiFetch) Close() {
 	if !mf.download {
 		mf.Scram()
 	} else {
-		if !mf.in_chan_closed {
+		if !mf.inChanClosed {
 			mf.gwg.Wait()
 			close(mf.InChan)
-			mf.in_chan_closed = true
+			mf.inChanClosed = true
 		}
 	}
 }
 
-func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
-
-	scram_in_progres := false
-	wt := NewWkTok(4)
-	var icd chan Url
+func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
+	scramInProgres := false
+	wt := newWkTok(4)
+	var icd chan URL
 	if mf.download {
 		// If we are not set to download then
 		// leave the cannel as nil so that the
@@ -120,19 +140,19 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 	}
 	for {
 		select {
-		case <-mf.scram_chan:
-			if scram_in_progres == false {
+		case <-mf.scramChan:
+			if scramInProgres == false {
 				//fmt.Println("Scram Started")
-				scram_in_progres = true
-				if mf.multi_mode {
+				scramInProgres = true
+				if mf.multiMode {
 					for v := range ic {
-						mf.dump_chan <- v
+						mf.dumpChan <- v
 					}
 				} else {
-					mf.scram()
+					mf.saveProgress()
 				}
 				fmt.Println("Scram finished for:", nme)
-				wt.Wait()
+				wt.wait()
 				fmt.Println("worker finished", nme)
 				return
 			}
@@ -142,7 +162,7 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 				// This is a closed channel
 				// so all we have to do is wait for
 				// any tokens to finish
-				wt.Wait()
+				wt.wait()
 				return
 			}
 			if urf.base == nil {
@@ -150,15 +170,15 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 			}
 			basename := urf.Base()
 			if basename != "" && dv.VisitedQ(basename) {
-				wt.GetTok()
+				wt.getTok()
 				go func() {
 					tchan := make(chan struct{})
 
 					go func() {
 
 						// Fetch returns true if it has used the network
-						if mf.FetchW(urf) {
-							mf.IncCount()
+						if mf.fetchW(urf) {
+							mf.incCount()
 							time.Sleep(500 * time.Millisecond)
 						}
 						tchan <- struct{}{}
@@ -170,30 +190,33 @@ func (mf *MultiFetch) single_worker(ic chan Url, dv DomVisitI, nme string) {
 						log.Fatal("We needed to use the timeout case, this is bad!")
 					}
 					// Return the token at the end
-					wt.PutTok()
+					wt.putTok()
 				}()
 			}
 		}
 	}
 }
+
+// Worker starts the worker using the domvisit tracker specified
+// TBD - why not start that ourselves?
 func (mf *MultiFetch) Worker(dv DomVisitI) {
 	mf.wg.Add(1)
 	go func() {
 
-		if !mf.multi_mode {
-			mf.single_worker(mf.fifo.PopChannel, dv, "universal")
+		if !mf.multiMode {
+			mf.singleWorker(mf.fifo.PopChannel, dv, "universal")
 		} else {
 			var wg sync.WaitGroup
-			mf.dump_chan = make(chan Url)
+			mf.dumpChan = make(chan URL)
 			// Dispatch will not complete until all of the
 			// workers it start complete
-			// In the event of a scram a worker will not complete until it has emptied its
+			// In the event of a saveProgress a worker will not complete until it has emptied its
 			// queue into the queue that is only emptied by scram_multi worker
 			go func() {
-				<-mf.scram_chan
+				<-mf.scramChan
 				wg.Add(1)
 				fmt.Println("MultiScram Start")
-				mf.scram_multi()
+				mf.scramMulti()
 				fmt.Println("Multiscram End")
 				wg.Done()
 			}()
@@ -201,42 +224,41 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 			fmt.Println("Dispatch Complete - Closing starting")
 			// dispatch workers will finish after they have emptied their queues
 			// once they have all emptied then we can close the dump channel
-			close(mf.dump_chan)
+			close(mf.dumpChan)
 			fmt.Println("Dispatch Complete - waiting for Scram to finish writing")
 			wg.Wait()
 		}
 		mf.wg.Done()
 	}()
 }
+
+// Wait for the process to complete
 func (mf *MultiFetch) Wait() {
 	mf.wg.Wait()
 }
+
+// PrintThroughput gives us output stats
 func (mf *MultiFetch) PrintThroughput() {
 	elapsed := time.Since(mf.st).Seconds()
 	//fmt.Printf("%d items in %v seconds",mf.counter,elapsed)
 	tp := float64(mf.counter) / elapsed
-	tp_int := int64(tp)
-	fmt.Printf("\n\n%v Media Files at %v Items per Second\n", mf.counter, tp_int)
+	tpInt := int64(tp)
+	fmt.Printf("\n\n%v Media Files at %v Items per Second\n", mf.counter, tpInt)
 }
 
+// Shutdown very similar to Close/Scram
+// TBD Why do we have this?
 func (mf *MultiFetch) Shutdown() {
 	mf.Scram()
 	mf.Wait()
 	mf.PrintThroughput()
 }
 
-func (mf *MultiFetch) scram_multi() {
-	SaveGob(mf.filename, mf.dump_chan, nil)
+func (mf *MultiFetch) scramMulti() {
+	SaveGob(mf.filename, mf.dumpChan, nil)
 	fmt.Println("Fetch saved")
-	//tmp_chan := make(chan Url)
-	//LoadGob(mf.filename, tmp_chan, nil, ture false)
-	//i:=0
-	//for _ = range tmp_chan {
-	//  i++
-	//}
-	//fmt.Println("****Bob File had",i)
 }
-func (mf *MultiFetch) scram() {
+func (mf *MultiFetch) saveProgress() {
 	SaveGob(mf.filename, mf.fifo.PopChannel, nil)
 	fmt.Println("Fetch saved")
 
@@ -252,15 +274,15 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 		// work out what the basename of the fetch is
 		basename := urli.Base()
 		// Check to see if there is an entry for this basename already
-		ff, ok := mf.ff_map[basename]
+		ff, ok := mf.ffMap[basename]
 		// Create one if needed
 		if !ok {
 			oc.Add()
 			//fmt.Println("***************Starting*******",basename)
-			ff = NewUrlStore()
-			mf.ff_map[basename] = ff
+			ff = NewURLStore()
+			mf.ffMap[basename] = ff
 			go func() {
-				mf.single_worker(ff.PopChannel, dv, basename)
+				mf.singleWorker(ff.PopChannel, dv, basename)
 				//fmt.Println("***************Stopping*******",basename)
 				oc.Dec()
 			}()
@@ -271,7 +293,7 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// Now the input has closed
 	// Close each of the many queues
 	fmt.Println("Dispatch noticed InChan closed")
-	for _, ff := range mf.ff_map {
+	for _, ff := range mf.ffMap {
 		close(ff.PushChannel)
 	}
 	// and wait for each of the workers to close
@@ -281,10 +303,10 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	//fmt.Println("All dispatch workers closed")
 }
 
-func (mf *MultiFetch) FetchW(fetch_url Url) bool {
+func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 	// We retun true if we have used network bandwidth.
 	// If we have not then it's okay to jump straight onto the next file
-	array := strings.Split(fetch_url.Url(), "/")
+	array := strings.Split(fetchURL.URL(), "/")
 
 	var fn string
 	if len(array) > 2 {
@@ -292,30 +314,30 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 	} else {
 		return false
 	}
-	if strings.HasPrefix(fetch_url.Url(), "file") {
+	if strings.HasPrefix(fetchURL.URL(), "file") {
 		return false
 	}
 
 	fn = strings.TrimLeft(fn, ".php?")
 	// logically there must be http:// so therefore length>2
-	dir_struct := array[2 : len(array)-1]
-	dir_str := strings.Join(dir_struct, "/")
-	dir_str = strings.Replace(dir_str, "//", "/", -1)
-	dir_str = strings.Replace(dir_str, "%", "_", -1)
-	dir_str = strings.Replace(dir_str, "&", "_", -1)
-	dir_str = strings.Replace(dir_str, "?", "_", -1)
-	dir_str = strings.Replace(dir_str, "=", "_", -1)
+	dirStruct := array[2 : len(array)-1]
+	dirStr := strings.Join(dirStruct, "/")
+	dirStr = strings.Replace(dirStr, "//", "/", -1)
+	dirStr = strings.Replace(dirStr, "%", "_", -1)
+	dirStr = strings.Replace(dirStr, "&", "_", -1)
+	dirStr = strings.Replace(dirStr, "?", "_", -1)
+	dirStr = strings.Replace(dirStr, "=", "_", -1)
 
 	re := regexp.MustCompile("(.*\\.jpg)(.*)")
 	t1 := re.FindStringSubmatch(fn)
 	if len(t1) > 1 {
 		fn = t1[1]
 	}
-	page_title := fetch_url.GetTitle()
-	if page_title != "" {
-		page_title = strings.Replace(page_title, "/", "_", -1)
+	pageTitle := fetchURL.GetTitle()
+	if pageTitle != "" {
+		pageTitle = strings.Replace(pageTitle, "/", "_", -1)
 		if strings.HasSuffix(fn, ".mp4") {
-			fn = page_title + ".mp4"
+			fn = pageTitle + ".mp4"
 			//fmt.Println("Title set, so set filename to:", fn)
 		}
 	}
@@ -327,23 +349,23 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 	fn = strings.Replace(fn, "'", "_", -1)
 	fn = strings.Replace(fn, "!", "_", -1)
 	fn = strings.Replace(fn, ",", "_", -1)
-	potential_file_name := dir_str + "/" + fn
-	if strings.HasPrefix(potential_file_name, "/") {
+	potentialFileName := dirStr + "/" + fn
+	if strings.HasPrefix(potentialFileName, "/") {
 		return false
 	}
-	if _, err := os.Stat(potential_file_name); !os.IsNotExist(err) {
+	if _, err := os.Stat(potentialFileName); !os.IsNotExist(err) {
 		// For a file that does already exist
-		if mf.jpg_tk == nil {
+		if mf.jpgTk == nil {
 			// We're not testing all the jpgs for goodness
 			//fmt.Println("skipping downloading", potential_file_name)
 			return false
 		} else if strings.HasSuffix(fn, ".jpg") {
 			// Check if it is a corrupted file. If it is, then fetch again
 			//fmt.Println("yest jph", fn)
-			mf.jpg_tk.GetToken("jpg")
-			good_file := check_jpg(potential_file_name)
-			mf.jpg_tk.PutToken("jpg")
-			if good_file {
+			mf.jpgTk.GetToken("jpg")
+			goodFile := checkJpg(potentialFileName)
+			mf.jpgTk.PutToken("jpg")
+			if goodFile {
 				return false
 			}
 		} else {
@@ -355,6 +377,6 @@ func (mf *MultiFetch) FetchW(fetch_url Url) bool {
 
 	// For a file that doesn't already exist, then just fetch it
 	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
-	fetch_file(potential_file_name, dir_str, fetch_url)
+	fetchFile(potentialFileName, dirStr, fetchURL)
 	return true
 }

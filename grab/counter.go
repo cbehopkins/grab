@@ -11,10 +11,15 @@ type outCounter struct {
 	closed   bool
 	DoneChan chan struct{}
 }
+
+// OutCounter is a variant on sync.WaitGroup
+// Without the state checking around adding
+// while waiting
 type OutCounter struct {
 	op *outCounter
 }
 
+// NewOutCounter creates a new instance of an out counter
 func NewOutCounter() *OutCounter {
 	itm := new(OutCounter)
 	itm.op = new(outCounter)
@@ -22,11 +27,13 @@ func NewOutCounter() *OutCounter {
 	return itm
 }
 
+// Occer defines the Our Counter interface
 type Occer interface {
 	Add()
 	Dec()
 }
 
+// Add a thing to wait on
 func (oc OutCounter) Add() {
 	//fmt.Println("Add 1 to count")
 	oc.op.sm.Lock()
@@ -35,13 +42,13 @@ func (oc OutCounter) Add() {
 		// We've done an Add();Dec();Add() sequence
 		// Where the dec takes count to zero
 		// Therefore we need to re-open the channel
-		tc := make(chan struct{})
-		oc.op.DoneChan = tc
-		oc.op.closed = false
+		oc.op.DoneChan = nil
+		oc.initDc()
 	}
 	oc.op.sm.Unlock()
 }
 
+// Dec that something we were waiting on is done
 func (oc OutCounter) Dec() {
 	oc.op.sm.Lock()
 	if false {
@@ -59,8 +66,11 @@ func (oc OutCounter) initDc() {
 	if oc.op.DoneChan == nil {
 		tc := make(chan struct{})
 		oc.op.DoneChan = tc
+		oc.op.closed = false
 	}
 }
+
+// Wait for all things to have done
 func (oc OutCounter) Wait() {
 	oc.initDc()
 	<-oc.op.DoneChan

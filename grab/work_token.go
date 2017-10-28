@@ -6,53 +6,53 @@ import (
 
 type wkTok struct {
 	sync.Mutex
-	cnt            int
-	max_count      int
-	broadcast_chan chan struct{}
-	wait_chan      chan struct{}
+	cnt           int
+	maxCount      int
+	broadcastChan chan struct{}
+	waitChan      chan struct{}
 }
 
-func NewWkTok(cnt int) *wkTok {
+func newWkTok(cnt int) *wkTok {
 	itm := new(wkTok)
-	itm.max_count = cnt
-	itm.broadcast_chan = make(chan struct{})
+	itm.maxCount = cnt
+	itm.broadcastChan = make(chan struct{})
 	return itm
 }
 func (wt *wkTok) qTok() bool {
-	its := wt.cnt < wt.max_count
+	its := wt.cnt < wt.maxCount
 	//fmt.Println("qTok", its)
 	return its
 }
-func (wt *wkTok) Wait() {
+func (wt *wkTok) wait() {
 	wt.Lock()
-	if wt.wait_chan == nil {
-		wt.wait_chan = make(chan struct{})
+	if wt.waitChan == nil {
+		wt.waitChan = make(chan struct{})
 	}
 	if wt.cnt == 0 {
 		wt.Unlock()
 	} else {
 		wt.Unlock()
-		<-wt.wait_chan
+		<-wt.waitChan
 	}
 }
-func (wt *wkTok) GetTok() {
+func (wt *wkTok) getTok() {
 	wt.Lock()
 	wt.loopToken() // loop until we can increment
 	wt.cnt++
 	wt.Unlock()
 }
-func (wt *wkTok) PutTok() {
+func (wt *wkTok) putTok() {
 	wt.Lock()
 	wt.cnt--
 	// one of possibly many receivers will get this
 	select {
-	case wt.broadcast_chan <- struct{}{}:
+	case wt.broadcastChan <- struct{}{}:
 	default:
 	}
 
 	defer wt.Unlock()
-	if (wt.cnt == 0) && (wt.wait_chan != nil) {
-		close(wt.wait_chan)
+	if (wt.cnt == 0) && (wt.waitChan != nil) {
+		close(wt.waitChan)
 	}
 }
 
@@ -62,7 +62,7 @@ func (wt *wkTok) loopToken() {
 		wt.Unlock()
 		// when we get a message
 		// There may be many of us waiting
-		<-wt.broadcast_chan
+		<-wt.broadcastChan
 		// Get the lock
 		wt.Lock()
 		// and go around again. This time we should succeed

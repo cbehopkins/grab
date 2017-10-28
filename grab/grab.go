@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -52,6 +51,10 @@ func CopyFile(src, dst string) (err error) {
 	err = copyFileContents(src, dst)
 	return
 }
+
+// MoveFile Implements a move function that works across file systems
+// The inbuilt functions can struccle if hard links won't work
+// i.e. you want to move between mount points
 func MoveFile(src, dst string) (err error) {
 	err = CopyFile(src, dst)
 	if err != nil {
@@ -102,10 +105,12 @@ func getHref(t html.Token) (ok bool, href string) {
 	// the function definition
 	return
 }
+
+// Readln read a line from a standard reader
 func Readln(r *bufio.Reader) (string, error) {
 	var (
-		isPrefix bool  = true
-		err      error = nil
+		isPrefix = true
+		err      error
 		line, ln []byte
 	)
 	for isPrefix && err == nil {
@@ -115,12 +120,17 @@ func Readln(r *bufio.Reader) (string, error) {
 	return string(ln), err
 }
 
-func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_chan, inc_count bool) {
+// LoadFile Load in a file of urls
+// spitting them out on the supplied channel
+// We may want to add one to a supplied counter (if we are tracking items added and processed)
+// We may want to close the channel when we're done (or not)
+// TBD incCount may be superflous
+func LoadFile(filename string, theChan chan URL, counter *OutCounter, closeChan, incCount bool) {
 	if counter != nil {
 		defer counter.Dec()
 	}
-	if close_chan {
-		defer close(the_chan)
+	if closeChan {
+		defer close(theChan)
 	}
 	if filename == "" {
 		return
@@ -131,11 +141,10 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_cha
 	} else if err != nil {
 		if os.IsNotExist(err) {
 			return
-		} else {
-			fmt.Printf("error opening file: %T\n", err)
-			os.Exit(1)
-			return
 		}
+		fmt.Printf("error opening file: %T\n", err)
+		os.Exit(1)
+		return
 	}
 	defer f.Close()
 	r := bufio.NewReader(f)
@@ -150,17 +159,21 @@ func LoadFile(filename string, the_chan chan Url, counter *OutCounter, close_cha
 			continue
 		}
 		//fmt.Println("Fast adding ", s)
-		if inc_count {
+		if incCount {
 			counter.Add()
 		}
-		tmp_u := NewUrl(s)
-		if tmp_u.Initialise() {
+		tmpU := NewURL(s)
+		if tmpU.Initialise() {
 			log.Fatal("nneded to init after new")
 		}
-		the_chan <- tmp_u
+		theChan <- tmpU
 	}
 }
-func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
+
+// SaveFile reads urls comming in on the channel
+// to a filename
+// Optionally we can say when we're done
+func SaveFile(filename string, theChan chan URL, counter *OutCounter) {
 	if counter != nil {
 		defer counter.Dec()
 	}
@@ -170,16 +183,18 @@ func SaveFile(filename string, the_chan chan Url, counter *OutCounter) {
 	f, err := os.Create(filename)
 	check(err)
 	defer f.Close()
-	for v := range the_chan {
-		fmt.Fprintf(f, "%s\n", v.Url())
+	for v := range theChan {
+		fmt.Fprintf(f, "%s\n", v.URL())
 	}
 }
-func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan, inc_count bool) {
+
+// LoadGob loads in the gob'd file of outstanding files to fetch
+func LoadGob(filename string, theChan chan URL, counter *OutCounter, closeChan bool) {
 	if counter != nil {
 		defer counter.Dec()
 	}
-	if close_chan {
-		defer close(the_chan)
+	if closeChan {
+		defer close(theChan)
 	}
 	if filename == "" {
 		return
@@ -190,18 +205,18 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 	} else if err != nil {
 		if os.IsNotExist(err) {
 			return
-		} else {
-			fmt.Printf("error opening file: %T\n", err)
-			os.Exit(1)
-			return
 		}
+		fmt.Printf("error opening file: %T\n", err)
+		os.Exit(1)
+		return
+
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	check(err)
 	if fi.Size() > 1 {
 		//fmt.Printf("Opened filename:%s,%d\n", filename, fi.Size())
-		buff := make([]Url, 0)
+		buff := make([]URL, 0)
 		dec := gob.NewDecoder(f)
 		err = dec.Decode(&buff)
 		fmt.Printf("Gobbed in %d Items\n", len(buff))
@@ -213,12 +228,14 @@ func LoadGob(filename string, the_chan chan Url, counter *OutCounter, close_chan
 		}
 		for _, v := range buff {
 			v.Initialise()
-			the_chan <- v
+			theChan <- v
 		}
 
 	}
 }
-func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
+
+// SaveGob - saves out supplied urls into a file
+func SaveGob(filename string, theChan chan URL, counter *OutCounter) {
 	if counter != nil {
 		defer counter.Dec()
 	}
@@ -239,8 +256,8 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 	go func() {
 		defer f.Close()
 		defer wg.Done()
-		last_read := false
-		for !last_read {
+		lastRead := false
+		for !lastRead {
 			buf := make([]byte, 1<<10)
 			//fmt.Println("reding into buffer")
 			// REVISIT It would be more //el to read first outside the loop
@@ -250,21 +267,21 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 
 			if err == io.EOF {
 				fmt.Println("Detected end of file")
-				last_read = true
+				lastRead = true
 			} else if err != nil {
 				panic(err)
 			}
 			// Reslice so writer has the correct input
 			buf = buf[:n]
-			len_remaining := n
-			for len_remaining > 0 {
+			lenRemaining := n
+			for lenRemaining > 0 {
 				//fmt.Println("writing bytes:",len_remaining, len(buf), buf)
 				n, err = f.Write(buf)
 				//fmt.Println("Wrote",n,err)
 				check(err)
-				len_remaining -= n
+				lenRemaining -= n
 			}
-			if last_read {
+			if lastRead {
 				preader.Close()
 				fmt.Println("Done and closing everything")
 				return
@@ -272,9 +289,9 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 		}
 	}()
 
-	buff := make([]Url, 0)
+	buff := make([]URL, 0)
 	fmt.Println("Start bufferring")
-	for v := range the_chan {
+	for v := range theChan {
 		buff = append(buff, v)
 	}
 	fmt.Printf("Gobbing Out %d Items\n", len(buff))
@@ -287,16 +304,4 @@ func SaveGob(filename string, the_chan chan Url, counter *OutCounter) {
 	fmt.Println("Finished gobbing")
 	check(err)
 
-}
-func GetBase(urls string) string {
-	var ai *url.URL
-	var err error
-	ai, err = url.Parse(urls)
-	check(err)
-	hn := ai.Hostname()
-	if hn == "http" || hn == "nats" || strings.Contains(hn, "+document.location.host+") {
-		return ""
-	} else {
-		return hn
-	}
 }

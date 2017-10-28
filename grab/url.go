@@ -7,8 +7,10 @@ import (
 	"strings"
 )
 
-type Url struct {
-	UrlS        string `json:"-"`
+// URL struct contains fast ways to access the url itself
+// and cached versions of the processed and parsed structures
+type URL struct {
+	URLs        string `json:"-"`
 	Title       string `json:"t,omitempty"`
 	Promiscuous bool   `json:"p,omitempty"`
 	Shallow     bool   `json:"s,omitempty"`
@@ -16,21 +18,26 @@ type Url struct {
 	parse       **url.URL
 }
 
-func NewUrl(ur string) (ret Url) {
-	ret.UrlS = ur
+// NewURL creates a new url from a string
+// we a lazy with our processing to spread the workload
+func NewURL(ur string) (ret URL) {
+	ret.URLs = ur
 	ret.Initialise()
 	return ret
 }
 
-type UrlChannel chan Url
+// URLChannel is what it says
+type URLChannel chan URL
 
-func NewUrlChannel() *UrlChannel {
-	var itm UrlChannel
-	itm = make(UrlChannel)
+// NewURLChannel create a new URLChannel
+func NewURLChannel() *URLChannel {
+	var itm URLChannel
+	itm = make(URLChannel)
 	return &itm
 }
 
-func (u *Url) Initialise() bool {
+// Initialise the URL giving it the underlying structs it needs
+func (u *URL) Initialise() bool {
 	if u.base == nil || u.parse == nil {
 		u.base = new(string)
 		u.parse = new(*url.URL)
@@ -39,20 +46,21 @@ func (u *Url) Initialise() bool {
 	return false
 }
 
+// Key abstracts the usage to allow make handling trivial
 // This is the function you should call
 // if you want to generate a key of the map
-func (u Url) Key() string {
-	return u.Url()
+func (u URL) Key() string {
+	return u.URL()
 }
 
-// Get the actual URL itself
-func (u Url) Url() string {
-	return u.UrlS
+// URL returns  the actual URL itself
+func (u URL) URL() string {
+	return u.URLs
 }
 
 // A strigified version of the URL structure
-func (u Url) String() string {
-	retStr := "Url:\"" + u.Url() + "\""
+func (u URL) String() string {
+	retStr := "URL:\"" + u.URL() + "\""
 	if u.Title != "" {
 		retStr += "Title:\"" + u.Title + "\""
 	}
@@ -65,25 +73,30 @@ func (u Url) String() string {
 	return retStr
 }
 
-func (v Url) ToBa() []byte {
-	return []byte(v.UrlS)
+// ToBa requird as the disk only deals in byte arrays
+func (u URL) ToBa() []byte {
+	return []byte(u.URLs)
 }
 
 // FromBa populates a url from the information in the input byte array
-func (u *Url) FromBa(key string, in []byte) {
+func (u *URL) FromBa(key string, in []byte) {
 	if string(in) == "" {
 		// Null written to disk
-		*u = NewUrl(key)
+		*u = NewURL(key)
 		u.Base()
 	} else {
 		log.Fatal("This functionality not supported yet")
 	}
 }
-func NewUrlFromBa(in []byte) Url {
-	return NewUrl(string(in))
+
+// NewURLFromBa trivially pass in a byte array
+func NewURLFromBa(in []byte) URL {
+	return NewURL(string(in))
 }
-func (u Url) Base() string {
-	if u.UrlS == "" {
+
+// Base - The base of a URL
+func (u URL) Base() string {
+	if u.URLs == "" {
 		return ""
 	}
 	if *u.parse == nil {
@@ -95,31 +108,37 @@ func (u Url) Base() string {
 	}
 	return *u.base
 }
-func (u *Url) SetTitle(tt string) {
+
+// SetTitle record the page title of the page we were found on
+func (u *URL) SetTitle(tt string) {
 	u.Title = tt
 }
-func (u Url) GetTitle() string {
+
+// GetTitle get the page title of the page we were found on
+func (u URL) GetTitle() string {
 	return u.Title
 }
-func (u Url) parseUs() {
+func (u URL) parseUs() {
 	var err error
-	if *u.parse == nil && u.UrlS != "" {
-		*u.parse, err = url.Parse(u.UrlS)
+	if *u.parse == nil && u.URLs != "" {
+		*u.parse, err = url.Parse(u.URLs)
 		if err != nil || *u.parse == nil {
-			u.UrlS = ""
+			u.URLs = ""
 			u.Title = ""
 			*u.base = ""
 		}
 	}
 
 }
-func (u Url) Parse() *url.URL {
+
+// Parse the URL into required structure
+func (u URL) Parse() *url.URL {
 	u.parseUs()
 	return *u.parse
 }
-func (u Url) genBase() {
+func (u URL) genBase() {
 	hn := u.Parse().Hostname()
-	// REVISIT pass this through GoodUrl
+	// REVISIT pass this through GoodURL
 	if hn == "http" || hn == "nats" || strings.Contains(hn, "+document.location.host+") {
 		*u.base = ""
 	} else {
@@ -127,30 +146,57 @@ func (u Url) genBase() {
 	}
 }
 
-func (u *Url) SetPromiscuous() {
+// GetBase is an exportable way to get the base of the url
+func GetBase(urls string) string {
+	var u URL
+	u.URLs = urls
+	//var ai *url.URL
+	//var err error
+	//ai, err = url.Parse(urls)
+	//check(err)
+	//hn := ai.Hostname()
+	//if hn == "http" || hn == "nats" || strings.Contains(hn, "+document.location.host+") {
+	//	return ""
+	//} else {
+	//	return hn
+	//}
+	return u.Base()
+}
+
+// SetPromiscuous set prom mode
+func (u *URL) SetPromiscuous() {
 	u.Promiscuous = true
 }
-func (u *Url) ClearPromiscuous() {
+
+// ClearPromiscuous clear prom mode
+func (u *URL) ClearPromiscuous() {
 	u.Promiscuous = false
 }
-func (u Url) GetPromiscuous() bool {
+
+// GetPromiscuous returns is we are in promiscucous mode
+func (u URL) GetPromiscuous() bool {
 	return u.Promiscuous
 }
 
-func (u *Url) SetShallow() {
+// SetShallow set shallow mode
+func (u *URL) SetShallow() {
 	u.Shallow = true
 }
-func (u *Url) ClearShallow() {
+
+// ClearShallow mode
+func (u *URL) ClearShallow() {
 	u.Shallow = false
 }
-func (u Url) GetShallow() bool {
+
+// GetShallow returns true if we are in shallow mode
+func (u URL) GetShallow() bool {
 	return u.Shallow
 }
-func (item *Url) goMarshalJSON() (output []byte, err error) {
-	output, err = json.Marshal(item)
+func (u *URL) goMarshalJSON() (output []byte, err error) {
+	output, err = json.Marshal(u)
 	return
 }
-func (item *Url) goUnMarshalJSON(input []byte) (err error) {
-	err = json.Unmarshal(input, item)
+func (u *URL) goUnMarshalJSON(input []byte) (err error) {
+	err = json.Unmarshal(input, u)
 	return
 }

@@ -8,8 +8,13 @@ import (
 	"github.com/cbehopkins/gkvlite"
 )
 
+// UseConcSafe - Should we use (our own) the Concurrent Safe
+// file system.
+// Probably not, but useful if we suspect problems
 var UseConcSafe = false
 
+// DkStFileIf Any type that implements this interface
+// can be used by us
 type DkStFileIf interface {
 	ReadAt([]byte, int64) (int, error)
 	WriteAt([]byte, int64) (int, error)
@@ -18,19 +23,27 @@ type DkStFileIf interface {
 	Close() error
 	Stat() (os.FileInfo, error)
 }
+
+// DkStore is the disk store
 type DkStore struct {
 	st *gkvlite.Store
 	f  DkStFileIf
 }
 
+// Flush out the store to file
+// Does not then sync
 func (ds *DkStore) Flush() {
 	err := ds.st.Flush()
 	check(err)
 }
+
+// Sync the outstanding changes to disk
 func (ds *DkStore) Sync() {
 	err := ds.f.Sync()
 	check(err)
 }
+
+// Close will close off the store
 func (ds *DkStore) Close() {
 	err := ds.st.Flush()
 	check(err)
@@ -69,11 +82,11 @@ func (ds *DkStore) compact(filename string) {
 	f.Sync()
 	f.Close()
 }
-func openFile(filename string) (t_f DkStFileIf, err error) {
+func openFile(filename string) (tF DkStFileIf, err error) {
 	if UseConcSafe {
-		t_f, err = OpenConcSafe(filename)
+		tF, err = OpenConcSafe(filename)
 	} else {
-		t_f, err = os.OpenFile(filename, os.O_RDWR, 0600)
+		tF, err = os.OpenFile(filename, os.O_RDWR, 0600)
 	}
 	return
 }
@@ -95,6 +108,8 @@ func (ds *DkStore) openStore(filename string, overwrite bool) {
 	return
 }
 
+// ByteAble is a type that
+// can be turned into a byte array
 type ByteAble interface {
 	ToBa() []byte
 }

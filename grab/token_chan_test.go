@@ -121,10 +121,10 @@ func TestTok5(t *testing.T) {
 	log.Println("Got a token for fred")
 	tks.GetToken("bob")
 	log.Println("Got a token for bob")
-	num_loops := 100
-	wg.Add(num_loops)
+	numLoops := 100
+	wg.Add(numLoops)
 
-	for i := 0; i < num_loops; i++ {
+	for i := 0; i < numLoops; i++ {
 		go func() {
 			tks.GetToken("bob")
 			log.Println("Got another token for bob")
@@ -155,25 +155,25 @@ func TestTok6(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
-			rand_tok := rand.Intn(4)
-			token_act := domains[rand_tok]
-			tks.GetToken(token_act)
+			randTok := rand.Intn(4)
+			tokenAct := domains[randTok]
+			tks.GetToken(tokenAct)
 			//log.Println("Got a token for ", token_act)
-			if locks[rand_tok] == 0 {
-				locks[rand_tok] = 1
+			if locks[randTok] == 0 {
+				locks[randTok] = 1
 			} else {
 				log.Fatal("Bugger, We've been given the lock for someone else's data")
 			}
 			yourTime := rand.Int31n(1000)
 			time.Sleep(time.Duration(yourTime) * time.Millisecond)
 
-			if locks[rand_tok] == 1 {
-				locks[rand_tok] = 0
+			if locks[randTok] == 1 {
+				locks[randTok] = 0
 			} else {
 				log.Fatal("Bugger, someone else messed with it while we had the lock")
 			}
 
-			tks.PutToken(token_act)
+			tks.PutToken(tokenAct)
 			//log.Println("Returned ", token_act)
 			wg.Done()
 		}()
@@ -185,38 +185,38 @@ func TestTok7(t *testing.T) {
 	domains := []string{"bob", "fred", "steve", "wibble"}
 	locks := make([]int, 4)
 
-	max_procs := 2
-	tks := NewTokenChan(max_procs, "")
+	maxProcs := 2
+	tks := NewTokenChan(maxProcs, "")
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		var master_lock sync.Mutex
+		var masterLock sync.Mutex
 		go func() {
-			rand_tok := rand.Intn(4)
-			token_act := domains[rand_tok]
-			tks.GetToken(token_act)
-			log.Println("Got another token for ", token_act)
-			master_lock.Lock()
-			if locks[rand_tok] < max_procs {
-				locks[rand_tok]++
+			randTok := rand.Intn(4)
+			tokenAct := domains[randTok]
+			tks.GetToken(tokenAct)
+			log.Println("Got another token for ", tokenAct)
+			masterLock.Lock()
+			if locks[randTok] < maxProcs {
+				locks[randTok]++
 			} else {
-				log.Fatalf("Domain:%s,%v\n", token_act, locks)
+				log.Fatalf("Domain:%s,%v\n", tokenAct, locks)
 			}
-			master_lock.Unlock()
+			masterLock.Unlock()
 			yourTime := rand.Int31n(1000)
 			time.Sleep(time.Duration(yourTime) * time.Millisecond)
 
-			master_lock.Lock()
-			if locks[rand_tok] <= max_procs {
-				locks[rand_tok]--
-			} else if locks[rand_tok] == 0 {
+			masterLock.Lock()
+			if locks[randTok] <= maxProcs {
+				locks[randTok]--
+			} else if locks[randTok] == 0 {
 				log.Fatal("Decrement of zero")
 			} else {
-				log.Fatalf("Release Domain:%s,%v\n", token_act, locks)
+				log.Fatalf("Release Domain:%s,%v\n", tokenAct, locks)
 			}
-			master_lock.Unlock()
+			masterLock.Unlock()
 
-			tks.PutToken(token_act)
-			log.Println("Returned ", token_act)
+			tks.PutToken(tokenAct)
+			log.Println("Returned ", tokenAct)
 			wg.Done()
 		}()
 	}

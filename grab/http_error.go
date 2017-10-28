@@ -8,8 +8,10 @@ import (
 	"net/url"
 )
 
-type HttpError int
+// HTTPError bundles up our error codes
+type HTTPError int
 
+// Express each http error I've come across
 const (
 	NIL = iota
 	ErrBodyReadAfterClose
@@ -22,10 +24,12 @@ const (
 	ErrNotMultipart
 	ErrMissingBoundary
 	EOF
-	URL
+	ErrURL
 )
 
-func DecodeHttpError(err error) HttpError {
+// DecodeHTTPError translates from the error we get back from http package
+// to something we can use
+func DecodeHTTPError(err error) HTTPError {
 	if err == nil {
 		return NIL
 	}
@@ -64,7 +68,7 @@ func DecodeHttpError(err error) HttpError {
 		switch err.(type) {
 		case *url.Error:
 			//fmt.Println("URL Error")
-			return URL
+			return ErrURL
 		default:
 			fmt.Printf("Error type is %T, %#v\n", err, err)
 			panic(err)
