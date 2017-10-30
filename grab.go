@@ -80,7 +80,7 @@ func shutdown(
 	}
 
 	if debugShutdown {
-		fmt.Println("Shutting down Grab Function")
+		fmt.Println("Shutting down grab Function")
 	}
 	runr.Shutdown()
 	if debugShutdown {
@@ -118,7 +118,7 @@ func main() {
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
-	var linflg = flag.Bool("lin", false, "Linear Grab mode - sequentially progress through unvisited")
+	var linflg = flag.Bool("lin", false, "Linear grab mode - sequentially progress through unvisited")
 	var autopaceflg = flag.Int("apace", 0, "Automatically Pace the download")
 	var rundurationflg = flag.Duration("dur", 2*time.Hour, "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
@@ -202,9 +202,9 @@ func main() {
 
 	if !*gofastflg {
 		runr.GoSlow()
-		fmt.Println("Grab Slowly")
+		fmt.Println("grab Slowly")
 	} else {
-		fmt.Println("Rapid Grab")
+		fmt.Println("Rapid grab")
 	}
 	runr.GrabRunner(
 		numPFetch,

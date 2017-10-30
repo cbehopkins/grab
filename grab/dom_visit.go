@@ -44,7 +44,7 @@ func (dv *DomVisit) WaitLoad() {
 	dv.wg.Wait()
 }
 
-// LoadBadFiles - Load in existing bad names
+// LoadBadFiles - load in existing bad names
 func (dv *DomVisit) LoadBadFiles(badURLFn string) {
 	dv.wg.Add(1) // one for badUrls
 	go func() {

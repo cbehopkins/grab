@@ -270,7 +270,7 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 				} else {
 					if r.hm.grabItWork(urv, outCount, grabTkRep, tmpChan) {
 						delList = append(delList, urv)
-						// while we are using Visit, not VisitAll
+						// while we are using visit, not VisitAll
 						somethingSkipped = true
 					} else {
 						lastURL = urv
@@ -414,7 +414,7 @@ func (r *Runner) Seed(urlFn string, promiscuous bool) chan URL {
 	return r.ust.Seed(urlFn, promiscuous)
 }
 
-// ClearVisited move all visited locations into unvisited
+// clearVisited move all visited locations into unvisited
 func (r *Runner) ClearVisited() {
 	r.ust.clearVisited()
 }

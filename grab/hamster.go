@@ -31,7 +31,7 @@ type Hamster struct {
 
 	re  *regexp.Regexp
 	re1 *regexp.Regexp
-	// On Grab URL should we get everything we possibly can
+	// On grab URL should we get everything we possibly can
 	promiscuous bool
 	// A shallow fetch is one where the first fetch gets all
 	// Urls from the first page
@@ -349,7 +349,7 @@ func (hm *Hamster) grabItWork(urs URL, outCount *OutCounter, crawlChan *TokenCha
 	if crawlChan.TryGetToken(tokenGot) {
 		// If we successfully got the token
 		if hm.printUrls {
-			fmt.Println("Grab:", urs)
+			fmt.Println("grab:", urs)
 		}
 		if UseParallelGrab {
 			outCount.Add()
