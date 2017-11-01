@@ -149,7 +149,7 @@ func (u URL) genBase() {
 func GetBase(urls string) string {
 	var u URL
 	u.URLs = urls
-  u.Initialise()
+	u.Initialise()
 	//var ai *url.URL
 	//var err error
 	//ai, err = url.Parse(urls)

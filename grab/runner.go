@@ -2,6 +2,7 @@ package grab
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 )
@@ -20,6 +21,7 @@ type Runner struct {
 	pauseLk     sync.Mutex
 	pause       bool
 	linear      bool
+	debug       bool
 }
 
 // NewRunner - Create a new Runner
@@ -49,6 +51,7 @@ func NewRunner(
 	itm.hm.SetFetchCh(chanFetchPush)
 	itm.recycleTime = 1 * time.Millisecond
 	itm.st = time.Now()
+	itm.debug = debug
 	return itm
 }
 
@@ -178,6 +181,8 @@ func (r *Runner) GrabRunner(numPFetch int) {
 	go r.grabRunner(numPFetch)
 }
 
+type mf func(grabTkRep *TokenChan, out_count *OutCounter, tmpChan chan URL) bool
+
 func (r *Runner) grabRunner(numPFetch int) {
 	fmt.Println("Starting Hamster")
 	defer func() {
@@ -192,22 +197,23 @@ func (r *Runner) grabRunner(numPFetch int) {
 	grabTkRep := NewTokenChan(numPFetch, "grab")
 
 	if r.linear {
-		r.linGrab(grabTkRep)
+		r.genericOuter(grabTkRep, r.linGrabMiddle)
 	} else {
-		r.multiGrab(grabTkRep)
+		r.genericOuter(grabTkRep, r.multiGrabMiddle)
 	}
 }
-func (r *Runner) linGrab(grabTkRep *TokenChan) {
-	r.genericMiddle(grabTkRep, r.linGrabMiddle)
-}
-func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc func(grabTkRep *TokenChan, out_count *OutCounter, tmpChan chan URL) bool) bool {
+
+func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc mf) bool {
 	outCount := NewOutCounter()
-	outCount.initDc()
+	//outCount.initDc()
 	tmpChan := make(chan URL)
 	// Create the worker to sort any new Urls into the  two bins
 	wgt := r.ust.runChan(tmpChan, "")
 
 	cc := midFunc(grabTkRep, outCount, tmpChan)
+	if r.debug {
+		fmt.Println("midFunc complete", cc)
+	}
 	if UseParallelGrab {
 		outCount.Wait()
 	}
@@ -217,99 +223,122 @@ func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc func(grabTkRep *Tok
 	time.Sleep(r.recycleTime)
 	return cc
 }
-func (r *Runner) multiGrab(grabTkRep *TokenChan) {
-	var chanClosed bool
-	for !chanClosed {
-		if r.ust.unvisitSize() <= 0 {
-			return
+
+// Cycle returns true if we are closed
+// and therefore should stop doing what you're doing
+// makes a convenient loop variable
+// in that we pause if we should, otherwise we go for it
+func (r Runner) cycle() bool {
+	wePause := true
+	for wePause {
+		if r.closed() {
+			return true
 		}
-		select {
-		case _, ok := <-r.grabCloser:
-			if !ok {
-				chanClosed = true
-				continue
-			}
-		default:
-		}
+		// We don't expect to have multiple threads contending for
+		// read access to this lock
+		// so KISS
 		r.pauseLk.Lock()
-		wePause := r.pause
+		wePause = r.pause
 		r.pauseLk.Unlock()
 
 		if wePause {
 			time.Sleep(10 * time.Second)
-			continue
+		} else {
+			return r.closed()
 		}
-
-		cc := r.genericMiddle(grabTkRep, r.multiGrabMiddle)
-		if cc {
-			chanClosed = true
+	}
+	return false
+}
+func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
+	var chanClosed bool
+	for !chanClosed {
+		if r.ust.unvisitSize() <= 0 {
+			return true
 		}
+		if r.cycle() {
+			return chanClosed
+		}
+		chanClosed = r.genericMiddle(grabTkRep, midFunc)
+		if r.debug {
+			log.Println("midFunc complete", chanClosed)
+		}
+	}
+	if r.debug {
+		log.Println("genericOuter complete", chanClosed)
+	}
+	return chanClosed
+}
 
+// Sleep for as long as we should given the mode we are running
+func (r Runner) Sleep() {
+	if r.closed() {
+		return
+	} else if r.grabSlowly {
+		time.Sleep(10 * time.Second)
+	} else {
+		// Set to a fast ping time
+		time.Sleep(10 * time.Millisecond)
 	}
 }
+func (r Runner) closed() bool {
+	select {
+	case _, ok := <-r.grabCloser:
+		if !ok {
+			return true
+		}
+	default:
+	}
+	return false
+}
+func (r Runner) readChanUrl(urlChan chan URL) (urv URL, grabClosed bool, ok bool) {
+	select {
+	case _, ok := <-r.grabCloser:
+		if !ok {
+			grabClosed = true
+		}
+	case urv, ok = <-urlChan:
+	}
+	return
+}
+
+// Linear grab
+// In linear order grab the files and return true if we are complete
 func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
-	grabSlowly := r.grabSlowly
-	var chanClosed bool
+	// TBD somethingSkipped should be renamed work done
 	somethingSkipped := true
 	var lastURL URL
-	for somethingSkipped {
-		var delList []URL
-		somethingSkipped = false
+	for {
 		urlChan := r.ust.VisitFrom(lastURL)
-		chanClosed = false
-		for !chanClosed {
-			select {
-			case _, ok := <-r.grabCloser:
-				if !ok {
-					somethingSkipped = false
-					chanClosed = true
-				}
-			case urv, ok := <-urlChan:
-				if !ok {
-					chanClosed = true
+		for somethingSkipped {
+			somethingSkipped = false
+			urv, closed, ok := r.readChanUrl(urlChan)
+			if closed {
+				return true
+			}
+			if ok {
+				somethingSkipped = true
+				if r.hm.grabItWork(urv, outCount, grabTkRep, tmpChan) {
+					r.ust.setVisited(urv)
 				} else {
-					if r.hm.grabItWork(urv, outCount, grabTkRep, tmpChan) {
-						delList = append(delList, urv)
-						// while we are using visit, not VisitAll
-						somethingSkipped = true
-					} else {
-						lastURL = urv
-						somethingSkipped = true
-					}
+					lastURL = urv
 				}
+				r.Sleep()
+			} else if lastURL.URL() == "" {
+				// Nothing left to do
+				return true
 			}
-		}
-		for _, urs := range delList {
-			r.ust.setVisited(urs)
-		}
-		if somethingSkipped {
-			if grabSlowly {
-				time.Sleep(10 * time.Second)
-			} else {
-				// Give a Ping time for Grabbers to work
-				// Yes it's not enough, but after a couple of itterations we should
-				// get a nice balanced system
-				time.Sleep(10 * time.Millisecond)
-			}
-		} else if !chanClosed && lastURL.URL() != "" {
-			// It's possible lastURL is set to the last thing in the array
-			// but that there are still lots of things to visit
-			// In which case we should reset to the beginning
-			somethingSkipped = true
-			lastURL = NewURL("")
-		}
-		if chanClosed {
-			return true
 		}
 	}
 	return false
 }
 func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
-	var chanClosed bool
+	if r.debug {
+		log.Println("Multi is starting - getMissing started")
+	}
 	missingMapString := r.ust.getMissing(grabTkRep)
 	r.ust.flushSync()
-	//fmt.Println("Missing string rxd")
 	// Convert into a map of urls rather than string
+	log.Println("Building Map of where to visit")
 	missingMap := make(map[URL]struct{})
 	for urv := range missingMapString {
 		newURL := r.ust.retrieveUnvisted(urv)
@@ -317,10 +346,15 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 			missingMap[*newURL] = struct{}{}
 		}
 	}
-	fmt.Printf("Runnin iter loop with %v\n", len(missingMap))
-	for iterCnt := 0; !chanClosed && (iterCnt < 100) && (len(missingMap) > 0); iterCnt++ {
+	if r.debug {
+		log.Printf("Runnin iter loop with %v\n", len(missingMap))
+	}
+	for iterCnt := 0; (iterCnt < 100) && (len(missingMap) > 0); iterCnt++ {
 		closeR := r.runMultiGrabMap(missingMap, outCount, grabTkRep, tmpChan)
 		if closeR {
+			if r.debug {
+				log.Println("closing multiMiddle")
+			}
 			return true
 		}
 	}
@@ -328,34 +362,31 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 }
 func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) bool {
 	grabSuccess, closeChan := r.workMultiMap(missingMap, outCount, grabTkRep, tmpChan)
-	grabSlowly := r.grabSlowly
+	if r.debug {
+		log.Println("r.workMultiMap complete", closeChan)
+	}
 	for _, urv := range grabSuccess {
 		r.counter++
 		delete(missingMap, urv)
 	}
+	if r.debug {
+		log.Println("runMultiGrabMap complete, deletes have run", closeChan)
+	}
 	if closeChan {
 		return true
 	}
-	if grabSlowly {
-		time.Sleep(10 * time.Second)
-	} else {
-		// Give a Ping time for Grabbers to work
-		// Yes it's not enough, but after a couple of itterations we should
-		// get a nice balanced system
-		time.Sleep(10 * time.Millisecond)
-	}
+	r.Sleep()
 	return false
 }
 func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
 	grabSuccess = make([]URL, 0, len(missingMap))
 	for urv := range missingMap {
-		urv.Base()
-		select {
-		case _, ok := <-r.grabCloser:
-			if !ok {
-				return grabSuccess, true
+		if r.cycle() {
+			if r.debug {
+				fmt.Println("Work Closing")
 			}
-		default:
+			return grabSuccess, true
+		} else {
 			if r.getConditional(urv, outCount, grabTkRep, tmpChan) {
 				// If we sucessfully grab this (get a token etc)
 				// then delete it fro the store
@@ -375,12 +406,9 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 func (r *Runner) AutoPace(multiFetch *MultiFetch, target int) {
 	runAuto := true
 	for current := multiFetch.Count(); runAuto; current = multiFetch.Count() {
-		select {
-		case _, ok := <-r.grabCloser:
-			if !ok {
-				runAuto = false
-			}
-		default:
+		if r.closed() {
+			runAuto = false
+		} else {
 			if current > target {
 				r.Pause()
 				time.Sleep(10 * time.Second)

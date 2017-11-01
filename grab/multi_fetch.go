@@ -29,6 +29,7 @@ type MultiFetch struct {
 	filename     string
 	multiMode    bool
 	download     bool
+	debug        bool
 	counter      int
 	fcLk         sync.Mutex
 	st           time.Time
@@ -56,6 +57,9 @@ func NewMultiFetch(mm bool) *MultiFetch {
 // too high and you're thrashing the file system
 func (mf *MultiFetch) SetTestJpg(cnt int) {
 	mf.jpgTk = NewTokenChan(cnt, "jpg checker")
+}
+func (mf *MultiFetch) SetDebug() {
+	mf.debug = true
 }
 
 // Keep tack of the nuber that are running
@@ -198,7 +202,8 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 }
 
 // Worker starts the worker using the domvisit tracker specified
-// TBD - why not start that ourselves?
+// This is normally contained in the Runner struct
+// so as long as that had exported the interface we're fine
 func (mf *MultiFetch) Worker(dv DomVisitI) {
 	mf.wg.Add(1)
 	go func() {
@@ -266,8 +271,8 @@ func (mf *MultiFetch) saveProgress() {
 func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// here we read from in chan
 	oc := NewOutCounter()
-	oc.Add()
-	oc.Dec()
+	//oc.Add()
+	//oc.Dec()
 	// In Multi-Mode we read Direct from InChan
 	for urli := range mf.InChan {
 		//fmt.Println("Reading URL in:",urli)
@@ -376,7 +381,9 @@ func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 	}
 
 	// For a file that doesn't already exist, then just fetch it
-	//fmt.Printf("Fetching %s, fn:%s\n", fetch_url, fn)
+	if mf.debug {
+		fmt.Printf("Fetching %s, fn:%s\n", fetchURL, potentialFileName)
+	}
 	fetchFile(potentialFileName, dirStr, fetchURL)
 	return true
 }

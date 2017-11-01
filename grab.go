@@ -148,6 +148,9 @@ func main() {
 
 	// A fetch channel that goes away and writes intersting things to disk
 	multiFetch := grab.NewMultiFetch(multipleFetchers)
+  if debug {
+    multiFetch.SetDebug()
+  }
 
 	if download {
 		multiFetch.SetDownload()
@@ -186,6 +189,7 @@ func main() {
 	wgrc.Wait()
 
 	fmt.Println("Seed Phase complete")
+  // Read in the Gob
 	multiFetch.SetFileName(fetchFn)
 
 	// Now we're up and running
@@ -205,6 +209,10 @@ func main() {
 		fmt.Println("grab Slowly")
 	} else {
 		fmt.Println("Rapid grab")
+	}
+	if *autopaceflg != 0 {
+    runr.Pause()
+		go runr.AutoPace(multiFetch, *autopaceflg)
 	}
 	runr.GrabRunner(
 		numPFetch,
@@ -251,9 +259,6 @@ func main() {
 			}
 		}
 	}()
-	if *autopaceflg != 0 {
-		go runr.AutoPace(multiFetch, *autopaceflg)
-	}
 	//if *dbgflg {
 	fmt.Println("Waiting for runner to complete")
 	//}

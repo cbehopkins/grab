@@ -92,7 +92,6 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 			// No such file or directory
 			return
 		default:
-			log.Println("%x", syscall.ENOENT)
 			log.Fatalf("Unhandled syscall error:%x,%v\n", en, en)
 		}
 	}
