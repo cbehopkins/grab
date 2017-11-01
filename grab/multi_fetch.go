@@ -270,9 +270,8 @@ func (mf *MultiFetch) saveProgress() {
 }
 func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// here we read from in chan
-	oc := NewOutCounter()
-	//oc.Add()
-	//oc.Dec()
+	//oc := NewOutCounter()
+	var oc sync.WaitGroup
 	// In Multi-Mode we read Direct from InChan
 	for urli := range mf.InChan {
 		//fmt.Println("Reading URL in:",urli)
@@ -282,14 +281,14 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 		ff, ok := mf.ffMap[basename]
 		// Create one if needed
 		if !ok {
-			oc.Add()
+			oc.Add(1)
 			//fmt.Println("***************Starting*******",basename)
 			ff = NewURLStore()
 			mf.ffMap[basename] = ff
 			go func() {
 				mf.singleWorker(ff.PopChannel, dv, basename)
 				//fmt.Println("***************Stopping*******",basename)
-				oc.Dec()
+				oc.Done()
 			}()
 		}
 		// Send the entry to it

@@ -16,7 +16,7 @@ import (
 const (
 	// UseParallelGrab says that we want many grabbers if possible
 	// if possible defined by unique domains
-	UseParallelGrab = true 
+	UseParallelGrab = true
 )
 
 // Hamster is our struture for the the things that grabs and prepares things for storing

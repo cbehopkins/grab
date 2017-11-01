@@ -2,7 +2,6 @@ package grab
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"time"
 )
 
+const useTestParallel = true
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
 	letterIdxBits = 6                    // 6 bits to represent a letter index
@@ -130,14 +130,6 @@ func (dc *DkCollection) checkStore(backupHash map[string]struct{}, numEntries, m
 		}
 	}
 }
-func tempfilename() string {
-	tmpfile, err := ioutil.TempFile("", "gkvlite")
-	check(err)
-	filename := tmpfile.Name()
-	tmpfile.Close()
-	os.Remove(filename)
-	return filename
-}
 
 func TestDiskPersistX(t *testing.T) {
 	maxStrLen := 256
@@ -165,8 +157,12 @@ func TestDiskPersistX(t *testing.T) {
 						tString += ",Write Cached"
 					}
 					tFunc := func(t *testing.T) {
-						//t.Parallel()
-						generalDiskPersist(maxStrLen, ne, rc, wc)
+						testFilename := tempfilename("", true)
+						compactFilename := tempfilename("", true)
+						t.Parallel()
+						generalDiskPersist(testFilename, compactFilename, maxStrLen, ne, rc, wc)
+						os.Remove(testFilename)
+						os.Remove(compactFilename)
 					}
 					t.Run(tString, tFunc)
 				}
@@ -215,7 +211,9 @@ func benchmarkDiskPersist(b *testing.B, maxStrLen, numEntries int, useRc, useWc 
 
 // TBD implement use_rc, use_wc checking
 func generalDiskAccess(maxStrLen, numEntries int, useRc, useWc bool) {
-	testFilename := tempfilename()
+	testFilename := tempfilename("", false)
+	defer rmFilename(testFilename)
+
 	dkst := NewURLMap(testFilename, true, false)
 	backupHash0 := make(map[string]struct{})
 	backupHash1 := make(map[string]struct{})
@@ -245,8 +243,7 @@ func generalDiskAccess(maxStrLen, numEntries int, useRc, useWc bool) {
 	dkst.checkStore(backupHash1, numEntries, maxStrLen)
 	wg.Wait()
 }
-func generalDiskPersist(maxStrLen, numEntries int, useRc, useWc bool) {
-	testFilename := tempfilename()
+func generalDiskPersist(testFilename, compactFilename string, maxStrLen, numEntries int, useRc, useWc bool) {
 	dkst := NewURLMap(testFilename, true, false)
 	backupHash := make(map[string]struct{})
 
@@ -285,7 +282,6 @@ func generalDiskPersist(maxStrLen, numEntries int, useRc, useWc bool) {
 	dkst2.checkStore(backupHash, numEntries, maxStrLen)
 	log.Println("2nd Reload check complete")
 
-	compactFilename := tempfilename()
 	dkst2.dkst.ds.compact(compactFilename)
 
 	dkst2.Close()
@@ -299,7 +295,12 @@ func generalDiskPersist(maxStrLen, numEntries int, useRc, useWc bool) {
 }
 
 func TestDiskStore0(t *testing.T) {
-	testFilename := os.TempDir() + "/test.gkvlite"
+	testFilename := tempfilename("", true)
+	defer rmFilename(testFilename)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilename)
 
 	dkst := NewDkCollection(testFilename, true)
 	dkst.SetAny(23, "Hello")
@@ -316,7 +317,12 @@ func TestDiskStore0(t *testing.T) {
 }
 
 func TestDiskStore1(t *testing.T) {
-	testFilename := os.TempDir() + "/test.gkvlite"
+	testFilename := tempfilename("", true)
+	defer rmFilename(testFilename)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilename)
 
 	dkst := NewDkCollection(testFilename, true)
 	dkst.SetAny("Hello1", 23)
@@ -333,7 +339,12 @@ func TestDiskStore1(t *testing.T) {
 }
 
 func TestDiskStore2(t *testing.T) {
-	testFilename := os.TempDir() + "/test.gkvlite"
+	testFilename := tempfilename("", true)
+	defer rmFilename(testFilename)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilename)
 
 	dkst := NewDkCollection(testFilename, true)
 	defer dkst.ds.Close()
@@ -384,7 +395,13 @@ func TestDiskStore2(t *testing.T) {
 	}
 }
 func TestDiskStore3(t *testing.T) {
-	testFilename := os.TempDir() + "/test.gkvlite"
+	testFilename := tempfilename("", true)
+	defer rmFilename(testFilename)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilename)
+
 	dkst := NewDkCollection(testFilename, true)
 	defer dkst.ds.Close()
 	// Let's pretend to have some urls
@@ -424,7 +441,12 @@ func TestDiskStore3(t *testing.T) {
 }
 
 func TestDiskRandom0(t *testing.T) {
-	testFilename := os.TempDir() + "/test.gkvlite"
+	testFilename := tempfilename("", true)
+	defer rmFilename(testFilename)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilename)
 
 	dkst := NewDkCollection(testFilename, true)
 	dkst.SetAny(23, "Hello")

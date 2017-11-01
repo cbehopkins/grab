@@ -64,7 +64,13 @@ func checkStoreN(st *gkvlite.Collection, backupHash map[string]struct{}, numEntr
 
 // Test function to let me debug the internale
 func TestGkvFunc(t *testing.T) {
-	testFilen := os.TempDir() + "/test.gkvlite"
+	testFilen := tempfilename("", false)
+	defer rmFilename(testFilen)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilen)
+
 	colName := "tst"
 	f, err := os.Create(testFilen)
 	check(err)
@@ -85,7 +91,14 @@ func TestGkvFunc(t *testing.T) {
 func TestGkv0(t *testing.T) {
 	maxStrLen := 256
 	numEntries := 1000
-	testFilen := os.TempDir() + "/test.gkvlite"
+
+	testFilen := tempfilename("", false)
+	defer rmFilename(testFilen)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilen)
+
 	colName := "tst"
 	f, err := os.Create(testFilen)
 	check(err)
@@ -177,7 +190,14 @@ func TestGkv0(t *testing.T) {
 func TestGkv1(t *testing.T) {
 	maxStrLen := 256
 	numEntries := 50000
-	testFilen := os.TempDir() + "/test.gkvlite"
+
+	testFilen := tempfilename("", false)
+	defer rmFilename(testFilen)
+	if useTestParallel {
+		t.Parallel()
+	}
+	rmFilename(testFilen)
+
 	colName := "tst"
 	f, err := os.Create(testFilen)
 	check(err)

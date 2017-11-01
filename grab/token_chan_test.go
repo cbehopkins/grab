@@ -9,6 +9,9 @@ import (
 )
 
 func TestTok0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
@@ -22,6 +25,9 @@ func TestTok0(t *testing.T) {
 }
 
 func TestTok1(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
@@ -39,6 +45,9 @@ func TestTok1(t *testing.T) {
 	log.Println("Returned Fred")
 }
 func TestTok2(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
 	log.Println("Got a token for fred")
@@ -55,6 +64,9 @@ func TestTok2(t *testing.T) {
 	log.Println("Returned Fred")
 }
 func TestTok3(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	var wg sync.WaitGroup
 
 	tks := NewTokenChan(0, "")
@@ -85,6 +97,9 @@ func TestTok3(t *testing.T) {
 }
 func TestTok4(t *testing.T) {
 	var wg sync.WaitGroup
+	if useTestParallel {
+		t.Parallel()
+	}
 
 	tks := NewTokenChan(0, "")
 	tks.GetToken("fred")
@@ -114,6 +129,10 @@ func TestTok4(t *testing.T) {
 	log.Println("Returned Fred")
 }
 func TestTok5(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
+
 	var wg sync.WaitGroup
 
 	tks := NewTokenChan(0, "")
@@ -147,6 +166,9 @@ func TestTok5(t *testing.T) {
 	log.Println("Returned Fred")
 }
 func TestTok6(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	var wg sync.WaitGroup
 	domains := []string{"bob", "fred", "steve", "wibble"}
 	locks := make([]int, len(domains))
@@ -181,6 +203,9 @@ func TestTok6(t *testing.T) {
 	wg.Wait()
 }
 func TestTok7(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	var wg sync.WaitGroup
 	domains := []string{"bob", "fred", "steve", "wibble"}
 	locks := make([]int, 4)

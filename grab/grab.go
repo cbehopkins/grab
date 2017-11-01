@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -16,6 +17,24 @@ import (
 func check(err error) {
 	if err != nil {
 		panic(err)
+	}
+}
+func tempfilename(dirName string, create bool) string {
+	if dirName == "" {
+		dirName = os.TempDir()
+	}
+	tmpfile, err := ioutil.TempFile(dirName, "grabTemp_")
+	check(err)
+	filename := tmpfile.Name()
+	tmpfile.Close()
+	if !create {
+		os.Remove(filename)
+	}
+	return filename
+}
+func rmFilename(fn string) {
+	if _, err := os.Stat(fn); err == nil {
+		os.Remove(fn)
 	}
 }
 
@@ -242,10 +261,7 @@ func SaveGob(filename string, theChan chan URL, counter *OutCounter) {
 	if filename == "" {
 		return
 	}
-	if _, err := os.Stat(filename); err == nil {
-		os.Remove(filename)
-	}
-
+	rmFilename(filename)
 	preader, pwriter := io.Pipe()
 
 	f, err := os.Create(filename)
