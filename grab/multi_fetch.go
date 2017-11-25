@@ -58,6 +58,8 @@ func NewMultiFetch(mm bool) *MultiFetch {
 func (mf *MultiFetch) SetTestJpg(cnt int) {
 	mf.jpgTk = NewTokenChan(cnt, "jpg checker")
 }
+
+// SetDebug turn on the debug mode
 func (mf *MultiFetch) SetDebug() {
 	mf.debug = true
 }
@@ -245,10 +247,7 @@ func (mf *MultiFetch) Wait() {
 // PrintThroughput gives us output stats
 func (mf *MultiFetch) PrintThroughput() {
 	elapsed := time.Since(mf.st).Seconds()
-	//fmt.Printf("%d items in %v seconds",mf.counter,elapsed)
-	tp := float64(mf.counter) / elapsed
-	tpInt := int64(tp)
-	fmt.Printf("\n\n%v Media Files at %v Items per Second\n", mf.counter, tpInt)
+	fmt.Printf("\n\n%v Media Files at %s", mf.counter, Throughput(mf.counter, elapsed))
 }
 
 // Shutdown very similar to Close/Scram
@@ -383,6 +382,31 @@ func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 	if mf.debug {
 		fmt.Printf("Fetching %s, fn:%s\n", fetchURL, potentialFileName)
 	}
+
+	// if fetchURL does not have a recognised ending
+	// look through the url for one
+	// and add that to the title
+	replacePfn, extension := findExtension(fetchURL.URLs, potentialFileName)
+	if replacePfn {
+		potentialFileName = dirStr + "/" + fetchURL.Title + "_rewrite." + extension
+		if mf.debug {
+			fmt.Println("Rewrite filename to:", potentialFileName)
+		}
+	}
 	fetchFile(potentialFileName, dirStr, fetchURL)
 	return true
+}
+func findExtension(fetchURL, potentialFileName string) (bool, string) {
+	possibleExtensions := []string{"jpg", "mp4", "flv"}
+	for _, poss := range possibleExtensions {
+		if strings.HasSuffix(potentialFileName, poss) {
+			return false, potentialFileName
+		}
+	}
+	for _, poss := range possibleExtensions {
+		if strings.Contains(fetchURL, poss) {
+			return true, poss
+		}
+	}
+	return false, potentialFileName
 }

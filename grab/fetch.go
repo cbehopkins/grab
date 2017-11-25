@@ -10,6 +10,8 @@ import (
 	"syscall"
 	//"strings"
 	"time"
+
+	"github.com/cbehopkins/medorg"
 )
 
 const (
@@ -67,6 +69,10 @@ const (
 )
 
 func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
+	if fetchURL.URL() == "" {
+		//fmt.Println("null fetch")
+		return
+	}
 	// Create any directories needed to put this file in them
 	var dirFileMode os.FileMode
 	dirFileMode = os.ModeDir | (OsUserRWX | OsAllR)
@@ -96,23 +102,24 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		}
 	}
 
-	defer out.Close()
-
-	if fetchURL.URL() == "" {
-		//fmt.Println("null fetch")
-		return
-	}
 	timeout := time.Duration(FetchTimeout)
 	client := http.Client{
 		Timeout: timeout,
 	}
 	resp, err := client.Get(fetchURL.URL())
 	if err != nil {
+		out.Close()
 		return
 	}
 	_ = DecodeHTTPError(err)
 	defer resp.Body.Close()
-	_, _ = io.Copy(out, resp.Body)
+	iw, trigger, wg := medorg.Calculator(potentialFileName)
+	tR := io.TeeReader(resp.Body, iw)
+	_, _ = io.Copy(out, tR)
+	out.Close() // can't defer this because of the file sync needed.
+	// Timestamp needs to be correct before this is closed
+	close(trigger)
+	wg.Wait()
 	//check(err)
 }
 func checkJpg(filename string) bool {

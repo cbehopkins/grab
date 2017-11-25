@@ -182,9 +182,6 @@ func LoadFile(filename string, theChan chan URL, counter *OutCounter, closeChan,
 			counter.Add()
 		}
 		tmpU := NewURL(s)
-		if tmpU.Initialise() {
-			log.Fatal("nneded to init after new")
-		}
 		theChan <- tmpU
 	}
 }

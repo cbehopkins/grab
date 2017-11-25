@@ -104,6 +104,9 @@ func (hm *Hamster) Close() {
 		hm.robotsCache.Close()
 	}
 }
+
+// Run the grab process
+// and we have got the token to do this
 func (hm *Hamster) grabWithToken(
 	urlIn URL, // The URL we are tasked with crawling
 	tokenName string,
@@ -196,13 +199,23 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 		}
 
 	case isMpg, isMp4, isAvi:
-		//fmt.Println("MPG found:", linked_url)
-		if hm.allInteresting || hm.dv.VisitedQ(domainJ) {
-			tmpUr := linkedURL
-			tmpUr.SetTitle(titleText)
-			hm.fetchChan <- tmpUr
-			//fmt.Println("sent", linked_url)
+		if hm.printUrls {
+			fmt.Println("MPG found:", linkedURL, titleText)
 		}
+		vqok := hm.dv.VisitedQ(domainJ)
+		if hm.allInteresting || vqok {
+			if vqok {
+				tmpUr := linkedURL
+				tmpUr.SetTitle(titleText)
+				hm.fetchChan <- tmpUr
+				//fmt.Println("sent", linkedURL)
+			} else {
+				if hm.printUrls {
+					fmt.Println(domainJ, " not allowed")
+				}
+			}
+		}
+
 	default:
 		grabAllowed := hm.promiscuous || urlIn.GetPromiscuous() || urlIn.GetShallow()
 		if hm.promiscuous {

@@ -104,8 +104,17 @@ func memProfile(memPrfFn string) {
 		f.Close()
 	}
 }
-
+func isDir(path string) bool {
+	if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+		return true
+	}
+	return false
+}
 func main() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Unable to get current directory", err)
+	}
 	var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	var mulflg = flag.Bool("multi", true, "Use multiple Fetchers")
@@ -123,10 +132,24 @@ func main() {
 	var rundurationflg = flag.Duration("dur", 2*time.Hour, "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
 	var dumpunvisitflg = flag.String("dumpu", "", "Write Unvisited URLs to file")
-	var vdflg = flag.String("vd", os.TempDir(), "Visited Directory")
 	var numPFetch int
 	flag.IntVar(&numPFetch, "numpar", 4, "Number of parallel fetches per domain")
+	var wdflag = flag.String("wd", cwd, "Set Working Directory")
+	var vdflg = flag.String("vd", os.TempDir(), "Visited Directory")
+	var vwdflag = flag.String("vwd", "", "Set Working and Visited directory")
 	flag.Parse()
+	if *vwdflag == "" {
+		// Default value - nothing to do
+	} else {
+		if isDir(*vwdflag) {
+			wdflag = vwdflag
+			vdflg = vwdflag
+		}
+	}
+	err = os.Chdir(*wdflag)
+	if err != nil {
+		log.Fatal("Unable to change to working directory", *wdflag, err)
+	}
 	showProgressBar := !*dbgflg
 	//show_progress_bar := false
 	signalChan := make(chan os.Signal, 1)
@@ -148,9 +171,9 @@ func main() {
 
 	// A fetch channel that goes away and writes intersting things to disk
 	multiFetch := grab.NewMultiFetch(multipleFetchers)
-  if debug {
-    multiFetch.SetDebug()
-  }
+	if debug {
+		multiFetch.SetDebug()
+	}
 
 	if download {
 		multiFetch.SetDownload()
@@ -189,7 +212,7 @@ func main() {
 	wgrc.Wait()
 
 	fmt.Println("Seed Phase complete")
-  // Read in the Gob
+	// Read in the Gob
 	multiFetch.SetFileName(fetchFn)
 
 	// Now we're up and running
@@ -211,7 +234,7 @@ func main() {
 		fmt.Println("Rapid grab")
 	}
 	if *autopaceflg != 0 {
-    runr.Pause()
+		runr.Pause()
 		go runr.AutoPace(multiFetch, *autopaceflg)
 	}
 	runr.GrabRunner(

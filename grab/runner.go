@@ -3,6 +3,7 @@ package grab
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -119,10 +120,25 @@ func (r *Runner) GoSlow() {
 // PrintThroughput - performance stats
 func (r *Runner) PrintThroughput() {
 	elapsed := time.Since(r.st).Seconds()
-	//fmt.Printf("%d items in %v seconds",r.counter,elapsed)
-	tp := float64(r.counter) / elapsed
+	fmt.Print("\n\n", Throughput(r.counter, elapsed))
+}
+
+// Throughput returns an output on stats of our throughput
+func Throughput(count int, elapsed float64) string {
+	if count == 0 {
+		return "Zero work\n"
+	}
+	tp := float64(count) / elapsed
 	tpInt := int64(tp)
-	fmt.Printf("\n\n%v Items per Second\n", tpInt)
+	if tpInt > 0 {
+		return strconv.FormatInt(tpInt, 10) + " Items per Second\n"
+	}
+	tpIntMin := int64(tp * 60)
+	if tpIntMin > 10 {
+		return strconv.FormatInt(tpIntMin, 10) + " Items per Minute\n"
+	}
+	tpIntHour := int64(tp * 60 * 60)
+	return strconv.FormatInt(tpIntHour, 10) + " Items per Hour\n"
 }
 
 // Resume after a pause
@@ -290,7 +306,7 @@ func (r Runner) closed() bool {
 	}
 	return false
 }
-func (r Runner) readChanUrl(urlChan chan URL) (urv URL, grabClosed bool, ok bool) {
+func (r Runner) readChanURL(urlChan chan URL) (urv URL, grabClosed bool, ok bool) {
 	select {
 	case _, ok := <-r.grabCloser:
 		if !ok {
@@ -311,7 +327,7 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 		urlChan := r.ust.VisitFrom(lastURL)
 		for somethingSkipped {
 			somethingSkipped = false
-			urv, closed, ok := r.readChanUrl(urlChan)
+			urv, closed, ok := r.readChanURL(urlChan)
 			if closed {
 				return true
 			}
@@ -386,14 +402,13 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 				fmt.Println("Work Closing")
 			}
 			return grabSuccess, true
-		} else {
-			if r.getConditional(urv, outCount, grabTkRep, tmpChan) {
-				// If we sucessfully grab this (get a token etc)
-				// then delete it fro the store
-				//One we haven't visited we need to run a grab on
-				// This fetch the URL and look for what to do
-				grabSuccess = append(grabSuccess, urv)
-			}
+		}
+		if r.getConditional(urv, outCount, grabTkRep, tmpChan) {
+			// If we sucessfully grab this (get a token etc)
+			// then delete it fro the store
+			//One we haven't visited we need to run a grab on
+			// This fetch the URL and look for what to do
+			grabSuccess = append(grabSuccess, urv)
 		}
 	}
 	return grabSuccess, false
@@ -442,7 +457,7 @@ func (r *Runner) Seed(urlFn string, promiscuous bool) chan URL {
 	return r.ust.Seed(urlFn, promiscuous)
 }
 
-// clearVisited move all visited locations into unvisited
+// ClearVisited move all visited locations into unvisited
 func (r *Runner) ClearVisited() {
 	r.ust.clearVisited()
 }
