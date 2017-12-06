@@ -202,13 +202,11 @@ type mf func(grabTkRep *TokenChan, out_count *OutCounter, tmpChan chan URL) bool
 func (r *Runner) grabRunner(numPFetch int) {
 	fmt.Println("Starting Hamster")
 	defer func() {
-		r.wg.Done()
-		fmt.Println("grabRunner Complete")
-	}()
-	defer func() {
 		fmt.Println("Closing Hamster")
 		r.hm.Close()
 		fmt.Println("Hamster Closed")
+		r.wg.Done()
+		fmt.Println("grabRunner Complete")
 	}()
 	grabTkRep := NewTokenChan(numPFetch, "grab")
 
@@ -233,10 +231,10 @@ func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc mf) bool {
 	if UseParallelGrab {
 		outCount.Wait()
 	}
-	fmt.Println("Waiting for runChan to finish adding")
 	close(tmpChan)
+	if r.debug {fmt.Println("Waiting for runChan to finish adding")}
 	wgt.Wait()
-	time.Sleep(r.recycleTime)
+	r.abortableSleep(r.recycleTime)
 	return cc
 }
 
@@ -258,15 +256,32 @@ func (r Runner) cycle() bool {
 		r.pauseLk.Unlock()
 
 		if wePause {
-			time.Sleep(10 * time.Second)
+			r.abortableSleep(10 * time.Second)
 		} else {
 			return r.closed()
 		}
 	}
 	return false
 }
+func (r *Runner) abortableSleep(t time.Duration) bool {
+	startTime := time.Now()
+	for {
+		if r.closed() {
+			return true
+		}
+		if time.Since(startTime) > t {
+			return false
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+	return false
+}
 func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 	var chanClosed bool
+	if r.debug {
+		defer fmt.Println("genericOuter complete", chanClosed)
+	}
 	for !chanClosed {
 		if r.ust.unvisitSize() <= 0 {
 			return true
@@ -276,11 +291,8 @@ func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 		}
 		chanClosed = r.genericMiddle(grabTkRep, midFunc)
 		if r.debug {
-			log.Println("midFunc complete", chanClosed)
+		fmt.Println("midFunc complete", chanClosed)
 		}
-	}
-	if r.debug {
-		log.Println("genericOuter complete", chanClosed)
 	}
 	return chanClosed
 }
@@ -290,7 +302,7 @@ func (r Runner) Sleep() {
 	if r.closed() {
 		return
 	} else if r.grabSlowly {
-		time.Sleep(10 * time.Second)
+		r.abortableSleep(10 * time.Second)
 	} else {
 		// Set to a fast ping time
 		time.Sleep(10 * time.Millisecond)
@@ -352,9 +364,12 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 		log.Println("Multi is starting - getMissing started")
 	}
 	missingMapString := r.ust.getMissing(grabTkRep)
+	if r.debug {
+		log.Println("getMissing returned")
+	}
 	r.ust.flushSync()
 	// Convert into a map of urls rather than string
-	log.Println("Building Map of where to visit")
+	//log.Println("Building Map of where to visit")
 	missingMap := make(map[URL]struct{})
 	for urv := range missingMapString {
 		newURL := r.ust.retrieveUnvisted(urv)
@@ -368,9 +383,9 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 	for iterCnt := 0; (iterCnt < 100) && (len(missingMap) > 0); iterCnt++ {
 		closeR := r.runMultiGrabMap(missingMap, outCount, grabTkRep, tmpChan)
 		if closeR {
-			if r.debug {
-				log.Println("closing multiMiddle")
-			}
+			//if r.debug {
+			//fmt.Println("closing multiMiddle")
+			//}
 			return true
 		}
 	}
@@ -378,9 +393,9 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 }
 func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) bool {
 	grabSuccess, closeChan := r.workMultiMap(missingMap, outCount, grabTkRep, tmpChan)
-	if r.debug {
-		log.Println("r.workMultiMap complete", closeChan)
-	}
+	//if r.debug {
+	//	log.Println("r.workMultiMap complete", closeChan)
+	//}
 	for _, urv := range grabSuccess {
 		r.counter++
 		delete(missingMap, urv)
@@ -426,10 +441,10 @@ func (r *Runner) AutoPace(multiFetch *MultiFetch, target int) {
 		} else {
 			if current > target {
 				r.Pause()
-				time.Sleep(10 * time.Second)
+				r.abortableSleep(10 * time.Second)
 			} else {
 				r.Resume()
-				time.Sleep(1 * time.Second)
+				r.abortableSleep(1 * time.Second)
 			}
 		}
 	}

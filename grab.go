@@ -246,6 +246,12 @@ func main() {
 		// Show a progress bar
 		pool = progressBars(runr, multiFetch)
 		defer pool.Stop()
+		logFileName := "grab.log"
+		logf, err := os.OpenFile(logFileName, os.O_WRONLY|os.O_CREATE, 0640)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		log.SetOutput(logf)
 	}
 
 	var shutdownInProgress sync.Mutex

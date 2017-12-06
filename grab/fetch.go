@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"syscall"
 	//"strings"
 	"time"
@@ -18,7 +19,8 @@ const (
 	// FetchTimeout - set timeout for fetchs
 	FetchTimeout = 30 * time.Minute
 	// GrabTimeout - Set timeut for grabs
-	GrabTimeout = 5 * time.Second
+	GrabTimeout  = 5 * time.Second
+	GenChecksums = true
 )
 
 // Test the jpeg for validity
@@ -67,7 +69,8 @@ const (
 	OsAllRW  = OsAllR | OsAllW
 	OsAllRWX = OsAllRW | OsGroupX
 )
-
+// Slightly dodgy, but we need to re-write the struicture to make this better
+var BuffCache = medorg.NewCalcBuffer()
 func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	if fetchURL.URL() == "" {
 		//fmt.Println("null fetch")
@@ -112,15 +115,36 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		return
 	}
 	_ = DecodeHTTPError(err)
-	defer resp.Body.Close()
-	iw, trigger, wg := medorg.Calculator(potentialFileName)
-	tR := io.TeeReader(resp.Body, iw)
-	_, _ = io.Copy(out, tR)
+	var (
+		trigger chan struct{}
+		wg      *sync.WaitGroup
+		reader  io.Reader
+	)
+  if true {
+		var iw io.Writer
+		iw, trigger = BuffCache.Calculate(potentialFileName)
+		reader = io.TeeReader(resp.Body, iw)
+		defer close(trigger)
+	} else if GenChecksums {
+		var iw io.Writer
+		iw, trigger, wg = medorg.Calculator(potentialFileName)
+		reader = io.TeeReader(resp.Body, iw)
+		// defer wg.Wait()
+		// defer close(trigger)
+	
+	} else {
+		reader = resp.Body
+	}
+  // Read until EOF
+	_, _ = io.Copy(out, reader)
 	out.Close() // can't defer this because of the file sync needed.
+	resp.Body.Close()
 	// Timestamp needs to be correct before this is closed
-	close(trigger)
-	wg.Wait()
-	//check(err)
+	if true {
+  } else if GenChecksums {
+		close(trigger)
+		wg.Wait()
+	}
 }
 func checkJpg(filename string) bool {
 	out, err := os.Open(filename)

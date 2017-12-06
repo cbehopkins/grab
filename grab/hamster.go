@@ -224,9 +224,9 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 		if grabAllowed {
 			interestingURL := hm.allInteresting || hm.dv.VisitedQ(domainJ) || (domainI == domainJ)
 			if interestingURL {
-				if hm.printUrls {
-					fmt.Printf("Interesting url, %s, %s\n", linkedURL, urlIn)
-				}
+				//if hm.printUrls {
+				//	fmt.Printf("Interesting url, %s, %s\n", linkedURL, urlIn)
+				//}
 				if !hm.dv.GoodURL(urlIn) {
 					return
 				}

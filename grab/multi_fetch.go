@@ -22,7 +22,6 @@ type MultiFetch struct {
 	InChan       chan URL // Write Urls to here
 	dumpChan     chan URL
 	inChanClosed bool
-	scrammed     bool
 	scramChan    chan struct{} // Simply close this channel to saveProgress to filename
 	fifo         *URLStore     // stored here
 	ffMap        map[string]*URLStore
@@ -112,25 +111,25 @@ func (mf *MultiFetch) Scram() {
 	mf.Lock()
 	if !mf.inChanClosed {
 		close(mf.InChan)
-		mf.inChanClosed = true
-	}
-	if !mf.scrammed {
 		close(mf.scramChan)
-		mf.scrammed = true
+		mf.inChanClosed = true
 	}
 	mf.Unlock()
 }
 
 // Close down the multi fetcher
 func (mf *MultiFetch) Close() {
+	// wait for the Load gob to finish
+	mf.gwg.Wait()
 	if !mf.download {
 		mf.Scram()
 	} else {
+		mf.Lock()
 		if !mf.inChanClosed {
-			mf.gwg.Wait()
 			close(mf.InChan)
 			mf.inChanClosed = true
 		}
+		mf.Unlock()
 	}
 }
 
@@ -179,21 +178,25 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 				wt.getTok()
 				go func() {
 					tchan := make(chan struct{})
-
 					go func() {
-
+						//fmt.Println("TX Start:", urf)
 						// Fetch returns true if it has used the network
 						if mf.fetchW(urf) {
+							//fmt.Println("Fetch Complete:", urf)
 							mf.incCount()
 							time.Sleep(500 * time.Millisecond)
 						}
+						//fmt.Println("TX Complete:", urf)
+
 						tchan <- struct{}{}
 					}()
 					// Implement a timeout on the Fetch Work
 					select {
 					case <-tchan:
+						//fmt.Println("Finished Fetch of:", urf)
 					case <-time.After(FetchTimeout + time.Second):
-						log.Fatal("We needed to use the timeout case, this is bad!")
+						log.Println("Timeout of url:", urf)
+
 					}
 					// Return the token at the end
 					wt.putTok()
@@ -225,7 +228,12 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 				fmt.Println("MultiScram Start")
 				mf.scramMulti()
 				fmt.Println("Multiscram End")
-				wg.Done()
+        // We can't shutdown the BuffCache until
+        // we are sure no more fetches will start
+        // This is true once the mf inputs are drained
+        BuffCache.Close()
+				fmt.Println("BuffCache Written")
+        wg.Done()
 			}()
 			mf.dispatch(dv)
 			fmt.Println("Dispatch Complete - Closing starting")
@@ -241,7 +249,13 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 
 // Wait for the process to complete
 func (mf *MultiFetch) Wait() {
+	if mf.debug {
+		fmt.Println("MultiFetch wait")
+	}
 	mf.wg.Wait()
+	if mf.debug {
+		fmt.Println("MultiFetch wait complete")
+	}
 }
 
 // PrintThroughput gives us output stats
@@ -393,7 +407,10 @@ func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 			fmt.Println("Rewrite filename to:", potentialFileName)
 		}
 	}
+	//fmt.Println("Fetchfile start", potentialFileName)
+
 	fetchFile(potentialFileName, dirStr, fetchURL)
+	//fmt.Println("Fetchfile complete", potentialFileName)
 	return true
 }
 func findExtension(fetchURL, potentialFileName string) (bool, string) {
