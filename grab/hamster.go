@@ -242,7 +242,7 @@ func (hm *Hamster) anchorProc(t html.Token,
 		return
 	}
 	//hm.urlProc(NewURL(linkedURL), urlIn, domainI, titleText, grabChan)
-  grabChan <- NewURL(linkedURL)
+	grabChan <- NewURL(linkedURL)
 }
 
 func (hm *Hamster) scriptProc(t html.Token,
@@ -264,7 +264,7 @@ func (hm *Hamster) scriptProc(t html.Token,
 				if linkedURL.String() != "" {
 					//fmt.Println("URL:", linked_url)
 					//hm.urlProc(linkedURL, urlIn, domainI, titleText, grabChan)
-          grabChan <- linkedURL
+					grabChan <- linkedURL
 				}
 			}
 		}

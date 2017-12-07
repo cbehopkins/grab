@@ -261,7 +261,7 @@ func main() {
 		go func() {
 			// Run the main thing for no more than 100 Seconds/Minutes
 			time.Sleep(*rundurationflg)
-			fmt.Println("\n\nRuntime Exceeded\n\n")
+			fmt.Printf("\n\nRuntime Exceeded\n\n")
 			shutdownInProgress.Lock()
 			shutdownRun = true
 			memProfile(*memprofile)
