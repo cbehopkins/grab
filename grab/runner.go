@@ -173,6 +173,8 @@ func (r *Runner) Shutdown() {
 	fmt.Println("Close Runneri")
 	r.close()
 	fmt.Println("Close completer")
+  r.wg.Add(1)
+  r.wg.Done()
 	r.Wait() // Once we've closed it make sure it is closeda
 	fmt.Println("Waited for runner, closing_wg")
 	closingWg.Wait()
@@ -197,10 +199,10 @@ func (r *Runner) GrabRunner(numPFetch int) {
 	go r.grabRunner(numPFetch)
 }
 
-type mf func(grabTkRep *TokenChan, out_count *OutCounter, tmpChan chan URL) bool
+type mf func(*TokenChan, *OutCounter, chan URL) bool
 
 func (r *Runner) grabRunner(numPFetch int) {
-	fmt.Println("Starting Hamster")
+	//fmt.Println("Starting Hamster")
 	defer func() {
 		fmt.Println("Closing Hamster")
 		r.hm.Close()
@@ -219,20 +221,26 @@ func (r *Runner) grabRunner(numPFetch int) {
 
 func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc mf) bool {
 	outCount := NewOutCounter()
-	//outCount.initDc()
+  // pretend we have some workload so that we don't lock on zero work
+  outCount.Add()
+  outCount.Dec()
+  outCount.Wait()
 	tmpChan := make(chan URL)
 	// Create the worker to sort any new Urls into the  two bins
 	wgt := r.ust.runChan(tmpChan, "")
 
 	cc := midFunc(grabTkRep, outCount, tmpChan)
 	if r.debug {
-		fmt.Println("midFunc complete", cc)
+	  fmt.Println("midFunc complete", cc)
 	}
 	if UseParallelGrab {
+    if r.debug {fmt.Println("Wait for outCount in genericMiddle")}
 		outCount.Wait()
-	}
+  }
 	close(tmpChan)
-	if r.debug {fmt.Println("Waiting for runChan to finish adding")}
+	if r.debug {
+	  fmt.Println("Waiting for runChan to finish adding")
+	}
 	wgt.Wait()
 	r.abortableSleep(r.recycleTime)
 	return cc
@@ -246,6 +254,7 @@ func (r Runner) cycle() bool {
 	wePause := true
 	for wePause {
 		if r.closed() {
+			fmt.Println("cycle detected closed")
 			return true
 		}
 		// We don't expect to have multiple threads contending for
@@ -291,7 +300,7 @@ func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 		}
 		chanClosed = r.genericMiddle(grabTkRep, midFunc)
 		if r.debug {
-		fmt.Println("midFunc complete", chanClosed)
+		  fmt.Println("r.genericMiddle complete", chanClosed)
 		}
 	}
 	return chanClosed
@@ -383,9 +392,9 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 	for iterCnt := 0; (iterCnt < 100) && (len(missingMap) > 0); iterCnt++ {
 		closeR := r.runMultiGrabMap(missingMap, outCount, grabTkRep, tmpChan)
 		if closeR {
-			//if r.debug {
-			//fmt.Println("closing multiMiddle")
-			//}
+			if r.debug {
+			fmt.Println("closing multiMiddle")
+			}
 			return true
 		}
 	}
@@ -409,15 +418,36 @@ func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCount
 	r.Sleep()
 	return false
 }
+
+func StartTimer () chan struct{} {
+  bob := time.After(time.Second *40)
+  closer := make (chan struct{})
+  go func () {
+    select {
+    case <- bob:
+    log.Fatal("Timed Out")
+    case <- closer:
+    return
+    }
+  }()
+  return closer
+}
 func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
 	grabSuccess = make([]URL, 0, len(missingMap))
-	for urv := range missingMap {
+  if r.debug {
+    fmt.Println("Enter workMultiMap")
+    defer fmt.Println("Exit workMultiMap")
+  }
+  for urv := range missingMap {
+    tim := StartTimer()
 		if r.cycle() {
 			if r.debug {
 				fmt.Println("Work Closing")
 			}
+      close(tim)
 			return grabSuccess, true
 		}
+    //fmt.Println("Call gc")
 		if r.getConditional(urv, outCount, grabTkRep, tmpChan) {
 			// If we sucessfully grab this (get a token etc)
 			// then delete it fro the store
@@ -425,6 +455,8 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 			// This fetch the URL and look for what to do
 			grabSuccess = append(grabSuccess, urv)
 		}
+    close(tim)
+    //fmt.Println("Finished gc")
 	}
 	return grabSuccess, false
 }
@@ -450,6 +482,7 @@ func (r *Runner) AutoPace(multiFetch *MultiFetch, target int) {
 	}
 }
 func (r *Runner) getConditional(urs URL, outCount *OutCounter, crawlChan *TokenChan, tmpChan chan<- URL) bool {
+  //fmt.Println("getConditional",urs)
 	if r.hm.grabItWork(urs, outCount, crawlChan, tmpChan) {
 		r.ust.setVisited(urs)
 		return true

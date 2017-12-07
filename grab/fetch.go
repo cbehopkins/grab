@@ -69,8 +69,10 @@ const (
 	OsAllRW  = OsAllR | OsAllW
 	OsAllRWX = OsAllRW | OsGroupX
 )
+
 // Slightly dodgy, but we need to re-write the struicture to make this better
 var BuffCache = medorg.NewCalcBuffer()
+
 func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	if fetchURL.URL() == "" {
 		//fmt.Println("null fetch")
@@ -120,7 +122,7 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		wg      *sync.WaitGroup
 		reader  io.Reader
 	)
-  if true {
+	if true {
 		var iw io.Writer
 		iw, trigger = BuffCache.Calculate(potentialFileName)
 		reader = io.TeeReader(resp.Body, iw)
@@ -131,17 +133,17 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		reader = io.TeeReader(resp.Body, iw)
 		// defer wg.Wait()
 		// defer close(trigger)
-	
+
 	} else {
 		reader = resp.Body
 	}
-  // Read until EOF
+	// Read until EOF
 	_, _ = io.Copy(out, reader)
 	out.Close() // can't defer this because of the file sync needed.
 	resp.Body.Close()
 	// Timestamp needs to be correct before this is closed
 	if true {
-  } else if GenChecksums {
+	} else if GenChecksums {
 		close(trigger)
 		wg.Wait()
 	}

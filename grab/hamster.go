@@ -22,8 +22,6 @@ const (
 // Hamster is our struture for the the things that grabs and prepares things for storing
 // picture a little hamster going exploring and stuffing interesting things into its cheeks for later processing
 type Hamster struct {
-	// Output counter interface
-	oc *OutCounter
 	// The Domains we are allowed to visit
 	dv DomVisitI
 	// Channel we should send Further Urls to grab to
@@ -71,7 +69,6 @@ func (hm *Hamster) Polite() {
 // Duplicate one Hamster function into anoter
 func (hm *Hamster) Duplicate() *Hamster {
 	itm := new(Hamster)
-	itm.oc = hm.oc
 	itm.dv = hm.dv
 	itm.fetchChan = hm.fetchChan
 	itm.re = hm.re
@@ -82,11 +79,6 @@ func (hm *Hamster) Duplicate() *Hamster {
 	itm.printUrls = hm.printUrls
 	return itm
 }
-
-// Set the Out Counter to work on for this hamster
-//func (hm *Hamster) SetOc(oc *OutCounter) {
-//	hm.oc = oc
-//}
 
 // SetDv Sets the Domain Visit structure to use
 func (hm *Hamster) SetDv(dv DomVisitI) {
@@ -113,11 +105,6 @@ func (hm *Hamster) grabWithToken(
 	crawlChan *TokenChan,
 	grabChan chan<- URL,
 ) {
-	// Make sure we delete the counter/marker
-	// on the tracker of the nummber of outstanding processes
-	if hm.oc != nil {
-		defer hm.oc.Dec()
-	}
 	// And return the crawl token for re-use
 	defer crawlChan.PutToken(tokenName)
 	if !hm.dv.GoodURL(urlIn) {
@@ -186,9 +173,6 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 	switch {
 	case isJpg:
 		relinkedURLString = strings.TrimLeft(relinkedURLString, ".jpg")
-		if hm.oc != nil {
-			hm.oc.Add()
-		}
 		if hm.printUrls {
 			//fmt.Printf("Found jpg:%s\n", relinked_url_string)
 		}
@@ -230,9 +214,6 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 				if !hm.dv.GoodURL(urlIn) {
 					return
 				}
-				if hm.oc != nil {
-					hm.oc.Add()
-				}
 				//fmt.Printf("Send %s grab\n", linked_url)
 				grabChan <- linkedURL
 				//fmt.Println("Sent %s to grab\n",linked_url)
@@ -260,13 +241,10 @@ func (hm *Hamster) anchorProc(t html.Token,
 	if linkedURL == "" {
 		return
 	}
-	hm.urlProc(NewURL(linkedURL), urlIn, domainI, titleText, grabChan)
+	//hm.urlProc(NewURL(linkedURL), urlIn, domainI, titleText, grabChan)
+  grabChan <- NewURL(linkedURL)
 }
 
-//func resolveUrl(url_in URL) string {
-//	base := url_in.Parse()
-//	return base.String()
-//}
 func (hm *Hamster) scriptProc(t html.Token,
 	scriptText string,
 	urlIn URL,
@@ -285,7 +263,8 @@ func (hm *Hamster) scriptProc(t html.Token,
 				linkedURL.Parse()
 				if linkedURL.String() != "" {
 					//fmt.Println("URL:", linked_url)
-					hm.urlProc(linkedURL, urlIn, domainI, titleText, grabChan)
+					//hm.urlProc(linkedURL, urlIn, domainI, titleText, grabChan)
+          grabChan <- linkedURL
 				}
 			}
 		}
@@ -368,10 +347,7 @@ func (hm *Hamster) grabItWork(urs URL, outCount *OutCounter, crawlChan *TokenCha
 			outCount.Add()
 
 			go func() {
-				// Before we can send this, we need to take a copy of hm
-				// so that we can parrallelise this
-				hmp := hm.Duplicate()
-				hmp.grabWithToken(urs, // The URL we are tasked with crawling
+				hm.grabWithToken(urs, // The URL we are tasked with crawling
 					tokenGot,
 					crawlChan,
 					tmpChan,

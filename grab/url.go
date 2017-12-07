@@ -95,7 +95,7 @@ func NewURLFromBa(in []byte) URL {
 }
 
 // Base - The base of a URL
-func (u URL) Base() string {
+func (u *URL) Base() string {
 	if u.URLs == "" {
 		return ""
 	}
@@ -118,24 +118,38 @@ func (u *URL) SetTitle(tt string) {
 func (u URL) GetTitle() string {
 	return u.Title
 }
-func (u URL) parseUs() {
+func (u *URL) parseUs() {
+  if u.URLs == "" {
+    return
+  }
 	var err error
-	if *u.parse == nil && u.URLs != "" {
+	if *u.parse == nil {
 		*u.parse, err = url.Parse(u.URLs)
 		if err != nil || *u.parse == nil {
 			u.URLs = ""
 			u.Title = ""
 			*u.base = ""
+      *u.parse, _ =url.Parse(u.URLs)
 		}
 	}
 }
 
 // Parse the URL into required structure
-func (u URL) Parse() *url.URL {
+func (u *URL) Parse() *url.URL {
 	u.parseUs()
-	return *u.parse
+  if u.URLs == "" {
+    return nil
+  }
+	tmp :=  *u.parse
+  if tmp == nil {
+    log.Fatal("Nil shoul dnot be possible here")
+  }
+  return tmp
 }
 func (u URL) genBase() {
+  if u.URLs == "" {
+    return 
+  }
 	hn := u.Parse().Hostname()
 	// REVISIT pass this through GoodURL
 	if hn == "http" || hn == "nats" || strings.Contains(hn, "+document.location.host+") {

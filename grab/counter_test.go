@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+func TestCountBasic00(t *testing.T) {
+  // Check that we don't lock if there is no work to do
+	tc := NewOutCounter()
+  tc.Add()
+  tc.Dec()
+	log.Println("waiting")
+	tc.Wait()
+	log.Println("Done")
+}
 func TestCountBasic0(t *testing.T) {
 	tc := NewOutCounter()
 	tc.Add()

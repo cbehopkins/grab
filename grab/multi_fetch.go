@@ -132,7 +132,31 @@ func (mf *MultiFetch) Close() {
 		mf.Unlock()
 	}
 }
-
+func (mf *MultiFetch) Scraming() bool {
+	select {
+	case <-mf.scramChan:
+		return true
+	default:
+		return false
+	}
+}
+func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInProgres *bool, wt *wkTok) {
+	if *scramInProgres == false {
+		//fmt.Println("Scram Started")
+		*scramInProgres = true
+		if mf.multiMode {
+			for v := range ic {
+				mf.dumpChan <- v
+			}
+		} else {
+			mf.saveProgress()
+		}
+		fmt.Println("Scram finished for:", nme)
+		wt.wait()
+		fmt.Println("worker finished", nme)
+		return
+	}
+}
 func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 	scramInProgres := false
 	wt := newWkTok(4)
@@ -146,21 +170,7 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 	for {
 		select {
 		case <-mf.scramChan:
-			if scramInProgres == false {
-				//fmt.Println("Scram Started")
-				scramInProgres = true
-				if mf.multiMode {
-					for v := range ic {
-						mf.dumpChan <- v
-					}
-				} else {
-					mf.saveProgress()
-				}
-				fmt.Println("Scram finished for:", nme)
-				wt.wait()
-				fmt.Println("worker finished", nme)
-				return
-			}
+			mf.workScram(ic, dv, nme, &scramInProgres, wt)
 		case urf, ok := <-icd:
 			//fmt.Println("Fetch:", urf)
 			if !ok {
@@ -170,37 +180,46 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 				wt.wait()
 				return
 			}
+			if mf.Scraming() {
+				mf.dumpChan <- urf
+				mf.workScram(ic, dv, nme, &scramInProgres, wt)
+			}
 			if urf.base == nil {
 				urf.Initialise()
 			}
 			basename := urf.Base()
 			if basename != "" && dv.VisitedQ(basename) {
 				wt.getTok()
-				go func() {
-					tchan := make(chan struct{})
-					go func() {
-						//fmt.Println("TX Start:", urf)
-						// Fetch returns true if it has used the network
-						if mf.fetchW(urf) {
-							//fmt.Println("Fetch Complete:", urf)
-							mf.incCount()
-							time.Sleep(500 * time.Millisecond)
-						}
-						//fmt.Println("TX Complete:", urf)
-
-						tchan <- struct{}{}
-					}()
-					// Implement a timeout on the Fetch Work
-					select {
-					case <-tchan:
-						//fmt.Println("Finished Fetch of:", urf)
-					case <-time.After(FetchTimeout + time.Second):
-						log.Println("Timeout of url:", urf)
-
-					}
-					// Return the token at the end
+				if mf.Scraming() {
+					// return the urf
+					mf.dumpChan <- urf
 					wt.putTok()
-				}()
+				} else {
+					go func() {
+						tchan := make(chan struct{})
+						go func() {
+							//fmt.Println("TX Start:", urf)
+							// Fetch returns true if it has used the network
+							if mf.fetchW(urf) {
+								//fmt.Println("Fetch Complete:", urf)
+								mf.incCount()
+								time.Sleep(500 * time.Millisecond)
+							}
+							//fmt.Println("TX Complete:", urf)
+
+							tchan <- struct{}{}
+						}()
+						// Implement a timeout on the Fetch Work
+						select {
+						case <-tchan:
+							//fmt.Println("Finished Fetch of:", urf)
+						case <-time.After(FetchTimeout + time.Second):
+							log.Println("Timeout of url:", urf)
+						}
+						// Return the token at the end
+						wt.putTok()
+					}()
+				}
 			}
 		}
 	}
@@ -228,12 +247,12 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 				fmt.Println("MultiScram Start")
 				mf.scramMulti()
 				fmt.Println("Multiscram End")
-        // We can't shutdown the BuffCache until
-        // we are sure no more fetches will start
-        // This is true once the mf inputs are drained
-        BuffCache.Close()
+				// We can't shutdown the BuffCache until
+				// we are sure no more fetches will start
+				// This is true once the mf inputs are drained
+				BuffCache.Close()
 				fmt.Println("BuffCache Written")
-        wg.Done()
+				wg.Done()
 			}()
 			mf.dispatch(dv)
 			fmt.Println("Dispatch Complete - Closing starting")
