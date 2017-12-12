@@ -51,6 +51,9 @@ func (tc *TokenChan) loopToken(basename string) {
 // GetToken get a token for the supplied basename
 // blocks until it suceeds
 func (tc *TokenChan) GetToken(basename string) {
+	if basename == "" {
+		return
+	}
 	//log.Printf("Token requested for \"%v\"\n", basename)
 	tc.Lock()
 	tc.loopToken(basename)
@@ -66,6 +69,9 @@ func (tc *TokenChan) GetToken(basename string) {
 // returns false if it fails
 // does not block
 func (tc *TokenChan) TryGetToken(basename string) bool {
+	if basename == "" {
+		return true
+	}
 	// This is a variant of GetToken that doesn't block
 	// it returns true if it can give you a token
 	// false otherwise

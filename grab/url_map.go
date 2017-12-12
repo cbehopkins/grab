@@ -1,6 +1,7 @@
 package grab
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -395,15 +396,12 @@ func (um *URLMap) Visit() chan URL {
 // VisitFrom start a visit but from a specified start location
 func (um *URLMap) VisitFrom(startURL URL) chan URL {
 	retChan := make(chan URL)
-	//fmt.Println("Called Visit")
 
 	go func() {
-		//fmt.Println("Grabbing Lock")
 		//um.Lock()
 		//um.localFlush()
 		//um.Unlock()
 		um.RLock()
-		//fmt.Println("Got Lock")
 		if um.closed {
 			um.RUnlock()
 			close(retChan)
@@ -414,10 +412,52 @@ func (um *URLMap) VisitFrom(startURL URL) chan URL {
 		for _, ba := range stringArray {
 			retChan <- um.dkst.URLFromBa(ba)
 		}
-		//fmt.Println("Closing Visit Chan")
 		close(retChan)
 	}()
 	return retChan
+}
+
+// VisitFrombatch start a visit but from a specified start location
+func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
+	retChan := make(chan []URL)
+
+	go func() {
+		defer close(retChan)
+		//um.Lock()
+		//um.localFlush()
+		//um.Unlock()
+		um.RLock()
+		if um.closed {
+			um.RUnlock()
+			close(retChan)
+			return
+		}
+		um.RUnlock()
+		startingPoint := startURL.ToBa()
+		for i := 0; i < URLMapBatchCnt; i++ {
+			um.RLock()
+			stringArray := um.dkst.GetAnyKeysArrayFrom(URLMapBatchSize, startingPoint)
+			um.RUnlock()
+			if len(stringArray) == 0 {return}
+
+			startingPoint = um.sendBatch(startingPoint, stringArray,retChan)
+		}
+
+	}()
+	return retChan
+}
+func (um *URLMap) sendBatch(startingPoint []byte, stringArray [][]byte,  retChan chan []URL) []byte{
+	urlArray := make([]URL, 0, URLMapBatchSize)
+	toAdd := startingPoint
+	for _, ba := range stringArray {
+		if !bytes.Equal(toAdd, startingPoint) {
+			urlArray = append(urlArray, um.dkst.URLFromBa(toAdd))
+		}
+		toAdd = ba
+	}
+	
+	retChan <- urlArray
+	return toAdd
 }
 
 // flushWrites as it says

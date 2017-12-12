@@ -213,6 +213,7 @@ func (r *Runner) grabRunner(numPFetch int) {
 	grabTkRep := NewTokenChan(numPFetch, "grab")
 
 	if r.linear {
+		fmt.Println("Linear Grab engaged")
 		r.genericOuter(grabTkRep, r.linGrabMiddle)
 	} else {
 		r.genericOuter(grabTkRep, r.multiGrabMiddle)
@@ -339,31 +340,63 @@ func (r Runner) readChanURL(urlChan chan URL) (urv URL, grabClosed bool, ok bool
 	return
 }
 
+// linearLoopChan work through a chan of URLs
+func (r *Runner) linearLoopChan(urlChan chan URL, wkfc func(URL)) (urlRxd bool, lastURL URL) {
+	for urv := range urlChan {
+		lastURL = urv
+		if r.closed() {
+			return
+		}
+		wkfc(urv)
+		urlRxd = true
+	}
+	return
+}
+func (r *Runner) linearLoopSlice(urlSlc []URL, wkfc func(URL)) (urlRxd bool, lastURL URL) {
+	for _, urv := range urlSlc {
+		lastURL = urv
+		if r.closed() {
+			return
+		}
+		wkfc(urv)
+		urlRxd = true
+	}
+	return
+}
+
 // Linear grab
 // In linear order grab the files and return true if we are complete
 func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
-	// TBD somethingSkipped should be renamed work done
-	somethingSkipped := true
+	giwf := func(url URL) {
+		if r.hm.grabItWork(url, outCount, grabTkRep, tmpChan) {
+			r.ust.setVisited(url)
+		} else {
+			// Could not get token
+			log.Println("failed to get token for:", url)
+		}
+	}
+	//fmt.Println("Starting Lin Grab")
+	//defer fmt.Println("End Lin Grab")
 	var lastURL URL
 	for {
-		urlChan := r.ust.VisitFrom(lastURL)
-		for somethingSkipped {
-			somethingSkipped = false
-			urv, closed, ok := r.readChanURL(urlChan)
-			if closed {
-				return true
+		var urlRxd bool
+		if r.closed() {
+			return true
+		}
+		if false {
+			// This is the old method, fine, but can we make the hdd work harder?
+			urlChan := r.ust.VisitFrom(lastURL)
+			urlRxd, lastURL = r.linearLoopChan(urlChan, giwf)
+			if !urlRxd {
+				return false
 			}
-			if ok {
-				somethingSkipped = true
-				if r.hm.grabItWork(urv, outCount, grabTkRep, tmpChan) {
-					r.ust.setVisited(urv)
-				} else {
-					lastURL = urv
+		} else {
+			urlChanBatch := r.ust.VisitFromBatch(lastURL)
+			for ucb := range urlChanBatch {
+				urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
+				if !urlRxd {
+					return false
 				}
-				r.Sleep()
-			} else if lastURL.URL() == "" {
-				// Nothing left to do
-				return true
 			}
 		}
 	}

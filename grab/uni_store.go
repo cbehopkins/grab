@@ -89,6 +89,9 @@ func (usr uniStore) VisitAll(closeChan chan struct{}) chan URL {
 func (usr uniStore) VisitFrom(startURL URL) chan URL {
 	return usr.unvisitUrls.VisitFrom(startURL)
 }
+func (usr uniStore) VisitFromBatch(startURL URL) chan []URL {
+	return usr.unvisitUrls.VisitFromBatch(startURL)
+}
 func (usr uniStore) getMissing(refr *TokenChan) map[string]struct{} {
 	return usr.unvisitUrls.VisitMissing(refr)
 }

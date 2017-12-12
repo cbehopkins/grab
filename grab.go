@@ -168,7 +168,7 @@ func main() {
 	urlFn := "in_urls.txt"
 	fetchFn := "gob_fetch.txt"
 	badURLFn := "bad_urls.txt"
-
+  fmt.Println("Setting up mf")
 	// A fetch channel that goes away and writes intersting things to disk
 	multiFetch := grab.NewMultiFetch(multipleFetchers)
 	if debug {
@@ -182,7 +182,7 @@ func main() {
 		multiFetch.SetTestJpg(2)
 	}
 	chanFetchPush := multiFetch.InChan
-
+  fmt.Println("Setting up runner")
 	runr := grab.NewRunner(chanFetchPush,
 		badURLFn, *vdflg,
 		*compactflg,

@@ -188,10 +188,18 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 	retArray = make([][]byte, 0, maxItems)
 	tmpChan := make(chan []byte)
 	go func() {
+		defer close(tmpChan)
 		startItm, err := dc.col.GetItem(start, false)
 		if (startItm == nil) || (err != nil) {
 			startItm, err = dc.col.MinItem(true)
 			check(err)
+			if startItm == nil {
+				if dc.Size() > 0 {
+					log.Fatal("No start item for:")
+				}
+				// Empty collection
+				return
+			}
 		}
 		cnt := 0
 		dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
@@ -203,7 +211,6 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 			cnt++
 			return cnt < maxItems
 		})
-		close(tmpChan)
 	}()
 
 	for v := range tmpChan {

@@ -13,7 +13,8 @@ import (
 
 	"golang.org/x/net/html"
 )
-
+const URLMapBatchCnt = 128
+const URLMapBatchSize = 128
 func check(err error) {
 	if err != nil {
 		panic(err)

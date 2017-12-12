@@ -23,6 +23,21 @@ func TestTok0(t *testing.T) {
 	tks.PutToken("fred")
 	log.Println("Returned Fred")
 }
+func TestTok00(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
+	tks := NewTokenChan(0, "")
+	tks.GetToken("")
+	log.Println("Got a token for es")
+	tks.PutToken("")
+	log.Println("Returned es")
+
+	tks.GetToken("")
+	log.Println("Got a token for es")
+	tks.PutToken("")
+	log.Println("Returned es")
+}
 
 func TestTok1(t *testing.T) {
 	if useTestParallel {
