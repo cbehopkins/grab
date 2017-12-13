@@ -25,6 +25,9 @@ func NewURL(ur string) (ret URL) {
 	ret.Initialise()
 	return ret
 }
+func NewURLFromParse(urp *url.URL) URL {
+	return NewURL(urp.String())
+}
 
 // URLChannel is what it says
 type URLChannel chan URL

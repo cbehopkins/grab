@@ -98,7 +98,6 @@ func (ds *DkStore) openStore(filename string, overwrite bool) {
 		var err error
 		ds.f, err = openFile(filename)
 		check(err)
-
 		ds.st, err = gkvlite.NewStore(ds.f)
 		check(err)
 		if ds.st == nil {

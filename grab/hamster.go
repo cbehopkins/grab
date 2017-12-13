@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"net/http"
+	"net/url"
 
 	"golang.org/x/net/html"
 )
@@ -179,7 +180,6 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 		//fmt.Println("sending to fetch")
 		if hm.allInteresting || hm.dv.VisitedQ(domainJ) {
 			hm.fetchChan <- NewURL(relinkedURLString)
-			//fmt.Println("sent")
 		}
 
 	case isMpg, isMp4, isAvi:
@@ -192,7 +192,6 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 				tmpUr := linkedURL
 				tmpUr.SetTitle(titleText)
 				hm.fetchChan <- tmpUr
-				//fmt.Println("sent", linkedURL)
 			} else {
 				if hm.printUrls {
 					fmt.Println(domainJ, " not allowed")
@@ -208,18 +207,16 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 		if grabAllowed {
 			interestingURL := hm.allInteresting || hm.dv.VisitedQ(domainJ) || (domainI == domainJ)
 			if interestingURL {
-				//if hm.printUrls {
-				//	fmt.Printf("Interesting url, %s, %s\n", linkedURL, urlIn)
-				//}
+				if hm.printUrls {
+					fmt.Printf("Interesting url, %s, %s\n", linkedURL, urlIn)
+				}
 				if !hm.dv.GoodURL(urlIn) {
 					return
 				}
-				//fmt.Printf("Send %s grab\n", linked_url)
 				grabChan <- linkedURL
-				//fmt.Println("Sent %s to grab\n",linked_url)
 
 				if hm.printUrls {
-					//fmt.Printf("Uninteresting url, %s, %s, %s\n", domainI, domainJ, linkedURL)
+					fmt.Printf("Uninteresting url, %s, %s, %s\n", domainI, domainJ, linkedURL)
 				}
 			}
 		}
@@ -227,9 +224,9 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 	//}
 
 }
-func (hm *Hamster) anchorProc(t html.Token,
+func (hm *Hamster) anchorProc(
 	urlIn URL,
-	domainI string, titleText string,
+	t html.Token,
 	grabChan chan<- URL,
 ) {
 
@@ -240,44 +237,54 @@ func (hm *Hamster) anchorProc(t html.Token,
 	}
 	if linkedURL == "" {
 		return
+
 	}
-	//hm.urlProc(NewURL(linkedURL), urlIn, domainI, titleText, grabChan)
-	grabChan <- NewURL(linkedURL)
+	urn := hm.relativeLink(urlIn, linkedURL)
+	if urn.String() != "" {
+		grabChan <- urn
+	}
+
+}
+func (hm *Hamster) relativeLink(urlIn URL, linkedURL string) URL {
+	urS := urlIn.Parse()
+	tu, err := url.Parse(linkedURL)
+	if err != nil {
+		return NewURL("")
+	}
+	if tu.IsAbs() {
+		return NewURLFromParse(tu)
+
+	}
+	urn := urS.ResolveReference(tu)
+	return NewURLFromParse(urn)
 }
 
-func (hm *Hamster) scriptProc(t html.Token,
-	scriptText string,
+func (hm *Hamster) scriptProc(
 	urlIn URL,
-	domainI string, titleText string,
+	scriptText string,
 	grabChan chan<- URL,
 ) {
 
 	if strings.Contains(scriptText, "http") {
-		//t0 := script_text
 		t0 := hm.re.FindAllString(scriptText, -1)
 
 		for _, v := range t0 {
 			t1 := hm.re1.FindStringSubmatch(v)
 			if len(t1) > 1 {
-				linkedURL := NewURL(t1[1])
-				linkedURL.Parse()
-				if linkedURL.String() != "" {
-					//fmt.Println("URL:", linked_url)
-					//hm.urlProc(linkedURL, urlIn, domainI, titleText, grabChan)
-					grabChan <- linkedURL
+				linkedURL := t1[1]
+				urn := hm.relativeLink(urlIn, linkedURL)
+				if urn.String() != "" {
+					grabChan <- urn
 				}
 			}
 		}
-	} else {
-		//log.Println("Proccessing text:", script_text)
-
 	}
 }
 
 func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 	grabChan chan<- URL,
 ) {
-	titleText := ""
+	//titleText := ""
 	for {
 		tt := z.Next()
 		//fmt.Println("Processing token")
@@ -294,42 +301,31 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 			isScript := t.Data == "script"
 			isTitle := t.Data == "title"
 			if isAnchor {
-				//fmt.Println("Found A")
 				hm.anchorProc(
-					t,
 					urlIn,
-					domainI,
-					titleText,
+					t,
 					grabChan,
 				)
 			} // end Anchor processing
 			if isScript {
-				//fmt.Println("Found S")
-				currTok := t
 				nextToken := z.Next()
 				if nextToken == html.TextToken {
 					nT := z.Token()
 					scriptText := nT.Data
 					hm.scriptProc(
-						currTok,
-						scriptText,
 						urlIn,
-						domainI,
-						titleText,
+						scriptText,
 						grabChan,
 					)
 				}
 			}
 			if isTitle {
-				//fmt.Println("Found T")
-				//curr_tok := t
-				nextToken := z.Next()
-				if nextToken == html.TextToken {
-					nT := z.Token()
-					titleText = nT.Data
-
-					//fmt.Println("The title of the webpage is:", title_text)
-				}
+				_ = z.Next()
+				//nextToken := z.Next()
+				//if nextToken == html.TextToken {
+				//nT := z.Token()
+				//titleText = nT.Data
+				//}
 			}
 		} // End switch
 	}
@@ -347,7 +343,8 @@ func (hm *Hamster) grabItWork(urs URL, outCount *OutCounter, crawlChan *TokenCha
 			outCount.Add()
 
 			go func() {
-				hm.grabWithToken(urs, // The URL we are tasked with crawling
+				hm.grabWithToken(
+					urs, // The URL we are tasked with crawling
 					tokenGot,
 					crawlChan,
 					tmpChan,

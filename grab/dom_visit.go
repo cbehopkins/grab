@@ -32,16 +32,31 @@ func NewDomVisit(badFname string) *DomVisit {
 	itm.re = regexp.MustCompile("([a-zA-Z0-9_\\-\\.]*?)([a-zA-Z0-9_\\-]+\\.\\w+)/?$")
 	itm.domainsVisited = &dv
 	itm.badDomains = &bd
-	var err error
-	itm.badFile, err = os.OpenFile("badf.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	check(err)
-	itm.LoadBadFiles(badFname)
+	if badFname != "" {
+		var err error
+		itm.badFile, err = os.OpenFile("badf.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		check(err)
+		itm.LoadBadFiles(badFname)
+	}
+
 	return itm
 }
 
 // WaitLoad - wait until the load has completed
 func (dv *DomVisit) WaitLoad() {
 	dv.wg.Wait()
+}
+func (dv DomVisit) String() string {
+	retStr := "DomVisit{"
+	com := ""
+	dv.sm.RLock()
+	for key := range *dv.domainsVisited {
+		retStr += com + key
+		com = ","
+	}
+	retStr += "}"
+	dv.sm.RUnlock()
+	return retStr
 }
 
 // LoadBadFiles - load in existing bad names
@@ -63,25 +78,51 @@ func (dv DomVisit) Close() {
 }
 
 // Exist returns true if the supplied string already exists
-func (dv DomVisit) Exist(str string) bool {
-	str = dv.baseIt(str)
+func (dv DomVisit) Exist(strI string) bool {
+	str := dv.baseIt(strI)
+	//fmt.Println("BaseIt:",strI, "Orig:", str)
 	dv.sm.RLock()
 	tdv := *dv.domainsVisited
 	_, ok := tdv[str]
 	dv.sm.RUnlock()
 	return ok
 }
+func roughBase(str string) string {
+
+	switch true {
+	case strings.HasPrefix(str, "http://"):
+		str = strings.Replace(str, "http://", "", 1)
+	case strings.HasPrefix(str, "https://"):
+		str = strings.Replace(str, "https://", "", 1)
+		//    default:
+		//      log.Println("Unknoen specifier into DomVisit baseIt:", str)
+	}
+	if strings.HasPrefix(str, "/") {
+		return ""
+	}
+
+	subsA := []string{
+		"/", "?", "#",
+	}
+	for _, subs := range subsA {
+		tmpA := strings.Split(str, subs)
+		str = tmpA[0]
+	}
+	return str
+}
 func (dv DomVisit) baseIt(str string) string {
 	if str == "" {
 		return ""
 	}
+	str = roughBase(str)
 	// This MUST only have the basename passed to it
 	t1 := dv.re.FindStringSubmatch(str)
 	var base string
 	if len(t1) > 2 {
 		base = t1[2]
 	} else {
-		fmt.Printf("DomVisit Failed to parse:\"%s\"\n%v\n", str, t1)
+		log.Fatalf("DomVisit Failed to parse:\"%s\"\n%v\n", str, t1)
+		return ""
 		//panic(str)
 	}
 	return base
@@ -211,7 +252,7 @@ func (dv DomVisit) VisitedA(urlIn string) bool {
 	if ok {
 		return true
 	}
-	//fmt.Println("New Authorised Domain:", url_in)
+	fmt.Println("New Authorised Domain:", urlIn, str)
 	//dv.Add(url_in)
 	//log.Printf("Adding:%s, because %s\n", str, url_in)
 	dv.sm.Lock()
@@ -259,6 +300,8 @@ func (dv DomVisit) Seed(urlFn string, promiscuous bool) chan URL {
 				srcURLChan <- itm
 				cnt++
 				//fmt.Println(itm, "Sent")
+			} else {
+				log.Fatalln("ERROR: a URL in the seed file we can't get domain of:", itm, urlFn)
 			}
 		}
 		fmt.Println("seed_url_chan seen closed")

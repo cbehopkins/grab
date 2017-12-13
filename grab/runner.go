@@ -3,6 +3,7 @@ package grab
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -13,16 +14,17 @@ type Runner struct {
 	wg sync.WaitGroup
 	hm *Hamster
 
-	recycleTime time.Duration
-	ust         *uniStore
-	grabCloser  chan struct{}
-	counter     int
-	st          time.Time
-	grabSlowly  bool
-	pauseLk     sync.Mutex
-	pause       bool
-	linear      bool
-	debug       bool
+	recycleTime    time.Duration
+	ust            *uniStore
+	grabCloser     chan struct{}
+	counter        int
+	st             time.Time
+	grabSlowly     bool
+	pauseLk        sync.Mutex
+	pause          bool
+	linear         bool
+	debug          bool
+	allInteresting bool
 }
 
 // NewRunner - Create a new Runner
@@ -39,7 +41,6 @@ func NewRunner(
 	// A DomVisit tracks what domains we're allowed to visit
 	// Any domains we come across not in this list will not be visited
 	itm.ust = newUniStore(dir, compact, badURLFn)
-
 	// The Hamster is the thing that goes out and
 	// Grabs stuff, looking for interesting things to fetch
 	itm.hm = NewHamster(
@@ -53,6 +54,7 @@ func NewRunner(
 	itm.recycleTime = 1 * time.Millisecond
 	itm.st = time.Now()
 	itm.debug = debug
+	itm.allInteresting = allInteresting
 	return itm
 }
 
@@ -213,7 +215,6 @@ func (r *Runner) grabRunner(numPFetch int) {
 	grabTkRep := NewTokenChan(numPFetch, "grab")
 
 	if r.linear {
-		fmt.Println("Linear Grab engaged")
 		r.genericOuter(grabTkRep, r.linGrabMiddle)
 	} else {
 		r.genericOuter(grabTkRep, r.multiGrabMiddle)
@@ -275,9 +276,13 @@ func (r Runner) cycle() bool {
 	return false
 }
 func (r *Runner) abortableSleep(t time.Duration) bool {
+	return abortableSleep(t, r.closed)
+}
+
+func abortableSleep(t time.Duration, cf func() bool) bool {
 	startTime := time.Now()
 	for {
-		if r.closed() {
+		if cf() {
 			return true
 		}
 		if time.Since(startTime) > t {
@@ -288,6 +293,7 @@ func (r *Runner) abortableSleep(t time.Duration) bool {
 	}
 	return false
 }
+
 func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 	var chanClosed bool
 	if r.debug {
@@ -329,6 +335,8 @@ func (r Runner) closed() bool {
 	}
 	return false
 }
+
+// TBD I think this is unused
 func (r Runner) readChanURL(urlChan chan URL) (urv URL, grabClosed bool, ok bool) {
 	select {
 	case _, ok := <-r.grabCloser:
@@ -368,11 +376,21 @@ func (r *Runner) linearLoopSlice(urlSlc []URL, wkfc func(URL)) (urlRxd bool, las
 // In linear order grab the files and return true if we are complete
 func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
 	giwf := func(url URL) {
+		if !r.ust.Test(url, r.allInteresting) {
+			log.Println("Not an allowed domain", url)
+			// Abort if a rubbish URL
+			return
+		}
+
 		if r.hm.grabItWork(url, outCount, grabTkRep, tmpChan) {
 			r.ust.setVisited(url)
 		} else {
+			vqt := r.ust.VisitedQ(url.URL())
 			// Could not get token
-			log.Println("failed to get token for:", url)
+			if !vqt {
+				log.Println("failed to get token for:", url, vqt)
+				log.Println(r.ust.dv)
+			}
 		}
 	}
 	//fmt.Println("Starting Lin Grab")
@@ -380,28 +398,34 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 	var lastURL URL
 	for {
 		var urlRxd bool
-		if r.closed() {
+		if r.manageGoRoutines() {
 			return true
 		}
-		if false {
-			// This is the old method, fine, but can we make the hdd work harder?
-			urlChan := r.ust.VisitFrom(lastURL)
-			urlRxd, lastURL = r.linearLoopChan(urlChan, giwf)
+
+		urlChanBatch := r.ust.VisitFromBatch(lastURL)
+		for ucb := range urlChanBatch {
+			urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
 			if !urlRxd {
 				return false
-			}
-		} else {
-			urlChanBatch := r.ust.VisitFromBatch(lastURL)
-			for ucb := range urlChanBatch {
-				urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
-				if !urlRxd {
-					return false
-				}
 			}
 		}
 	}
 	return false
 }
+
+func (r *Runner) manageGoRoutines() bool {
+	maxRoutines := 1000
+	for runtime.NumGoroutine() > maxRoutines {
+		log.Println("Sleeping because too many routines", runtime.NumGoroutine(), maxRoutines)
+		r.abortableSleep(10 * time.Second)
+		maxRoutines = maxRoutines << 1
+		if r.closed() {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
 	if r.debug {
 		log.Println("Multi is starting - getMissing started")

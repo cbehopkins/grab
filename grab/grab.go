@@ -13,8 +13,10 @@ import (
 
 	"golang.org/x/net/html"
 )
+
 const URLMapBatchCnt = 128
 const URLMapBatchSize = 128
+
 func check(err error) {
 	if err != nil {
 		panic(err)
@@ -121,8 +123,6 @@ func getHref(t html.Token) (ok bool, href string) {
 		}
 	}
 
-	// "bare" return will return the variables (ok, href) as defined in
-	// the function definition
 	return
 }
 

@@ -2,6 +2,7 @@ package grab
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
@@ -21,7 +22,6 @@ func newUniStore(dir string, compact bool, badURLFn string) *uniStore {
 	// Open the maps and do not overwrite any we find
 	itm.visitedUrls = NewURLMap(visitedFname, false, compact)
 	itm.unvisitUrls = NewURLMap(unvisitFname, false, compact)
-
 	itm.visitedUrls.SetWriteCache()
 	itm.visitedUrls.SetReadCache()
 	itm.unvisitUrls.SetWriteCache()
@@ -52,6 +52,25 @@ func (usr uniStore) VisitedA(urlIn string) bool {
 	return usr.dv.VisitedA(urlIn)
 }
 
+// Test returns true if a GoodURL
+// If false then also "visits" the URL
+// Prevents bad URLs accumulating
+func (usr uniStore) Test(urlIn URL, allInteresting bool) bool {
+	vq := usr.VisitedQ(urlIn.URL())
+	if !vq {
+		log.Println("VQ say no!", urlIn.URL())
+	}
+	domainGood := allInteresting || vq
+	urlgood := usr.GoodURL(urlIn)
+	if !urlgood {
+		log.Println("UG say No!", urlIn)
+	}
+	if domainGood && urlgood {
+		return true
+	}
+	usr.setVisited(urlIn)
+	return false
+}
 func (usr uniStore) closeS() {
 	usr.unvisitUrls.Close()
 	usr.visitedUrls.Close()

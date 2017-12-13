@@ -127,7 +127,7 @@ func main() {
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
-	var linflg = flag.Bool("lin", false, "Linear grab mode - sequentially progress through unvisited")
+	var linflg = flag.Bool("lin", true, "Linear grab mode - sequentially progress through unvisited")
 	var autopaceflg = flag.Int("apace", 0, "Automatically Pace the download")
 	var rundurationflg = flag.Duration("dur", 2*time.Hour, "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
@@ -151,7 +151,9 @@ func main() {
 		log.Fatal("Unable to change to working directory", *wdflag, err)
 	}
 	showProgressBar := !*dbgflg
-	//show_progress_bar := false
+	debug := *dbgflg
+	//showProgressBar := true
+  //debug := false
 	signalChan := make(chan os.Signal, 1)
 
 	download := !*nodownflg
@@ -163,12 +165,11 @@ func main() {
 	}
 	//shallow := !promiscuous
 	allInteresting := *intrflg
-	debug := *dbgflg
 
 	urlFn := "in_urls.txt"
 	fetchFn := "gob_fetch.txt"
 	badURLFn := "bad_urls.txt"
-  fmt.Println("Setting up mf")
+	fmt.Println("Setting up mf")
 	// A fetch channel that goes away and writes intersting things to disk
 	multiFetch := grab.NewMultiFetch(multipleFetchers)
 	if debug {
@@ -182,7 +183,7 @@ func main() {
 		multiFetch.SetTestJpg(2)
 	}
 	chanFetchPush := multiFetch.InChan
-  fmt.Println("Setting up runner")
+	fmt.Println("Setting up runner")
 	runr := grab.NewRunner(chanFetchPush,
 		badURLFn, *vdflg,
 		*compactflg,
@@ -192,10 +193,12 @@ func main() {
 		*politeflg,
 	)
 	if *linflg {
+		fmt.Println("Running In Linear Mode")
 		runr.SetLinear()
 	}
 	// We expect to be able to write to the fetch channel, so start the worker
 	multiFetch.Worker(runr)
+	fmt.Println("Worker Started")
 	// If we have asked to dump the filenames to files
 	runr.Dump(*dumpunvisitflg, *dumpvisitedflg)
 
@@ -243,15 +246,17 @@ func main() {
 
 	var pool *pb.Pool
 	if showProgressBar {
-		// Show a progress bar
-		pool = progressBars(runr, multiFetch)
-		defer pool.Stop()
-		logFileName := "grab.log"
+		logFileName := "grab_new.log"
 		logf, err := os.OpenFile(logFileName, os.O_WRONLY|os.O_CREATE, 0640)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		log.SetOutput(logf)
+    fmt.Println("Log sent to file")
+
+		// Show a progress bar
+		pool = progressBars(runr, multiFetch)
+		defer pool.Stop()
 	}
 
 	var shutdownInProgress sync.Mutex

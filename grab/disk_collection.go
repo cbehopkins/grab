@@ -83,10 +83,14 @@ func (dc *DkCollection) URLFromBa(in []byte) URL {
 		return itm
 	}
 	itmBa := dc.GetAny(in)
+	return dc.URLFromVals(in, itmBa)
+}
+
+// URLFromBa Creates a new URL from the things we have retrieved from disk
+func (dc *DkCollection) URLFromVals(in, itmBa []byte) URL {
 	if string(itmBa) == "" {
 		return NewURLFromBa(in)
 	}
-	//log.Fatal("Puzzling, this is not possible")
 	var tmpURL URL
 	tmpURL.goUnMarshalJSON(itmBa)
 	tmpURL.URLs = string(in)
@@ -207,6 +211,44 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
 			tmpChan <- i.Key
+			// keep going until we have got n items
+			cnt++
+			return cnt < maxItems
+		})
+	}()
+
+	for v := range tmpChan {
+		retArray = append(retArray, v)
+	}
+	return retArray
+}
+func (dc *DkCollection) GetURLArrayFrom(maxItems int, start URL) (retArray []URL) {
+	retArray = make([]URL, 0, maxItems)
+	tmpChan := make(chan URL)
+	go func() {
+		defer close(tmpChan)
+		startItm, err := dc.col.GetItem(start.ToBa(), false)
+		if (startItm == nil) || (err != nil) {
+			startItm, err = dc.col.MinItem(true)
+			check(err)
+			if startItm == nil {
+				if dc.Size() > 0 {
+					log.Fatal("No start item for:")
+				}
+				// Empty collection
+				return
+			}
+		}
+		cnt := 0
+		dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
+			// This visitor callback will be invoked with every item
+			// If we want to stop visiting, return false;
+			// otherwise return true to keep visiting.
+			urlV := i.Key
+			urlP := i.Val
+			// REVISIT - Throw this processing into a separate routine
+			url := dc.URLFromVals(urlV, urlP)
+			tmpChan <- url
 			// keep going until we have got n items
 			cnt++
 			return cnt < maxItems
