@@ -1,7 +1,6 @@
 package grab
 
 import (
-	"fmt"
 	"image/jpeg"
 	"io"
 	"log"
@@ -126,7 +125,8 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		var iw io.Writer
 		iw, trigger = BuffCache.Calculate(potentialFileName)
 		reader = io.TeeReader(resp.Body, iw)
-		defer close(trigger)
+		//defer close(trigger)
+		//reader = resp.Body
 	} else if GenChecksums {
 		var iw io.Writer
 		iw, trigger, wg = medorg.Calculator(potentialFileName)
@@ -138,7 +138,11 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		reader = resp.Body
 	}
 	// Read until EOF
+	rc := logSlow(potentialFileName)
 	_, _ = io.Copy(out, reader)
+	defer log.Println("Finished downloading:", potentialFileName)
+	close(trigger)
+  close(rc)
 	out.Close() // can't defer this because of the file sync needed.
 	resp.Body.Close()
 	// Timestamp needs to be correct before this is closed
@@ -147,6 +151,22 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		close(trigger)
 		wg.Wait()
 	}
+}
+func logSlow(fn string) chan struct{} {
+	startTime := time.Now()
+	closeChan := make(chan struct{})
+	go func() {
+		log.Println("Started downloading:\"", fn, "\"", " At:", startTime)
+		for {
+			select {
+			case <-closeChan:
+				return
+			case <-time.After(time.Minute):
+				log.Println("Still downloading:\"", fn, "\"", " After:", time.Since(startTime))
+			}
+		}
+	}()
+	return closeChan
 }
 func checkJpg(filename string) bool {
 	out, err := os.Open(filename)
@@ -169,8 +189,7 @@ func checkJpg(filename string) bool {
 		case "invalid JPEG format: missing 0xff00 sequence":
 			return false
 		default:
-			fmt.Printf("Unknown jpeg Error Text type:%T, Value %v\n", err, err)
-			panic(err)
+			log.Fatalf("Unknown jpeg Error Text type:%T, Value %v\n", err, err)
 		}
 	default:
 		switch err.Error() {
@@ -179,8 +198,8 @@ func checkJpg(filename string) bool {
 		case "EOF":
 			return false
 		default:
-			fmt.Printf("Unknown jpeg Error type:%T, Value %v\n", err, err)
-			panic(err)
+			log.Fatalf("Unknown jpeg Error type:%T, Value %v\n", err, err)
 		}
 	}
+	return false
 }

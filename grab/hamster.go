@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -113,10 +114,10 @@ func (hm *Hamster) grabWithToken(
 		return
 	}
 
-	if hm.printUrls {
-		fmt.Printf("Analyzing UR: %s\n", urlIn)
-		defer fmt.Println("Done with URL:", urlIn)
-	}
+	//if hm.printUrls {
+	//	fmt.Printf("Analyzing UR: %s\n", urlIn)
+	//	defer fmt.Println("Done with URL:", urlIn)
+	//}
 
 	if hm.robotsCache != nil {
 		if !hm.robotsCache.AllowURL(urlIn) {
@@ -148,49 +149,39 @@ func (hm *Hamster) grabWithToken(
 	domainI := urlIn.Base()
 	hm.tokenhandle(z, urlIn, domainI, grabChan)
 }
-func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText string, grabChan chan<- URL) {
-	// I need to get this into an absolute URL again
-	base := urlIn.Parse()
-	u := linkedURL.Parse()
-	// Need to re-check for ""
-	// as Parse will nil the strings if parse errors
-	if linkedURL.URL() == "" || urlIn.URL() == "" || base == nil || u == nil {
-		return
-	}
+func (hm *Hamster) urlProc(urlOrig, urlIn URL, domainI string, grabChan chan<- URL) {
 	// Re-write an relative URLs
-	relinkedURLString := base.ResolveReference(u).String()
-	linkedURL = NewURL(relinkedURLString)
+	relinkedURLString := urlIn.String()
+	linkedURL := urlIn
 
 	domainJ := linkedURL.Base()
 	if domainJ == "" {
-		//fmt.Println("Unable to get base,", linked_url)
+		log.Println("Unable to get base, in urlProc", linkedURL)
 		return
 	}
-
+	//fmt.Println("urlProc on:",urlIn)
 	isJpg := strings.Contains(relinkedURLString, ".jpg")
 	isMpg := strings.Contains(relinkedURLString, ".mpg")
 	isMp4 := strings.Contains(relinkedURLString, ".mp4")
 	isAvi := strings.Contains(relinkedURLString, ".avi")
+	isGz := strings.Contains(relinkedURLString, ".gz")
 	switch {
 	case isJpg:
-		relinkedURLString = strings.TrimLeft(relinkedURLString, ".jpg")
-		if hm.printUrls {
-			//fmt.Printf("Found jpg:%s\n", relinked_url_string)
-		}
-		//fmt.Println("sending to fetch")
+		//if hm.printUrls {
+		log.Printf("Found jpg:%s\n", relinkedURLString)
+		//}
 		if hm.allInteresting || hm.dv.VisitedQ(domainJ) {
-			hm.fetchChan <- NewURL(relinkedURLString)
+			hm.fetchChan <- linkedURL
 		}
 
 	case isMpg, isMp4, isAvi:
-		if hm.printUrls {
-			fmt.Println("MPG found:", linkedURL, titleText)
-		}
+		//if hm.printUrls {
+		log.Println("MPG found:", linkedURL)
+		//}
 		vqok := hm.dv.VisitedQ(domainJ)
 		if hm.allInteresting || vqok {
 			if vqok {
 				tmpUr := linkedURL
-				tmpUr.SetTitle(titleText)
 				hm.fetchChan <- tmpUr
 			} else {
 				if hm.printUrls {
@@ -198,9 +189,9 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 				}
 			}
 		}
-
+	case isGz:
 	default:
-		grabAllowed := hm.promiscuous || urlIn.GetPromiscuous() || urlIn.GetShallow()
+		grabAllowed := hm.promiscuous || urlOrig.GetPromiscuous() || urlOrig.GetShallow()
 		if hm.promiscuous {
 			linkedURL.SetPromiscuous()
 		}
@@ -221,28 +212,34 @@ func (hm *Hamster) urlProc(linkedURL, urlIn URL, domainI string, titleText strin
 			}
 		}
 	}
-	//}
-
 }
+
+func (hm *Hamster) foundUrl(urlOrig, url URL, domainI string, grabChan chan<- URL) {
+
+	if url.String() != "" {
+		hm.urlProc(urlOrig, url, domainI, grabChan)
+	}
+}
+
 func (hm *Hamster) anchorProc(
 	urlIn URL,
+	domainI, titleText string,
 	t html.Token,
 	grabChan chan<- URL,
 ) {
-
 	// Extract the href value, if there is one
+	//fmt.Println("Anchor running with", urlIn)
 	ok, linkedURL := getHref(t)
 	if !ok {
 		return
 	}
 	if linkedURL == "" {
 		return
-
 	}
+	//fmt.Println("Link is:", linkedURL)
 	urn := hm.relativeLink(urlIn, linkedURL)
-	if urn.String() != "" {
-		grabChan <- urn
-	}
+	urn.SetTitle(titleText)
+	hm.foundUrl(urlIn, urn, domainI, grabChan)
 
 }
 func (hm *Hamster) relativeLink(urlIn URL, linkedURL string) URL {
@@ -253,7 +250,6 @@ func (hm *Hamster) relativeLink(urlIn URL, linkedURL string) URL {
 	}
 	if tu.IsAbs() {
 		return NewURLFromParse(tu)
-
 	}
 	urn := urS.ResolveReference(tu)
 	return NewURLFromParse(urn)
@@ -261,6 +257,7 @@ func (hm *Hamster) relativeLink(urlIn URL, linkedURL string) URL {
 
 func (hm *Hamster) scriptProc(
 	urlIn URL,
+	domainI, titleText string,
 	scriptText string,
 	grabChan chan<- URL,
 ) {
@@ -273,9 +270,8 @@ func (hm *Hamster) scriptProc(
 			if len(t1) > 1 {
 				linkedURL := t1[1]
 				urn := hm.relativeLink(urlIn, linkedURL)
-				if urn.String() != "" {
-					grabChan <- urn
-				}
+				urn.SetTitle(titleText)
+				hm.foundUrl(urlIn, urn, domainI, grabChan)
 			}
 		}
 	}
@@ -284,7 +280,7 @@ func (hm *Hamster) scriptProc(
 func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 	grabChan chan<- URL,
 ) {
-	//titleText := ""
+	titleText := ""
 	for {
 		tt := z.Next()
 		//fmt.Println("Processing token")
@@ -295,7 +291,7 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 			return
 		case tt == html.StartTagToken:
 			t := z.Token()
-			//fmt.Println("Start Token")
+			// fmt.Println("Start Token")
 			// Check if the token is an <a> tag
 			isAnchor := t.Data == "a"
 			isScript := t.Data == "script"
@@ -303,6 +299,8 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 			if isAnchor {
 				hm.anchorProc(
 					urlIn,
+					domainI,
+					titleText,
 					t,
 					grabChan,
 				)
@@ -314,18 +312,20 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 					scriptText := nT.Data
 					hm.scriptProc(
 						urlIn,
+						domainI,
+						titleText,
 						scriptText,
 						grabChan,
 					)
 				}
 			}
 			if isTitle {
-				_ = z.Next()
-				//nextToken := z.Next()
-				//if nextToken == html.TextToken {
-				//nT := z.Token()
-				//titleText = nT.Data
-				//}
+				//_ = z.Next()
+				nextToken := z.Next()
+				if nextToken == html.TextToken {
+					nT := z.Token()
+					titleText = nT.Data
+				}
 			}
 		} // End switch
 	}

@@ -253,7 +253,7 @@ func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc mf) bool {
 // and therefore should stop doing what you're doing
 // makes a convenient loop variable
 // in that we pause if we should, otherwise we go for it
-func (r Runner) cycle() bool {
+func (r *Runner) cycle() bool {
 	wePause := true
 	for wePause {
 		if r.closed() {
@@ -377,7 +377,7 @@ func (r *Runner) linearLoopSlice(urlSlc []URL, wkfc func(URL)) (urlRxd bool, las
 func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
 	giwf := func(url URL) {
 		if !r.ust.Test(url, r.allInteresting) {
-			log.Println("Not an allowed domain", url)
+			//log.Println("Not an allowed domain", url)
 			// Abort if a rubbish URL
 			return
 		}
@@ -408,6 +408,9 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 			if !urlRxd {
 				return false
 			}
+		if r.cycle() {
+			return true
+		}
 		}
 	}
 	return false

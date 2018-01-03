@@ -45,14 +45,17 @@ func (wt *wkTok) putTok() {
 	wt.Lock()
 	wt.cnt--
 	// one of possibly many receivers will get this
-	select {
-	case wt.broadcastChan <- struct{}{}:
-	default:
-	}
+	go func() {
+		select {
+		case wt.broadcastChan <- struct{}{}:
+			//default:
+		}
+	}()
 
 	defer wt.Unlock()
 	if (wt.cnt == 0) && (wt.waitChan != nil) {
 		close(wt.waitChan)
+		wt.waitChan = nil
 	}
 }
 

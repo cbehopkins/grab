@@ -110,20 +110,19 @@ func roughBase(str string) string {
 	}
 	return str
 }
-func (dv DomVisit) baseIt(str string) string {
-	if str == "" {
+func (dv DomVisit) baseIt(strI string) string {
+	if strI == "" {
 		return ""
 	}
-	str = roughBase(str)
+	str := roughBase(strI)
 	// This MUST only have the basename passed to it
 	t1 := dv.re.FindStringSubmatch(str)
 	var base string
 	if len(t1) > 2 {
 		base = t1[2]
 	} else {
-		log.Fatalf("DomVisit Failed to parse:\"%s\"\n%v\n", str, t1)
+		log.Printf("DomVisit Failed to parse:\"%s\"\n%v\n%v\n", strI, str, t1)
 		return ""
-		//panic(str)
 	}
 	return base
 }
@@ -252,9 +251,6 @@ func (dv DomVisit) VisitedA(urlIn string) bool {
 	if ok {
 		return true
 	}
-	fmt.Println("New Authorised Domain:", urlIn, str)
-	//dv.Add(url_in)
-	//log.Printf("Adding:%s, because %s\n", str, url_in)
 	dv.sm.Lock()
 	tdv = *dv.domainsVisited
 	tdv[str] = struct{}{}

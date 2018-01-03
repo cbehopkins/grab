@@ -162,8 +162,7 @@ func LoadFile(filename string, theChan chan URL, counter *OutCounter, closeChan,
 		if os.IsNotExist(err) {
 			return
 		}
-		fmt.Printf("error opening URL file: %T\n", err)
-		os.Exit(1)
+		log.Fatalf("error opening URL file: %T\n", err)
 		return
 	}
 	defer f.Close()
@@ -223,8 +222,7 @@ func LoadGob(filename string, theChan chan URL, counter *OutCounter, closeChan b
 		if os.IsNotExist(err) {
 			return
 		}
-		fmt.Printf("error opening GOB file: %T\n", err)
-		os.Exit(1)
+		log.Fatalf("error opening GOB file: %T\n", err)
 		return
 
 	}

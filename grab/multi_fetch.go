@@ -18,21 +18,21 @@ type MultiFetch struct {
 	// Gob wait Group
 	// Ensure we wait for gob to have finished before we close the fetch channel
 	// That gob will be trying to write to
-	gwg          sync.WaitGroup
-	InChan       chan URL // Write Urls to here
-	dumpChan     chan URL
-	inChanClosed bool
-	scramChan    chan struct{} // Simply close this channel to saveProgress to filename
-	fifo         *URLStore     // stored here
-	ffMap        map[string]*URLStore
-	filename     string
-	multiMode    bool
-	download     bool
-	debug        bool
-	counter      int
-	fcLk         sync.Mutex
-	st           time.Time
-	jpgTk        *TokenChan
+	gwg       sync.WaitGroup
+	InChan    chan URL // Write Urls to here
+	dumpChan  chan URL
+	scramChan chan struct{} // Simply close this channel to saveProgress to filename
+	closeChan chan struct{}
+	fifo      *URLStore // stored here
+	ffMap     map[string]*URLStore
+	filename  string
+	multiMode bool
+	download  bool
+	debug     bool
+	counter   int
+	fcLk      sync.Mutex
+	st        time.Time
+	jpgTk     *TokenChan
 }
 
 // NewMultiFetch - create a new fetch engine - specify if it should use multi mode
@@ -47,6 +47,7 @@ func NewMultiFetch(mm bool) *MultiFetch {
 		itm.InChan = make(chan URL)
 	}
 	itm.scramChan = make(chan struct{})
+	itm.closeChan = make(chan struct{})
 	itm.st = time.Now()
 	return itm
 }
@@ -107,29 +108,31 @@ func (mf *MultiFetch) SetDownload() {
 // Ther's an overlap of functions here - we could tidy this up
 // But I like the idea of saveProgress!
 func (mf *MultiFetch) Scram() {
-	fmt.Println("Scram Requested", mf.Count())
-	mf.Lock()
-	if !mf.inChanClosed {
-		close(mf.InChan)
+	//fmt.Println("Scram Requested", mf.Count())
+	if !mf.Scraming() {
 		close(mf.scramChan)
-		mf.inChanClosed = true
 	}
-	mf.Unlock()
+}
+func (mf *MultiFetch) Closed() bool {
+	select {
+	case <-mf.closeChan:
+		return true
+	default:
+		return false
+	}
 }
 
 // Close down the multi fetcher
+// Close does not scram, it waits for downloads to finish
 func (mf *MultiFetch) Close() {
 	// wait for the Load gob to finish
 	mf.gwg.Wait()
-	if !mf.download {
-		mf.Scram()
-	} else {
-		mf.Lock()
-		if !mf.inChanClosed {
-			close(mf.InChan)
-			mf.inChanClosed = true
-		}
-		mf.Unlock()
+	mf.close()
+}
+func (mf *MultiFetch) close() {
+	if !mf.Closed() {
+		close(mf.InChan)
+		close(mf.closeChan)
 	}
 }
 func (mf *MultiFetch) Scraming() bool {
@@ -180,10 +183,6 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 				wt.wait()
 				return
 			}
-			if mf.Scraming() {
-				mf.dumpChan <- urf
-				mf.workScram(ic, dv, nme, &scramInProgres, wt)
-			}
 			if urf.base == nil {
 				urf.Initialise()
 			}
@@ -207,7 +206,7 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 							}
 							//fmt.Println("TX Complete:", urf)
 
-							tchan <- struct{}{}
+							close(tchan)
 						}()
 						// Implement a timeout on the Fetch Work
 						select {
@@ -286,8 +285,8 @@ func (mf *MultiFetch) PrintThroughput() {
 // Shutdown very similar to Close/Scram
 // TBD Why do we have this?
 func (mf *MultiFetch) Shutdown() {
-	mf.Scram()
 	mf.Wait()
+  mf.Close()
 	mf.PrintThroughput()
 }
 
@@ -340,6 +339,9 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 }
 
 func (mf *MultiFetch) fetchW(fetchURL URL) bool {
+	if mf.Closed() {
+		return false
+	}
 	// We retun true if we have used network bandwidth.
 	// If we have not then it's okay to jump straight onto the next file
 	array := strings.Split(fetchURL.URL(), "/")
@@ -408,7 +410,6 @@ func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 			// not a jpg and it already exists
 			return false
 		}
-
 	}
 
 	// For a file that doesn't already exist, then just fetch it

@@ -59,7 +59,6 @@ func progressBars(r *grab.Runner, multiFetch *grab.MultiFetch) *pb.Pool {
 
 func shutdown(
 	pool *pb.Pool, // The Progress Bars
-	shutdownInProgress *sync.Mutex,
 	multiFetch *grab.MultiFetch,
 	runr *grab.Runner) {
 
@@ -91,7 +90,6 @@ func shutdown(
 	// Wait for hamster to complete
 	fmt.Println("Fetch Complete")
 
-	shutdownInProgress.Unlock()
 	fmt.Println("Shutdown Complete")
 }
 func memProfile(memPrfFn string) {
@@ -268,10 +266,12 @@ func main() {
 			time.Sleep(*rundurationflg)
 			fmt.Printf("\n\nRuntime Exceeded\n\n")
 			shutdownInProgress.Lock()
-			shutdownRun = true
+	    defer	shutdownInProgress.Unlock()
+      shutdownRun = true
 			memProfile(*memprofile)
 			fmt.Println("Calling Shutdown")
-			shutdown(pool, &shutdownInProgress, multiFetch, runr)
+      multiFetch.Scram()
+			shutdown(pool,  multiFetch, runr)
 		}()
 	}
 
@@ -283,10 +283,13 @@ func main() {
 			if ccCnt == 1 {
 				shutdownInProgress.Lock()
 				go func() {
-					fmt.Println("Ctrl-C Detected")
+	        defer	shutdownInProgress.Unlock()
+          shutdownRun = true
+          fmt.Println("Ctrl-C Detected")
 					shutdownRun = true
 					memProfile(*memprofile)
-					shutdown(pool, &shutdownInProgress, multiFetch, runr)
+          multiFetch.Scram()
+          shutdown(pool, multiFetch, runr)
 				}()
 			} else {
 				os.Exit(1)
@@ -307,13 +310,13 @@ func main() {
 	//}
 
 	shutdownInProgress.Lock()
+	defer	shutdownInProgress.Unlock()
 	//if *dbgflg {
 	fmt.Println("Got shutdown lock. Adios!")
 	//}
 	if !shutdownRun {
-		memProfile(*memprofile)
-		shutdown(pool, &shutdownInProgress, multiFetch, runr)
-	} else {
-		shutdownInProgress.Unlock()
+    shutdownRun = true
+    memProfile(*memprofile)
+		shutdown(pool, multiFetch, runr)
 	}
 }
