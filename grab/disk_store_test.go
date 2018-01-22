@@ -17,11 +17,13 @@ const (
 	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
-
+var randLock sync.Mutex
 var src = rand.NewSource(time.Now().UnixNano())
 
 func RandStringBytesMaskImprSrc(n int) string {
 	b := make([]byte, n)
+  randLock.Lock()
+  defer randLock.Unlock()
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
 	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {

@@ -42,15 +42,12 @@ func NewDkCollection(filename string, overwrite bool) *DkCollection {
 
 // SetAny - Set the value of any type
 func (dc *DkCollection) SetAny(key, val interface{}) {
-	keyBs := toBa(key)
-	valBs := toBa(val)
-	dc.col.Set(keyBs, valBs)
+	dc.col.SetAny(key, val)
 }
 
 // GetAny - Get a value of any type
 func (dc *DkCollection) GetAny(key interface{}) []byte {
-	keyBs := toBa(key)
-	retVal, err := dc.col.Get(keyBs)
+	retVal, err := dc.col.GetAny(key)
 	check(err)
 	return retVal
 }
@@ -86,7 +83,7 @@ func (dc *DkCollection) URLFromBa(in []byte) URL {
 	return dc.URLFromVals(in, itmBa)
 }
 
-// URLFromBa Creates a new URL from the things we have retrieved from disk
+// URLFromVals Creates a new URL from the things we have retrieved from disk
 func (dc *DkCollection) URLFromVals(in, itmBa []byte) URL {
 	if string(itmBa) == "" {
 		return NewURLFromBa(in)
@@ -100,17 +97,14 @@ func (dc *DkCollection) URLFromVals(in, itmBa []byte) URL {
 
 // Delete returns true if we managed to delete the supplied key
 func (dc *DkCollection) Delete(key interface{}) bool {
-	keyBs := toBa(key)
-	wasDeleted, err := dc.col.Delete(keyBs)
+	wasDeleted, err := dc.col.DeleteAny(key)
 	check(err)
 	return wasDeleted
 }
 
 // Exist returns true if a supplied key exists
 func (dc *DkCollection) Exist(key interface{}) bool {
-	keyBs := toBa(key)
-	val, _ := dc.col.GetItem(keyBs, false)
-	return val != nil
+	return dc.col.ExistAny(key)
 }
 
 // GetString Get values of string type
@@ -222,6 +216,7 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 	}
 	return retArray
 }
+// GetURLArrayFrom Get an array of URLs starting at the specified location
 func (dc *DkCollection) GetURLArrayFrom(maxItems int, start URL) (retArray []URL) {
 	retArray = make([]URL, 0, maxItems)
 	tmpChan := make(chan URL)

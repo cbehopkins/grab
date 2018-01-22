@@ -19,6 +19,7 @@ const (
 	FetchTimeout = 30 * time.Minute
 	// GrabTimeout - Set timeut for grabs
 	GrabTimeout  = 5 * time.Second
+  // GenChecksums - turns on generating checksums on files as we write them
 	GenChecksums = true
 )
 
@@ -68,7 +69,7 @@ const (
 	OsAllRW  = OsAllR | OsAllW
 	OsAllRWX = OsAllRW | OsGroupX
 )
-
+// BuffCache is a cache of the buffers we are in the middle of calculating
 // Slightly dodgy, but we need to re-write the struicture to make this better
 var BuffCache = medorg.NewCalcBuffer()
 

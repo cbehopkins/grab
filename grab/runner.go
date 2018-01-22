@@ -287,11 +287,9 @@ func abortableSleep(t time.Duration, cf func() bool) bool {
 		}
 		if time.Since(startTime) > t {
 			return false
-		} else {
-			time.Sleep(time.Second)
-		}
+    }
+		time.Sleep(time.Second)
 	}
-	return false
 }
 
 func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
@@ -315,7 +313,7 @@ func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 }
 
 // Sleep for as long as we should given the mode we are running
-func (r Runner) Sleep() {
+func (r *Runner) Sleep() {
 	if r.closed() {
 		return
 	} else if r.grabSlowly {
@@ -325,7 +323,7 @@ func (r Runner) Sleep() {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
-func (r Runner) closed() bool {
+func (r *Runner) closed() bool {
 	select {
 	case _, ok := <-r.grabCloser:
 		if !ok {
@@ -334,18 +332,6 @@ func (r Runner) closed() bool {
 	default:
 	}
 	return false
-}
-
-// TBD I think this is unused
-func (r Runner) readChanURL(urlChan chan URL) (urv URL, grabClosed bool, ok bool) {
-	select {
-	case _, ok := <-r.grabCloser:
-		if !ok {
-			grabClosed = true
-		}
-	case urv, ok = <-urlChan:
-	}
-	return
 }
 
 // linearLoopChan work through a chan of URLs
@@ -413,7 +399,6 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 		}
 		}
 	}
-	return false
 }
 
 func (r *Runner) manageGoRoutines() bool {
@@ -479,7 +464,10 @@ func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCount
 	r.Sleep()
 	return false
 }
-
+// StartTimer creates a way to detect operations that take too long
+// Call start timer before the operation and it returns a channel
+// Close this channel at the end of the operation
+// You'll get a fatal error if this takes more than 40 seconds
 func StartTimer() chan struct{} {
 	bob := time.After(time.Second * 40)
 	closer := make(chan struct{})

@@ -25,6 +25,7 @@ func NewURL(ur string) (ret URL) {
 	ret.Initialise()
 	return ret
 }
+// NewURLFromParse accepts a net/url in and returns our URL struct
 func NewURLFromParse(urp *url.URL) URL {
 	return NewURL(urp.String())
 }

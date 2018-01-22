@@ -13,8 +13,9 @@ import (
 
 	"golang.org/x/net/html"
 )
-
+// URLMapBatchCnt defines how many batches to fetch in one visit read
 const URLMapBatchCnt = 128
+// URLMapBatchSize defines the number of items to fetch in a single read
 const URLMapBatchSize = 128
 
 func check(err error) {

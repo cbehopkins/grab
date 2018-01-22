@@ -10,7 +10,7 @@ import (
 	"time"
 	"github.com/cbehopkins/gkvlite"
 )
-
+// URLMapOverFlush turns on cautious flushing of the structs
 const URLMapOverFlush = true
 
 // URLMap represents the prototype of a map from url string(key)  to the struct
@@ -173,6 +173,7 @@ func (um *URLMap) Close() {
 		fmt.Println("Unlocked, so finish closing")
 	}
 }
+// MemStats return debug information on memory statistics
 func MemStats() string {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -200,12 +201,11 @@ func (um *URLMap) flusher() {
 		//log.Printf("Attempting Flushing the URLMap\n")
 		if um.Closed() {
 			return
-		} else {
-			//fmt.Printf("Flushing the URLMap\n%s\n", MemStats())
-			um.Flush()
-			um.Sync()
-			//fmt.Printf("Completed Flushing the URLMap\n%s\n", MemStats())
 		}
+		//fmt.Printf("Flushing the URLMap\n%s\n", MemStats())
+		um.Flush()
+		um.Sync()
+	  //fmt.Printf("Completed Flushing the URLMap\n%s\n", MemStats())
 	}
 }
 
@@ -343,6 +343,7 @@ func (um *URLMap) Check(key URL) bool {
 	}
 	return found
 }
+// Closed returns true if the URLMap is closed for business
 func (um *URLMap) Closed() bool {
 	select {
 	case <-um.closeChan:
@@ -424,9 +425,12 @@ func (um *URLMap) VisitAll(closeChan chan struct{}) chan URL {
 	}()
 	return retChan
 }
+// URLFromBaWithLock creates a new URL from a byte array
+// and and external context has already got the lock for us
 func (um *URLMap) URLFromBaWithLock(in []byte) URL {
 	return um.dkst.URLFromBa(in)
 }
+// URLFromBa create a URL from a byte array
 func (um *URLMap) URLFromBa(in []byte) URL {
 	um.RLock()
 	tmp := um.URLFromBaWithLock(in)
@@ -488,7 +492,7 @@ func (um *URLMap) VisitFrom(startURL URL) chan URL {
 	return retChan
 }
 
-// VisitFrombatch start a visit but from a specified start location
+// VisitFromBatch start a visit but from a specified start location
 func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 	retChan := make(chan []URL)
 
@@ -509,6 +513,8 @@ func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 	}()
 	return retChan
 }
+// VisitFullBatch Visit the entire array in batches
+// passing the results as a chan of []URL
 func (um *URLMap) VisitFullBatch() chan []URL {
 	retChan := make(chan []URL)
   var tmpArray []URL

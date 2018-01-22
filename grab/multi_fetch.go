@@ -113,6 +113,7 @@ func (mf *MultiFetch) Scram() {
 		close(mf.scramChan)
 	}
 }
+// Closed returns true if the mf is closed for business
 func (mf *MultiFetch) Closed() bool {
 	select {
 	case <-mf.closeChan:
@@ -135,6 +136,7 @@ func (mf *MultiFetch) close() {
 		close(mf.closeChan)
 	}
 }
+// Scraming returns true if we are in the process of scramming the mf
 func (mf *MultiFetch) Scraming() bool {
 	select {
 	case <-mf.scramChan:
