@@ -267,11 +267,13 @@ func main() {
 			fmt.Printf("\n\nRuntime Exceeded\n\n")
 			shutdownInProgress.Lock()
 	    defer	shutdownInProgress.Unlock()
+      if !shutdownRun {
       shutdownRun = true
 			memProfile(*memprofile)
 			fmt.Println("Calling Shutdown")
       multiFetch.Scram()
 			shutdown(pool,  multiFetch, runr)
+      }
 		}()
 	}
 
@@ -281,15 +283,16 @@ func main() {
 		for range signalChan {
 			ccCnt++
 			if ccCnt == 1 {
-				shutdownInProgress.Lock()
+        fmt.Println("Ctrl-C Detected")
 				go func() {
+				  shutdownInProgress.Lock()
 	        defer	shutdownInProgress.Unlock()
-          shutdownRun = true
-          fmt.Println("Ctrl-C Detected")
+          if !shutdownRun {
 					shutdownRun = true
 					memProfile(*memprofile)
           multiFetch.Scram()
           shutdown(pool, multiFetch, runr)
+          }
 				}()
 			} else {
 				os.Exit(1)

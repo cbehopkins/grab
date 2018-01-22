@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"github.com/cbehopkins/gkvlite"
 )
 
 const URLMapOverFlush = true
@@ -505,6 +506,32 @@ func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 		startingPoint := startURL.ToBa()
 		baCh := um.batchDiskReadURL(URLMapBatchCnt, startingPoint)
 		um.sendBatchURL(baCh, retChan)
+	}()
+	return retChan
+}
+func (um *URLMap) VisitFullBatch() chan []URL {
+	retChan := make(chan []URL)
+  var tmpArray []URL
+
+  batchSize := 1024
+  v := func (i *gkvlite.Item, depth uint64) bool {
+    ba := i.Key
+    tmpURL := um.URLFromBa(ba)
+    tmpArray = append(tmpArray, tmpURL)
+    if len(tmpArray) >= batchSize {
+      tmpArray = make([]URL,0, batchSize)
+    }
+    return true
+  }
+
+	go func() {
+    err := um.dkst.col.VisitItemsAscendBlockEx(true,gkvlite.RandBm, v)
+    if err != nil {
+      log.Fatal("Error from batch read", err)
+    }
+    if len(tmpArray) > 0 {
+      retChan <- tmpArray
+    }
 	}()
 	return retChan
 }
