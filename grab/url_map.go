@@ -491,7 +491,55 @@ func (um *URLMap) VisitFrom(startURL URL) chan URL {
 	}()
 	return retChan
 }
+// VisitRandom visit the items in the map in a random order
+func (um *URLMap) VisitRandom() chan URL {
+  oCh := make(chan URL)
+  visitor := func(i *gkvlite.Item, depth uint64) bool {
+    um.RUnlock()
+    oCh <- um.URLFromBa(i.Key)
+    um.RLock()
+    return true
+  }
+  go func () {
+  um.RLock()
+  defer um.RUnlock()
+  err := um.dkst.col.VisitItemsRandom(visitor)
+  if err != nil {
+  log.Fatal("Error from um.dkst.VisitItemsRandom", err)
+  }
+  } ()
+  return oCh
 
+}
+// VisitRandomBatch Visit the items in the map in a random order
+// return URLs in batches for efficiency
+func (um *URLMap) VisitRandomBatch () chan []URL {
+  batchLength := 128
+  oCh := make(chan []URL)
+  uBuf := make([]URL, 0, batchLength)
+  visitor := func(i *gkvlite.Item, depth uint64) bool {
+    ur := um.dkst.URLFromVals(i.Key, i.Val)
+    uBuf = append(uBuf, ur)
+    if len(uBuf) == batchLength {
+      um.RUnlock()
+      oCh <- uBuf
+      uBuf = make([]URL, 0, batchLength)
+      um.RLock()
+    }
+    return true
+  }
+
+  go func () {
+    um.RLock()
+    defer um.RUnlock()
+
+    err := um.dkst.col.VisitItemsRandom(visitor)
+    if err != nil {
+      log.Fatal("Error from um.dkst.VisitItemsRandom", err)
+    }
+  } ()
+  return oCh
+}
 // VisitFromBatch start a visit but from a specified start location
 func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 	retChan := make(chan []URL)

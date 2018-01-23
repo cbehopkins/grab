@@ -107,18 +107,6 @@ func (dc *DkCollection) Exist(key interface{}) bool {
 	return dc.col.ExistAny(key)
 }
 
-// GetString Get values of string type
-func (dc *DkCollection) GetString(key interface{}) string {
-	return string(dc.GetAny(key))
-}
-
-// GetInt Get values of integer type
-func (dc *DkCollection) GetInt(key interface{}) int {
-	val, err := strconv.Atoi(dc.GetString(key))
-	check(err)
-	return val
-}
-
 // GetIntKeys get keys of integer type
 func (dc *DkCollection) GetIntKeys() (retChan chan int) {
 	retChan = make(chan int)
@@ -135,22 +123,6 @@ func (dc *DkCollection) GetIntKeys() (retChan chan int) {
 
 }
 
-// GetAnyValues Get Values of any type
-// return in an array
-func (dc *DkCollection) GetAnyValues() (retChan chan []byte) {
-	retChan = make(chan []byte)
-	go func() {
-		dc.col.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
-			// This visitor callback will be invoked with every item
-			// If we want to stop visiting, return false;
-			// otherwise return true to keep visiting.
-			retChan <- dc.GetAny(i.Key)
-			return true
-		})
-		close(retChan)
-	}()
-	return retChan
-}
 
 // GetAnyKeysArray Get keys of any type
 // return in an array

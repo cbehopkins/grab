@@ -308,8 +308,8 @@ func TestDiskStore0(t *testing.T) {
 	dkst.SetAny(23, "Hello")
 	dkst.SetAny(25, "Goodbye")
 	dkst.ds.Flush()
-	log.Println("We say:", dkst.GetString(23))
-	log.Println("They say:", dkst.GetString(25))
+	log.Println("We say:", dkst.GetAny(23))
+	log.Println("They say:", dkst.GetAny(25))
 
 	keyChan := dkst.GetIntKeys()
 	for key := range keyChan {
@@ -330,8 +330,8 @@ func TestDiskStore1(t *testing.T) {
 	dkst.SetAny("Hello1", 23)
 	dkst.SetAny("Goodbye1", 25)
 	dkst.ds.Flush()
-	log.Println("We say:", dkst.GetInt("Hello1"))
-	log.Println("They say:", dkst.GetInt("Goodbye1"))
+	log.Println("We say:", dkst.GetAny("Hello1"))
+	log.Println("They say:", dkst.GetAny("Goodbye1"))
 
 	keyChan := dkst.GetAnyKeys()
 	for key := range keyChan {
@@ -455,8 +455,8 @@ func TestDiskRandom0(t *testing.T) {
 	dkst.SetAny(24, "Goodbye")
 	dkst.SetAny(25, "Goodbye")
 	dkst.SetAny(26, "Goodbye")
-	log.Println("We say:", dkst.GetString(23))
-	log.Println("They say:", dkst.GetString(25))
+	log.Println("We say:", dkst.GetAny(23))
+	log.Println("They say:", dkst.GetAny(25))
 
 	keyChan := dkst.GetAnyKeysRand()
 	for key := range keyChan {

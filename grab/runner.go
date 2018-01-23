@@ -381,16 +381,18 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 	}
 	//fmt.Println("Starting Lin Grab")
 	//defer fmt.Println("End Lin Grab")
-	var lastURL URL
+  //var lastURL URL
 	for {
 		var urlRxd bool
 		if r.manageGoRoutines() {
 			return true
 		}
 
-		urlChanBatch := r.ust.VisitFromBatch(lastURL)
-		for ucb := range urlChanBatch {
-			urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
+		//urlChanBatch := r.ust.VisitFromBatch(lastURL)
+		urlChanBatch := r.ust.VisitRandomBatch()
+    for ucb := range urlChanBatch {
+			//urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
+      urlRxd, _= r.linearLoopSlice(ucb, giwf)
 			if !urlRxd {
 				return false
 			}
