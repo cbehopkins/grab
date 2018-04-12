@@ -107,11 +107,11 @@ func (r *Runner) Wait() {
 	//log.Println("Done Waiting for Runner")
 }
 
-// close down the runner
-func (r *Runner) close() {
-	//if r.grab_closer != nil {
-	close(r.grabCloser)
-	//}
+// Close down the runner
+func (r *Runner) Close() {
+	if !r.closed() {
+		close(r.grabCloser)
+	}
 }
 
 // GoSlow says we should run in slow mode
@@ -173,7 +173,7 @@ func (r *Runner) Shutdown() {
 	r.pauseLk.Lock() // Prevent us pausing again until shutdown
 	defer r.pauseLk.Unlock()
 	fmt.Println("Close Runneri")
-	r.close()
+	r.Close()
 	fmt.Println("Close completer")
 	r.wg.Add(1)
 	r.wg.Done()
@@ -222,6 +222,9 @@ func (r *Runner) grabRunner(numPFetch int) {
 }
 
 func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc mf) bool {
+	if r.debug {
+		fmt.Println("genericMiddle starting")
+	}
 	outCount := NewOutCounter()
 	// pretend we have some workload so that we don't lock on zero work
 	outCount.Add()
@@ -287,16 +290,17 @@ func abortableSleep(t time.Duration, cf func() bool) bool {
 		}
 		if time.Since(startTime) > t {
 			return false
-    }
+		}
 		time.Sleep(time.Second)
 	}
 }
 
 func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 	var chanClosed bool
-	if r.debug {
-		defer fmt.Println("genericOuter complete", chanClosed)
-	}
+	//if r.debug {
+	fmt.Println("genericOuter starting")
+	defer fmt.Println("genericOuter complete", chanClosed)
+	//}
 	for !chanClosed {
 		if r.ust.unvisitSize() <= 0 {
 			return true
@@ -305,9 +309,9 @@ func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 			return chanClosed
 		}
 		chanClosed = r.genericMiddle(grabTkRep, midFunc)
-		if r.debug {
-			fmt.Println("r.genericMiddle complete", chanClosed)
-		}
+		//if r.debug {
+		fmt.Println("r.genericMiddle complete", chanClosed)
+		//}
 	}
 	return chanClosed
 }
@@ -349,12 +353,15 @@ func (r *Runner) linearLoopChan(urlChan chan URL, wkfc func(URL)) (urlRxd bool, 
 func (r *Runner) linearLoopSlice(urlSlc []URL, wkfc func(URL)) (urlRxd bool, lastURL URL) {
 	for _, urv := range urlSlc {
 		lastURL = urv
+		fmt.Println("looking at url", urv)
 		if r.closed() {
+			fmt.Println("Closing linear")
 			return
 		}
 		wkfc(urv)
 		urlRxd = true
 	}
+	fmt.Println("Closing linear")
 	return
 }
 
@@ -379,9 +386,9 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 			}
 		}
 	}
-	//fmt.Println("Starting Lin Grab")
-	//defer fmt.Println("End Lin Grab")
-  //var lastURL URL
+	fmt.Println("Starting Lin Grab")
+	defer fmt.Println("End Lin Grab")
+	//var lastURL URL
 	for {
 		var urlRxd bool
 		if r.manageGoRoutines() {
@@ -390,15 +397,18 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 
 		//urlChanBatch := r.ust.VisitFromBatch(lastURL)
 		urlChanBatch := r.ust.VisitRandomBatch()
-    for ucb := range urlChanBatch {
+		fmt.Println("Got a random batch")
+		for ucb := range urlChanBatch {
 			//urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
-      urlRxd, _= r.linearLoopSlice(ucb, giwf)
+			fmt.Println("Received from Random Batch")
+			urlRxd, _ = r.linearLoopSlice(ucb, giwf)
 			if !urlRxd {
+				// If there were no new urls for us
 				return false
 			}
-		if r.cycle() {
-			return true
-		}
+			if r.cycle() {
+				return true
+			}
 		}
 	}
 }
@@ -457,15 +467,16 @@ func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCount
 		r.counter++
 		delete(missingMap, urv)
 	}
-	if r.debug {
-		log.Println("runMultiGrabMap complete, deletes have run", closeChan)
-	}
+	//if r.debug {
+	//	log.Println("runMultiGrabMap complete, deletes have run", closeChan)
+	//}
 	if closeChan {
 		return true
 	}
 	r.Sleep()
 	return false
 }
+
 // StartTimer creates a way to detect operations that take too long
 // Call start timer before the operation and it returns a channel
 // Close this channel at the end of the operation
@@ -485,10 +496,10 @@ func StartTimer() chan struct{} {
 }
 func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
 	grabSuccess = make([]URL, 0, len(missingMap))
-	if r.debug {
-		fmt.Println("Enter workMultiMap")
-		defer fmt.Println("Exit workMultiMap")
-	}
+	//if r.debug {
+	//	fmt.Println("Enter workMultiMap")
+	//	defer fmt.Println("Exit workMultiMap")
+	//}
 	for urv := range missingMap {
 		tim := StartTimer()
 		if r.cycle() {

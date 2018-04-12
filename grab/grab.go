@@ -13,8 +13,10 @@ import (
 
 	"golang.org/x/net/html"
 )
+
 // URLMapBatchCnt defines how many batches to fetch in one visit read
 const URLMapBatchCnt = 128
+
 // URLMapBatchSize defines the number of items to fetch in a single read
 const URLMapBatchSize = 128
 
@@ -30,15 +32,17 @@ func tempfilename(dirName string, create bool) string {
 	tmpfile, err := ioutil.TempFile(dirName, "grabTemp_")
 	check(err)
 	filename := tmpfile.Name()
-	tmpfile.Close()
+	err = tmpfile.Close()
+	check(err)
 	if !create {
-		os.Remove(filename)
+		check(os.Remove(filename))
 	}
 	return filename
 }
 func rmFilename(fn string) {
 	if _, err := os.Stat(fn); err == nil {
-		os.Remove(fn)
+		err = os.Remove(fn)
+		check(err)
 	}
 }
 
@@ -96,7 +100,10 @@ func copyFileContents(src, dst string) (err error) {
 	if err != nil {
 		return
 	}
-	defer in.Close()
+	defer func() {
+		err := in.Close()
+		check(err)
+	}()
 	out, err := os.Create(dst)
 	if err != nil {
 		return
@@ -166,7 +173,10 @@ func LoadFile(filename string, theChan chan URL, counter *OutCounter, closeChan,
 		log.Fatalf("error opening URL file: %T\n", err)
 		return
 	}
-	defer f.Close()
+	defer func() {
+		err := f.Close()
+		check(err)
+	}()
 	r := bufio.NewReader(f)
 	for s, e := Readln(r); e == nil; s, e = Readln(r) {
 		s = strings.TrimSpace(s)
@@ -199,7 +209,10 @@ func SaveFile(filename string, theChan chan URL, counter *OutCounter) {
 	}
 	f, err := os.Create(filename)
 	check(err)
-	defer f.Close()
+	defer func() {
+		err := f.Close()
+		check(err)
+	}()
 	for v := range theChan {
 		fmt.Fprintf(f, "%s\n", v.URL())
 	}
@@ -227,7 +240,10 @@ func LoadGob(filename string, theChan chan URL, counter *OutCounter, closeChan b
 		return
 
 	}
-	defer f.Close()
+	defer func() {
+		err := f.Close()
+		check(err)
+	}()
 	fi, err := f.Stat()
 	check(err)
 	if fi.Size() > 1 {
@@ -267,7 +283,10 @@ func SaveGob(filename string, theChan chan URL, counter *OutCounter) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		defer f.Close()
+		defer func() {
+			err := f.Close()
+			check(err)
+		}()
 		defer wg.Done()
 		lastRead := false
 		for !lastRead {
@@ -295,7 +314,7 @@ func SaveGob(filename string, theChan chan URL, counter *OutCounter) {
 				lenRemaining -= n
 			}
 			if lastRead {
-				preader.Close()
+				check(preader.Close())
 				fmt.Println("Done and closing everything")
 				return
 			}
@@ -311,10 +330,11 @@ func SaveGob(filename string, theChan chan URL, counter *OutCounter) {
 	enc := gob.NewEncoder(pwriter)
 
 	err = enc.Encode(buff)
+	check(err)
 	fmt.Println("Encode complete, closing and waiting")
-	pwriter.Close()
+	err = pwriter.Close()
+	check(err)
 	wg.Wait()
 	fmt.Println("Finished gobbing")
-	check(err)
 
 }

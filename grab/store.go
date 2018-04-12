@@ -133,6 +133,7 @@ func (us *URLStore) urlWorker() {
 		} else {
 			tmpOutChan = nil
 			if inputChannelClosed == true {
+				fmt.Println("Pop channel closing")
 				close(us.PopChannel)
 			}
 		}
@@ -154,7 +155,7 @@ func (us *URLStore) urlWorker() {
 				tmpOutChan = us.PopChannel
 			} else {
 				//chanel is closed
-				//fmt.Println("in_chan Channel is closed")
+				fmt.Println("in_chan Channel is closed")
 				inChan = nil
 				inputChannelClosed = true
 			}
@@ -172,7 +173,6 @@ func (us *URLStore) urlWorker() {
 				close(us.PopChannel)
 				return
 			}
-
 		}
 	}
 }

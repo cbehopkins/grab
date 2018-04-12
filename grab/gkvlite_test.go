@@ -12,13 +12,14 @@ import (
 func GetKeysChan(st *gkvlite.Collection) (retChan chan string) {
 	retChan = make(chan string)
 	go func() {
-		st.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
+		err := st.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
 			retChan <- string(i.Key)
 			return true
 		})
+		check(err)
 		close(retChan)
 	}()
 	return retChan
@@ -77,16 +78,17 @@ func TestGkvFunc(t *testing.T) {
 	st, err := gkvlite.NewStore(f)
 	check(err)
 	col := st.SetCollection(colName, nil)
-	col.Set([]byte("a"), []byte{})
-	col.Set([]byte("b"), []byte{})
-	col.Set([]byte("c"), []byte{})
-	col.Set([]byte("d"), []byte{})
-	col.Set([]byte("e"), []byte{})
-	col.Set([]byte("f"), []byte{})
-	col.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
+	check(col.Set([]byte("a"), []byte{}))
+	check(col.Set([]byte("b"), []byte{}))
+	check(col.Set([]byte("c"), []byte{}))
+	check(col.Set([]byte("d"), []byte{}))
+	check(col.Set([]byte("e"), []byte{}))
+	check(col.Set([]byte("f"), []byte{}))
+	err = col.VisitItemsAscend([]byte(string(0)), true, func(i *gkvlite.Item) bool {
 		log.Printf("Key:%s\n", string(i.Key))
 		return true
 	})
+	check(err)
 }
 func TestGkv0(t *testing.T) {
 	maxStrLen := 256
@@ -112,16 +114,17 @@ func TestGkv0(t *testing.T) {
 	for i := 0; i < numEntries; i++ {
 		strLen := rand.Int31n(int32(maxStrLen)) + 1
 		tstString := RandStringBytesMaskImprSrc(int(strLen))
-		col.Set([]byte(tstString), []byte{})
+		err := col.Set([]byte(tstString), []byte{})
+		check(err)
 		backupHash[tstString] = struct{}{}
 	}
 	checkStoreN(col, backupHash, numEntries, maxStrLen)
 
 	// Close it all off, make sure it is on the disk
-	st.Flush()
+	_ = st.Flush()
 	st.Close()
-	f.Sync()
-	f.Close()
+	_ = f.Sync()
+	check(f.Close())
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
 	f1, err := os.OpenFile(testFilen, os.O_RDWR, 0600)
@@ -151,7 +154,8 @@ func TestGkv0(t *testing.T) {
 		for i := 0; i < numEntries; i++ {
 			strLen := rand.Int31n(int32(maxStrLen)) + 1
 			tstString := RandStringBytesMaskImprSrc(int(strLen))
-			col1.Set([]byte(tstString), []byte{})
+			err := col1.Set([]byte(tstString), []byte{})
+			check(err)
 			backupHash[tstString] = struct{}{}
 		}
 		checkStoreN(col1, backupHash, numEntries, maxStrLen)
@@ -161,8 +165,8 @@ func TestGkv0(t *testing.T) {
 	err = st1.Flush()
 	check(err)
 	st1.Close()
-	f1.Sync()
-	f1.Close()
+	_ = f1.Sync()
+	check(f1.Close())
 
 	f2, err := os.Open(testFilen)
 	check(err)
@@ -182,10 +186,10 @@ func TestGkv0(t *testing.T) {
 	log.Println("Starting 2nd Reload Check")
 	checkStoreN(col2, backupHash, numEntries, maxStrLen)
 	log.Println("2nd Reload check complete")
-	st2.Flush()
+	_ = st2.Flush()
 	st2.Close()
-	f2.Sync()
-	f2.Close()
+	_ = f2.Sync()
+	check(f2.Close())
 }
 func TestGkv1(t *testing.T) {
 	maxStrLen := 256
@@ -211,17 +215,18 @@ func TestGkv1(t *testing.T) {
 	for i := 0; i < numEntries; i++ {
 		strLen := rand.Int31n(int32(maxStrLen)) + 1
 		tstString := RandStringBytesMaskImprSrc(int(strLen))
-		col.Set([]byte(tstString), []byte{})
+		err := col.Set([]byte(tstString), []byte{})
+		check(err)
 		backupHash[tstString] = struct{}{}
 	}
 	//log.Printf("Store created, checking self")
 	checkStoreN(col, backupHash, numEntries, maxStrLen)
 
 	// Close it all off, make sure it is on the disk
-	st.Flush()
+	_ = st.Flush()
 	st.Close()
-	f.Sync()
-	f.Close()
+	_ = f.Sync()
+	check(f.Close())
 	log.Printf("Okay well the hash itself was consistent, but is it persistant?")
 
 	f1, err := os.OpenFile(testFilen, os.O_RDWR, 0600)
@@ -251,7 +256,8 @@ func TestGkv1(t *testing.T) {
 		for i := 0; i < numEntries; i++ {
 			strLen := rand.Int31n(int32(maxStrLen)) + 1
 			tstString := RandStringBytesMaskImprSrc(int(strLen))
-			col1.Set([]byte(tstString), []byte{})
+			err := col1.Set([]byte(tstString), []byte{})
+			check(err)
 			backupHash[tstString] = struct{}{}
 		}
 		checkStoreN(col1, backupHash, numEntries, maxStrLen)
@@ -261,8 +267,8 @@ func TestGkv1(t *testing.T) {
 	err = st1.Flush()
 	check(err)
 	st1.Close()
-	f1.Sync()
-	f1.Close()
+	_ = f1.Sync()
+	check(f1.Close())
 
 	f2, err := os.Open(testFilen)
 	check(err)
@@ -282,8 +288,8 @@ func TestGkv1(t *testing.T) {
 	log.Println("Starting 2nd Reload Check")
 	checkStoreN(col2, backupHash, numEntries, maxStrLen)
 	log.Println("2nd Reload check complete")
-	st2.Flush()
+	_ = st2.Flush()
 	st2.Close()
-	f2.Sync()
-	f2.Close()
+	_ = f2.Sync()
+	check(f2.Close())
 }

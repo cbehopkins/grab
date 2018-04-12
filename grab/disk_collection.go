@@ -42,7 +42,10 @@ func NewDkCollection(filename string, overwrite bool) *DkCollection {
 
 // SetAny - Set the value of any type
 func (dc *DkCollection) SetAny(key, val interface{}) {
-	dc.col.SetAny(key, val)
+	err := dc.col.SetAny(key, val)
+	if err != nil {
+		log.Fatal("SetAny error", err)
+	}
 }
 
 // GetAny - Get a value of any type
@@ -89,7 +92,10 @@ func (dc *DkCollection) URLFromVals(in, itmBa []byte) URL {
 		return NewURLFromBa(in)
 	}
 	var tmpURL URL
-	tmpURL.goUnMarshalJSON(itmBa)
+	err := tmpURL.goUnMarshalJSON(itmBa)
+	if err != nil {
+		log.Fatal("goUnMarshalJSON in URLFromVals", err)
+	}
 	tmpURL.URLs = string(in)
 	tmpURL.Initialise()
 	return tmpURL
@@ -123,7 +129,6 @@ func (dc *DkCollection) GetIntKeys() (retChan chan int) {
 
 }
 
-
 // GetAnyKeysArray Get keys of any type
 // return in an array
 func (dc *DkCollection) GetAnyKeysArray(maxItems int) (retArray [][]byte) {
@@ -133,7 +138,7 @@ func (dc *DkCollection) GetAnyKeysArray(maxItems int) (retArray [][]byte) {
 		cnt := 0
 		minItm, err := dc.col.MinItem(true)
 		check(err)
-		dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
+		err = dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
@@ -142,6 +147,7 @@ func (dc *DkCollection) GetAnyKeysArray(maxItems int) (retArray [][]byte) {
 			cnt++
 			return cnt < maxItems
 		})
+		check(err)
 		close(tmpChan)
 	}()
 
@@ -172,7 +178,7 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 			}
 		}
 		cnt := 0
-		dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
+		err = dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
@@ -181,6 +187,7 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 			cnt++
 			return cnt < maxItems
 		})
+		check(err)
 	}()
 
 	for v := range tmpChan {
@@ -188,6 +195,7 @@ func (dc *DkCollection) GetAnyKeysArrayFrom(maxItems int, start []byte) (retArra
 	}
 	return retArray
 }
+
 // GetURLArrayFrom Get an array of URLs starting at the specified location
 func (dc *DkCollection) GetURLArrayFrom(maxItems int, start URL) (retArray []URL) {
 	retArray = make([]URL, 0, maxItems)
@@ -207,7 +215,7 @@ func (dc *DkCollection) GetURLArrayFrom(maxItems int, start URL) (retArray []URL
 			}
 		}
 		cnt := 0
-		dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
+		err = dc.col.VisitItemsAscend(startItm.Key, true, func(i *gkvlite.Item) bool {
 			// This visitor callback will be invoked with every item
 			// If we want to stop visiting, return false;
 			// otherwise return true to keep visiting.
@@ -220,6 +228,7 @@ func (dc *DkCollection) GetURLArrayFrom(maxItems int, start URL) (retArray []URL
 			cnt++
 			return cnt < maxItems
 		})
+		check(err)
 	}()
 
 	for v := range tmpChan {
@@ -235,13 +244,14 @@ func (dc *DkCollection) GetAnyKeys() (retChan chan []byte) {
 		minItm, err := dc.col.MinItem(true)
 		check(err)
 		if minItm != nil {
-			dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
+			err = dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 				// This visitor callback will be invoked with every item
 				// If we want to stop visiting, return false;
 				// otherwise return true to keep visiting.
 				retChan <- i.Key
 				return true
 			})
+			check(err)
 		}
 		close(retChan)
 	}()
@@ -256,13 +266,14 @@ func (dc *DkCollection) GetAnyKeysRand() (retChan chan []byte) {
 		minItm, err := dc.col.MinItem(true)
 		check(err)
 		if minItm != nil {
-			dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
+			err = dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 				// This visitor callback will be invoked with every item
 				// If we want to stop visiting, return false;
 				// otherwise return true to keep visiting.
 				retChan <- i.Key
 				return true
 			})
+			check(err)
 		}
 		close(retChan)
 	}()
@@ -338,7 +349,8 @@ func (dc *DkCollection) getMissingChanWorker(urlChan chan string, maxItems int, 
 		// keep going until we have got n items
 		return cnt < maxItems
 	}
-	dc.col.VisitItemsAscend(minItm.Key, true, exploreFunc)
+	err = dc.col.VisitItemsAscend(minItm.Key, true, exploreFunc)
+	check(err)
 }
 
 // GetMissing items from the collection
@@ -364,7 +376,7 @@ func (dc *DkCollection) Size() int {
 		//mpty list if no minimum
 		return size
 	}
-	dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
+	err = dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 		// This visitor callback will be invoked with every item
 		// If we want to stop visiting, return false;
 		// otherwise return true to keep visiting.
@@ -372,6 +384,7 @@ func (dc *DkCollection) Size() int {
 		//mmediatly stops for performance
 		return false
 	})
+	check(err)
 	return size
 }
 
@@ -404,7 +417,7 @@ func (dc *DkCollection) Workload(spin bool) string {
 	uniqueArray := make(map[string]int)
 	s := Spinner{scaler: 1000}
 	var cnt int
-	dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
+	err = dc.col.VisitItemsAscend(minItm.Key, true, func(i *gkvlite.Item) bool {
 		// This visitor callback will be invoked with every item
 		// If we want to stop visiting, return false;
 		// otherwise return true to keep visiting.
@@ -425,6 +438,7 @@ func (dc *DkCollection) Workload(spin bool) string {
 
 		return true
 	})
+	check(err)
 	var retString string
 	for _, itm := range rankByWordCount(uniqueArray) {
 		key := itm.Key

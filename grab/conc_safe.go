@@ -321,7 +321,10 @@ func (cs ConcSafe) clearTag(b []byte, off int64) {
 // Send the write to the FS and when it is done update the tag
 func (cs *ConcSafe) delayedWrite(b []byte, off int64) {
 	// Send the write to the file systm
-	cs.ccWriteAt(b, off)
+	_, err := cs.ccWriteAt(b, off)
+	if err != nil {
+		log.Fatal("Write Error", err)
+	}
 
 	// Now the write has completed, update the map to remove it
 	cs.tagLk.Lock()
@@ -384,8 +387,11 @@ func (cs *ConcSafe) worker() {
 					//cs.lk.Unlock()
 				} else {
 					cs.lk.Lock()
-					cs.ccWriteAt(b, off)
+					_, err := cs.ccWriteAt(b, off)
 					cs.lk.Unlock()
+					if err != nil {
+						log.Fatal("Write error in concSafe", err)
+					}
 				}
 			case rdReq := <-cs.readQueue:
 				b := rdReq.B

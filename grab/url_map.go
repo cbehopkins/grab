@@ -2,14 +2,15 @@ package grab
 
 import (
 	"fmt"
+	"github.com/cbehopkins/gkvlite"
 	"log"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
 	"time"
-	"github.com/cbehopkins/gkvlite"
 )
+
 // URLMapOverFlush turns on cautious flushing of the structs
 const URLMapOverFlush = true
 
@@ -173,6 +174,7 @@ func (um *URLMap) Close() {
 		fmt.Println("Unlocked, so finish closing")
 	}
 }
+
 // MemStats return debug information on memory statistics
 func MemStats() string {
 	var m runtime.MemStats
@@ -205,7 +207,7 @@ func (um *URLMap) flusher() {
 		//fmt.Printf("Flushing the URLMap\n%s\n", MemStats())
 		um.Flush()
 		um.Sync()
-	  //fmt.Printf("Completed Flushing the URLMap\n%s\n", MemStats())
+		//fmt.Printf("Completed Flushing the URLMap\n%s\n", MemStats())
 	}
 }
 
@@ -343,6 +345,7 @@ func (um *URLMap) Check(key URL) bool {
 	}
 	return found
 }
+
 // Closed returns true if the URLMap is closed for business
 func (um *URLMap) Closed() bool {
 	select {
@@ -425,11 +428,13 @@ func (um *URLMap) VisitAll(closeChan chan struct{}) chan URL {
 	}()
 	return retChan
 }
+
 // URLFromBaWithLock creates a new URL from a byte array
 // and and external context has already got the lock for us
 func (um *URLMap) URLFromBaWithLock(in []byte) URL {
 	return um.dkst.URLFromBa(in)
 }
+
 // URLFromBa create a URL from a byte array
 func (um *URLMap) URLFromBa(in []byte) URL {
 	um.RLock()
@@ -491,55 +496,60 @@ func (um *URLMap) VisitFrom(startURL URL) chan URL {
 	}()
 	return retChan
 }
+
 // VisitRandom visit the items in the map in a random order
 func (um *URLMap) VisitRandom() chan URL {
-  oCh := make(chan URL)
-  visitor := func(i *gkvlite.Item, depth uint64) bool {
-    um.RUnlock()
-    oCh <- um.URLFromBa(i.Key)
-    um.RLock()
-    return true
-  }
-  go func () {
-  um.RLock()
-  defer um.RUnlock()
-  err := um.dkst.col.VisitItemsRandom(visitor)
-  if err != nil {
-  log.Fatal("Error from um.dkst.VisitItemsRandom", err)
-  }
-  } ()
-  return oCh
+	oCh := make(chan URL)
+	visitor := func(i *gkvlite.Item, depth uint64) bool {
+		um.RUnlock()
+		oCh <- um.URLFromBa(i.Key)
+		um.RLock()
+		return true
+	}
+	go func() {
+		um.RLock()
+		defer um.RUnlock()
+		err := um.dkst.col.VisitItemsRandom(visitor)
+		if err != nil {
+			log.Fatal("Error from um.dkst.VisitItemsRandom", err)
+		}
+	}()
+	return oCh
 
 }
+
 // VisitRandomBatch Visit the items in the map in a random order
 // return URLs in batches for efficiency
-func (um *URLMap) VisitRandomBatch () chan []URL {
-  batchLength := 128
-  oCh := make(chan []URL)
-  uBuf := make([]URL, 0, batchLength)
-  visitor := func(i *gkvlite.Item, depth uint64) bool {
-    ur := um.dkst.URLFromVals(i.Key, i.Val)
-    uBuf = append(uBuf, ur)
-    if len(uBuf) == batchLength {
-      um.RUnlock()
-      oCh <- uBuf
-      uBuf = make([]URL, 0, batchLength)
-      um.RLock()
-    }
-    return true
-  }
+func (um *URLMap) VisitRandomBatch() chan []URL {
+	batchLength := 128
+	oCh := make(chan []URL)
+	defer close(oCh)
+	uBuf := make([]URL, 0, batchLength)
+	visitor := func(i *gkvlite.Item, depth uint64) bool {
+		ur := um.dkst.URLFromVals(i.Key, i.Val)
+		fmt.Println("Visiting", ur)
+		uBuf = append(uBuf, ur)
+		if len(uBuf) == batchLength {
+			um.RUnlock()
+			oCh <- uBuf
+			uBuf = make([]URL, 0, batchLength)
+			um.RLock()
+		}
+		return true
+	}
 
-  go func () {
-    um.RLock()
-    defer um.RUnlock()
+	go func() {
+		um.RLock()
+		defer um.RUnlock()
 
-    err := um.dkst.col.VisitItemsRandom(visitor)
-    if err != nil {
-      log.Fatal("Error from um.dkst.VisitItemsRandom", err)
-    }
-  } ()
-  return oCh
+		err := um.dkst.col.VisitItemsRandom(visitor)
+		if err != nil {
+			log.Fatal("Error from um.dkst.VisitItemsRandom", err)
+		}
+	}()
+	return oCh
 }
+
 // VisitFromBatch start a visit but from a specified start location
 func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 	retChan := make(chan []URL)
@@ -561,31 +571,32 @@ func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 	}()
 	return retChan
 }
+
 // VisitFullBatch Visit the entire array in batches
 // passing the results as a chan of []URL
 func (um *URLMap) VisitFullBatch() chan []URL {
 	retChan := make(chan []URL)
-  var tmpArray []URL
+	var tmpArray []URL
 
-  batchSize := 1024
-  v := func (i *gkvlite.Item, depth uint64) bool {
-    ba := i.Key
-    tmpURL := um.URLFromBa(ba)
-    tmpArray = append(tmpArray, tmpURL)
-    if len(tmpArray) >= batchSize {
-      tmpArray = make([]URL,0, batchSize)
-    }
-    return true
-  }
+	batchSize := 1024
+	v := func(i *gkvlite.Item, depth uint64) bool {
+		ba := i.Key
+		tmpURL := um.URLFromBa(ba)
+		tmpArray = append(tmpArray, tmpURL)
+		if len(tmpArray) >= batchSize {
+			tmpArray = make([]URL, 0, batchSize)
+		}
+		return true
+	}
 
 	go func() {
-    err := um.dkst.col.VisitItemsAscendBlockEx(true,gkvlite.RandBm, v)
-    if err != nil {
-      log.Fatal("Error from batch read", err)
-    }
-    if len(tmpArray) > 0 {
-      retChan <- tmpArray
-    }
+		err := um.dkst.col.VisitItemsAscendBlockEx(true, gkvlite.RandBm, v)
+		if err != nil {
+			log.Fatal("Error from batch read", err)
+		}
+		if len(tmpArray) > 0 {
+			retChan <- tmpArray
+		}
 	}()
 	return retChan
 }

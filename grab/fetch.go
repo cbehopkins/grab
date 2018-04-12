@@ -18,8 +18,8 @@ const (
 	// FetchTimeout - set timeout for fetchs
 	FetchTimeout = 30 * time.Minute
 	// GrabTimeout - Set timeut for grabs
-	GrabTimeout  = 5 * time.Second
-  // GenChecksums - turns on generating checksums on files as we write them
+	GrabTimeout = 5 * time.Second
+	// GenChecksums - turns on generating checksums on files as we write them
 	GenChecksums = true
 )
 
@@ -69,6 +69,7 @@ const (
 	OsAllRW  = OsAllR | OsAllW
 	OsAllRWX = OsAllRW | OsGroupX
 )
+
 // BuffCache is a cache of the buffers we are in the middle of calculating
 // Slightly dodgy, but we need to re-write the struicture to make this better
 var BuffCache = medorg.NewCalcBuffer()
@@ -81,7 +82,8 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	// Create any directories needed to put this file in them
 	var dirFileMode os.FileMode
 	dirFileMode = os.ModeDir | (OsUserRWX | OsAllR)
-	os.MkdirAll(dirStr, dirFileMode)
+	err := os.MkdirAll(dirStr, dirFileMode)
+	check(err)
 
 	out, err := os.Create(potentialFileName)
 	if err != nil {
@@ -113,7 +115,8 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	}
 	resp, err := client.Get(fetchURL.URL())
 	if err != nil {
-		out.Close()
+		err := out.Close()
+		check(err)
 		return
 	}
 	_ = DecodeHTTPError(err)
@@ -143,9 +146,10 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	_, _ = io.Copy(out, reader)
 	defer log.Println("Finished downloading:", potentialFileName)
 	close(trigger)
-  close(rc)
-	out.Close() // can't defer this because of the file sync needed.
-	resp.Body.Close()
+	close(rc)
+	err = out.Close() // can't defer this because of the file sync needed.
+	check(err)
+	_ = resp.Body.Close()
 	// Timestamp needs to be correct before this is closed
 	if true {
 	} else if GenChecksums {
@@ -172,7 +176,10 @@ func logSlow(fn string) chan struct{} {
 func checkJpg(filename string) bool {
 	out, err := os.Open(filename)
 	check(err)
-	defer out.Close()
+	defer func() {
+		err := out.Close()
+		check(err)
+	}()
 	_, err = jpeg.Decode(out)
 	if err == nil {
 	}

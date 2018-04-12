@@ -41,11 +41,7 @@ func NewMultiFetch(mm bool) *MultiFetch {
 	itm.fifo = NewURLStore()
 	itm.ffMap = make(map[string]*URLStore)
 	itm.multiMode = mm
-	if !mm {
-		itm.InChan = itm.fifo.PushChannel
-	} else {
-		itm.InChan = make(chan URL)
-	}
+	itm.InChan = itm.fifo.PushChannel
 	itm.scramChan = make(chan struct{})
 	itm.closeChan = make(chan struct{})
 	itm.st = time.Now()
@@ -113,6 +109,7 @@ func (mf *MultiFetch) Scram() {
 		close(mf.scramChan)
 	}
 }
+
 // Closed returns true if the mf is closed for business
 func (mf *MultiFetch) Closed() bool {
 	select {
@@ -130,12 +127,17 @@ func (mf *MultiFetch) Close() {
 	mf.gwg.Wait()
 	mf.close()
 }
+
+// GobWait waits for the gob to finish loading
+func (mf *MultiFetch) GobWait() {
+	mf.gwg.Wait()
+}
 func (mf *MultiFetch) close() {
 	if !mf.Closed() {
-		close(mf.InChan)
 		close(mf.closeChan)
 	}
 }
+
 // Scraming returns true if we are in the process of scramming the mf
 func (mf *MultiFetch) Scraming() bool {
 	select {
@@ -177,14 +179,15 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 		case <-mf.scramChan:
 			mf.workScram(ic, dv, nme, &scramInProgres, wt)
 		case urf, ok := <-icd:
-			//fmt.Println("Fetch:", urf)
 			if !ok {
 				// This is a closed channel
 				// so all we have to do is wait for
 				// any tokens to finish
+				fmt.Println("singleWorker seen closed", nme)
 				wt.wait()
 				return
 			}
+			fmt.Println("Fetch:", urf)
 			if urf.base == nil {
 				urf.Initialise()
 			}
@@ -236,6 +239,7 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 		if !mf.multiMode {
 			mf.singleWorker(mf.fifo.PopChannel, dv, "universal")
 		} else {
+			log.Println("Multi mode worker entered")
 			var wg sync.WaitGroup
 			mf.dumpChan = make(chan URL)
 			// Dispatch will not complete until all of the
@@ -269,13 +273,13 @@ func (mf *MultiFetch) Worker(dv DomVisitI) {
 
 // Wait for the process to complete
 func (mf *MultiFetch) Wait() {
-	if mf.debug {
-		fmt.Println("MultiFetch wait")
-	}
+	//if mf.debug {
+	fmt.Println("MultiFetch wait", mf.Closed())
+	//}
 	mf.wg.Wait()
-	if mf.debug {
-		fmt.Println("MultiFetch wait complete")
-	}
+	//if mf.debug {
+	fmt.Println("MultiFetch wait complete")
+	//}
 }
 
 // PrintThroughput gives us output stats
@@ -288,7 +292,7 @@ func (mf *MultiFetch) PrintThroughput() {
 // TBD Why do we have this?
 func (mf *MultiFetch) Shutdown() {
 	mf.Wait()
-  mf.Close()
+	mf.Close()
 	mf.PrintThroughput()
 }
 
@@ -305,9 +309,9 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// here we read from in chan
 	//oc := NewOutCounter()
 	var oc sync.WaitGroup
-	// In Multi-Mode we read Direct from InChan
-	for urli := range mf.InChan {
-		//fmt.Println("Reading URL in:",urli)
+	log.Println("dispatch entered")
+	for urli := range mf.fifo.PopChannel {
+		//fmt.Println("Reading URL in:", urli)
 		// work out what the basename of the fetch is
 		basename := urli.Base()
 		// Check to see if there is an entry for this basename already
@@ -315,12 +319,12 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 		// Create one if needed
 		if !ok {
 			oc.Add(1)
-			//fmt.Println("***************Starting*******",basename)
+			//fmt.Println("***************Starting*******", basename)
 			ff = NewURLStore()
 			mf.ffMap[basename] = ff
 			go func() {
 				mf.singleWorker(ff.PopChannel, dv, basename)
-				//fmt.Println("***************Stopping*******",basename)
+				//fmt.Println("***************Stopping*******", basename)
 				oc.Done()
 			}()
 		}

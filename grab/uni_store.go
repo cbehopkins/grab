@@ -111,8 +111,8 @@ func (usr uniStore) VisitFrom(startURL URL) chan URL {
 func (usr uniStore) VisitFromBatch(startURL URL) chan []URL {
 	return usr.unvisitUrls.VisitFromBatch(startURL)
 }
-func (usr uniStore) VisitRandomBatch () chan []URL {
-return usr.unvisitUrls.VisitRandomBatch()
+func (usr uniStore) VisitRandomBatch() chan []URL {
+	return usr.unvisitUrls.VisitRandomBatch()
 }
 func (usr uniStore) getMissing(refr *TokenChan) map[string]struct{} {
 	return usr.unvisitUrls.VisitMissing(refr)

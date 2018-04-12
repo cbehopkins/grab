@@ -77,10 +77,11 @@ func (ds *DkStore) compact(filename string) {
 	check(err)
 	ns, err := ds.st.CopyTo(f, 10)
 	check(err)
-	ns.Flush()
+	_ = ns.Flush()
 	ns.Close()
-	f.Sync()
-	f.Close()
+	_ = f.Sync()
+	err = f.Close()
+	check(err)
 }
 func openFile(filename string) (tF DkStFileIf, err error) {
 	if UseConcSafe {
@@ -98,9 +99,9 @@ func (ds *DkStore) openStore(filename string, overwrite bool) {
 		var err error
 		ds.f, err = openFile(filename)
 		check(err)
-    if ds.f == nil {
-      log.Fatal("Nil ds.f for:", filename)
-    }
+		if ds.f == nil {
+			log.Fatal("Nil ds.f for:", filename)
+		}
 		ds.st, err = gkvlite.NewStore(ds.f)
 		check(err)
 		if ds.st == nil {

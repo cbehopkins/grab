@@ -27,3 +27,35 @@ func TestDv0(t *testing.T) {
 		}
 	}
 }
+func TestDv1(t *testing.T) {
+	src := []string{
+		"http://fred.google.com",
+		"http://bob.google.com/",
+	}
+	fail := []string{
+		"http://google.com",
+		"http://steve.google.com/",
+	}
+	dv := NewDomVisit("")
+	for _, urlS := range src {
+		url := NewURL(urlS)
+		if !dv.GoodURL(url) {
+			log.Fatal("url should be good and isn't", url, urlS)
+		}
+		dv.VisitedA(urlS)
+	}
+	log.Println("Added everything", dv)
+	for _, urlS := range src {
+		url := NewURL(urlS)
+		if !dv.VisitedQ(url.URL()) {
+			log.Fatal("A good domain does not exist", urlS)
+		}
+	}
+	log.Println("Checked good")
+	for _, urlS := range fail {
+		url := NewURL(urlS)
+		if dv.VisitedQ(url.URL()) {
+			log.Fatal("A bad domain does exist", urlS)
+		}
+	}
+}

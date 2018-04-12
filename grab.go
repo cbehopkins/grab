@@ -151,7 +151,6 @@ func main() {
 	showProgressBar := !*dbgflg
 	debug := *dbgflg
 	//showProgressBar := true
-  //debug := false
 	signalChan := make(chan os.Signal, 1)
 
 	download := !*nodownflg
@@ -192,7 +191,7 @@ func main() {
 	)
 	if *linflg {
 		fmt.Println("Running In Linear Mode")
-		runr.SetLinear()
+		//runr.SetLinear()
 	}
 	// We expect to be able to write to the fetch channel, so start the worker
 	multiFetch.Worker(runr)
@@ -209,13 +208,13 @@ func main() {
 		fmt.Println("Finsihed Resetting Unvisited")
 	}
 	fmt.Println("Seeding URLs")
+	multiFetch.SetFileName(fetchFn)
 	wgrc := runr.SeedWg(urlFn, promiscuous)
 	wgrc.Wait()
+	multiFetch.GobWait()
 
 	fmt.Println("Seed Phase complete")
 	// Read in the Gob
-	multiFetch.SetFileName(fetchFn)
-
 	// Now we're up and running
 	// Start the profiler
 	if *cpuprofile != "" {
@@ -250,7 +249,7 @@ func main() {
 			log.Fatalln(err)
 		}
 		log.SetOutput(logf)
-    fmt.Println("Log sent to file")
+		fmt.Println("Log sent to file")
 
 		// Show a progress bar
 		pool = progressBars(runr, multiFetch)
@@ -266,14 +265,14 @@ func main() {
 			time.Sleep(*rundurationflg)
 			fmt.Printf("\n\nRuntime Exceeded\n\n")
 			shutdownInProgress.Lock()
-	    defer	shutdownInProgress.Unlock()
-      if !shutdownRun {
-      shutdownRun = true
-			memProfile(*memprofile)
-			fmt.Println("Calling Shutdown")
-      multiFetch.Scram()
-			shutdown(pool,  multiFetch, runr)
-      }
+			defer shutdownInProgress.Unlock()
+			if !shutdownRun {
+				shutdownRun = true
+				memProfile(*memprofile)
+				fmt.Println("Calling Shutdown")
+				multiFetch.Scram()
+				shutdown(pool, multiFetch, runr)
+			}
 		}()
 	}
 
@@ -283,16 +282,16 @@ func main() {
 		for range signalChan {
 			ccCnt++
 			if ccCnt == 1 {
-        fmt.Println("Ctrl-C Detected")
+				fmt.Println("Ctrl-C Detected")
 				go func() {
-				  shutdownInProgress.Lock()
-	        defer	shutdownInProgress.Unlock()
-          if !shutdownRun {
-					shutdownRun = true
-					memProfile(*memprofile)
-          multiFetch.Scram()
-          shutdown(pool, multiFetch, runr)
-          }
+					shutdownInProgress.Lock()
+					defer shutdownInProgress.Unlock()
+					if !shutdownRun {
+						shutdownRun = true
+						memProfile(*memprofile)
+						multiFetch.Scram()
+						shutdown(pool, multiFetch, runr)
+					}
 				}()
 			} else {
 				os.Exit(1)
@@ -306,20 +305,19 @@ func main() {
 	if *dbgflg {
 		fmt.Println("Runner complete. Waiting for fetch to complete")
 	}
-	multiFetch.Close()
-	multiFetch.Wait()
+	multiFetch.Shutdown()
 	//if *dbgflg {
 	fmt.Println("Fetch complete. Waiting for shutdown lock")
 	//}
 
 	shutdownInProgress.Lock()
-	defer	shutdownInProgress.Unlock()
+	defer shutdownInProgress.Unlock()
 	//if *dbgflg {
 	fmt.Println("Got shutdown lock. Adios!")
 	//}
 	if !shutdownRun {
-    shutdownRun = true
-    memProfile(*memprofile)
+		shutdownRun = true
+		memProfile(*memprofile)
 		shutdown(pool, multiFetch, runr)
 	}
 }

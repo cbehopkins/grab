@@ -34,7 +34,9 @@ func TestGobWrite0(t *testing.T) {
 	theChan, theMap := URLSrc(100000)
 
 	go SaveGob(filename, theChan, outCount)
-	defer os.Remove(filename)
+	defer func() {
+		_ = os.Remove(filename)
+	}()
 	outCount.Wait()
 	log.Println("Write Success!")
 

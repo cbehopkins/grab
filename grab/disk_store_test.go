@@ -17,13 +17,14 @@ const (
 	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
+
 var randLock sync.Mutex
 var src = rand.NewSource(time.Now().UnixNano())
 
 func RandStringBytesMaskImprSrc(n int) string {
 	b := make([]byte, n)
-  randLock.Lock()
-  defer randLock.Unlock()
+	randLock.Lock()
+	defer randLock.Unlock()
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
 	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {
@@ -163,8 +164,8 @@ func TestDiskPersistX(t *testing.T) {
 						compactFilename := tempfilename("", true)
 						t.Parallel()
 						generalDiskPersist(testFilename, compactFilename, maxStrLen, ne, rc, wc)
-						os.Remove(testFilename)
-						os.Remove(compactFilename)
+						check(os.Remove(testFilename))
+						check(os.Remove(compactFilename))
 					}
 					t.Run(tString, tFunc)
 				}
@@ -292,8 +293,8 @@ func generalDiskPersist(testFilename, compactFilename string, maxStrLen, numEntr
 	dkst3.checkStore(backupHash, numEntries, maxStrLen)
 	log.Printf("3rd reload. Check complete")
 	dkst3.Close()
-	os.Remove(testFilename)
-	os.Remove(compactFilename)
+	check(os.Remove(testFilename))
+	check(os.Remove(compactFilename))
 }
 
 func TestDiskStore0(t *testing.T) {

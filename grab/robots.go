@@ -34,7 +34,8 @@ func NewRobotCache() *RobotCache {
 // Close down the Cache
 func (rc *RobotCache) Close() {
 	if rc.logFile != nil {
-		rc.logFile.Close()
+		err := rc.logFile.Close()
+		check(err)
 	}
 }
 
@@ -65,7 +66,7 @@ func (rc *RobotCache) AllowURL(urls URL) bool {
 				return true
 			}
 			robots, err = robotstxt.FromResponse(resp)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			if err != nil {
 				//log.Println("Error parsing robots.txt:", err.Error())

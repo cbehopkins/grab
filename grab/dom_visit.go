@@ -29,7 +29,7 @@ func NewDomVisit(badFname string) *DomVisit {
 	dv := make(map[string]struct{})
 	bd := make(map[string]struct{})
 	itm.wg = new(sync.WaitGroup)
-	itm.re = regexp.MustCompile("([a-zA-Z0-9_\\-\\.]*?)([a-zA-Z0-9_\\-]+\\.\\w+)/?$")
+	itm.re = regexp.MustCompile("([a-zA-Z0-9_\\-\\.]+)(\\/[\\/\\w\\.]+)?$")
 	itm.domainsVisited = &dv
 	itm.badDomains = &bd
 	if badFname != "" {
@@ -74,7 +74,8 @@ func (dv *DomVisit) LoadBadFiles(badURLFn string) {
 
 // Close down the visitor
 func (dv DomVisit) Close() {
-	dv.badFile.Close()
+	err := dv.badFile.Close()
+	check(err)
 }
 
 // Exist returns true if the supplied string already exists
@@ -119,7 +120,7 @@ func (dv DomVisit) baseIt(strI string) string {
 	t1 := dv.re.FindStringSubmatch(str)
 	var base string
 	if len(t1) > 2 {
-		base = t1[2]
+		base = t1[1]
 	} else {
 		log.Printf("DomVisit Failed to parse:\"%s\"\n%v\n%v\n", strI, str, t1)
 		return ""
@@ -233,6 +234,7 @@ func (dv DomVisit) reference(urlIn URL) bool {
 func (dv DomVisit) VisitedQ(urlIn string) bool {
 	ok := dv.Exist(urlIn)
 	if ok {
+		//log.Println("URL:", urlIn, " allowed as it exists", dv)
 		return true
 	}
 	return false
@@ -243,6 +245,9 @@ func (dv DomVisit) VisitedA(urlIn string) bool {
 	//ok := dv.Exist(url_in)
 	// This is a costly process, so do it once for Exist and Add
 	str := dv.baseIt(urlIn)
+	if str == "" {
+		return false
+	}
 	dv.sm.RLock()
 	tdv := *dv.domainsVisited
 	_, ok := tdv[str]
@@ -270,38 +275,41 @@ type DomVisitI interface {
 // Seed will seed the domains we're allowed to visit
 // from a filename and write it to the
 func (dv DomVisit) Seed(urlFn string, promiscuous bool) chan URL {
-	srcURLChan := make(chan URL)
-	go func() {
-		seedURLChan := *NewURLChannel()
-		go LoadFile(urlFn, seedURLChan, nil, true, false)
-		s := Spinner{}
-		cnt := 0
-		for itm := range seedURLChan {
-			if false {
-				fmt.Println("SeedURL:", itm)
-			}
-			if itm.Initialise() {
-				log.Fatal("URL needed initialising in nd", itm)
-			}
-			domainI := itm.Base()
-			if domainI != "" {
-				// Mark this as a domain we can Fetch from
-				_ = dv.VisitedA(domainI)
-				// send this URL for grabbing
-				if promiscuous {
-					itm.SetPromiscuous()
-				}
-				itm.SetShallow()
-				s.PrintSpin(cnt)
-				srcURLChan <- itm
-				cnt++
-				//fmt.Println(itm, "Sent")
-			} else {
-				log.Fatalln("ERROR: a URL in the seed file we can't get domain of:", itm, urlFn)
-			}
-		}
-		fmt.Println("seed_url_chan seen closed")
-		close(srcURLChan)
-	}()
+	srcURLChan := *NewURLChannel()
+	seedURLChan := *NewURLChannel()
+	go LoadFile(urlFn, seedURLChan, nil, true, false)
+	go dv.SeedURLChanWork(promiscuous, srcURLChan, seedURLChan)
 	return srcURLChan
+}
+
+// SeedURLChanWork Is the worker from one channel to the other
+func (dv DomVisit) SeedURLChanWork(promiscuous bool, srcURLChan, seedURLChan chan URL) {
+	s := Spinner{}
+	cnt := 0
+	for itm := range seedURLChan {
+		if false {
+			fmt.Println("SeedURL:", itm)
+		}
+		if itm.Initialise() {
+			log.Fatal("URL needed initialising in nd", itm)
+		}
+		domainI := itm.Base()
+		if domainI != "" {
+			// Mark this as a domain we can Fetch from
+			_ = dv.VisitedA(domainI)
+			// send this URL for grabbing
+			if promiscuous {
+				itm.SetPromiscuous()
+			}
+			itm.SetShallow()
+			s.PrintSpin(cnt)
+			srcURLChan <- itm
+			cnt++
+			//fmt.Println(itm, "Sent")
+		} else {
+			log.Fatalln("ERROR: a URL in the seed file we can't get domain of:", itm)
+		}
+	}
+	fmt.Println("seed_url_chan seen closed")
+	close(srcURLChan)
 }
