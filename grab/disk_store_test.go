@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -164,8 +163,8 @@ func TestDiskPersistX(t *testing.T) {
 						compactFilename := tempfilename("", true)
 						t.Parallel()
 						generalDiskPersist(testFilename, compactFilename, maxStrLen, ne, rc, wc)
-						check(os.Remove(testFilename))
-						check(os.Remove(compactFilename))
+						rmFilename(testFilename)
+						rmFilename(compactFilename)
 					}
 					t.Run(tString, tFunc)
 				}
@@ -293,8 +292,8 @@ func generalDiskPersist(testFilename, compactFilename string, maxStrLen, numEntr
 	dkst3.checkStore(backupHash, numEntries, maxStrLen)
 	log.Printf("3rd reload. Check complete")
 	dkst3.Close()
-	check(os.Remove(testFilename))
-	check(os.Remove(compactFilename))
+	rmFilename(testFilename)
+	rmFilename(compactFilename)
 }
 
 func TestDiskStore0(t *testing.T) {

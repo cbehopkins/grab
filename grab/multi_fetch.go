@@ -38,10 +38,14 @@ type MultiFetch struct {
 // NewMultiFetch - create a new fetch engine - specify if it should use multi mode
 func NewMultiFetch(mm bool) *MultiFetch {
 	itm := new(MultiFetch)
-	itm.fifo = NewURLStore()
 	itm.ffMap = make(map[string]*URLStore)
 	itm.multiMode = mm
-	itm.InChan = itm.fifo.PushChannel
+	if mm {
+		itm.InChan = *NewURLChannel()
+	} else {
+		itm.InChan = itm.fifo.PushChannel
+		itm.fifo = NewURLStore()
+	}
 	itm.scramChan = make(chan struct{})
 	itm.closeChan = make(chan struct{})
 	itm.st = time.Now()
@@ -74,7 +78,10 @@ func (mf *MultiFetch) TotCnt() int {
 
 // Count returns the number of items we're waiting to fetch
 func (mf *MultiFetch) Count() int {
-	runningTotal := mf.fifo.Count()
+	var runningTotal int
+	if mf.fifo != nil {
+		runningTotal = mf.fifo.Count()
+	}
 	for _, v := range mf.ffMap {
 		runningTotal += v.Count()
 	}
@@ -187,7 +194,7 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 				wt.wait()
 				return
 			}
-			fmt.Println("Fetch:", urf)
+			//fmt.Println("Fetch:", urf)
 			if urf.base == nil {
 				urf.Initialise()
 			}
@@ -309,8 +316,8 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	// here we read from in chan
 	//oc := NewOutCounter()
 	var oc sync.WaitGroup
-	log.Println("dispatch entered")
-	for urli := range mf.fifo.PopChannel {
+	//log.Println("dispatch entered")
+	for urli := range mf.InChan {
 		//fmt.Println("Reading URL in:", urli)
 		// work out what the basename of the fetch is
 		basename := urli.Base()

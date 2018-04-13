@@ -133,7 +133,7 @@ func (us *URLStore) urlWorker() {
 		} else {
 			tmpOutChan = nil
 			if inputChannelClosed == true {
-				fmt.Println("Pop channel closing")
+				//fmt.Println("Pop channel closing")
 				close(us.PopChannel)
 			}
 		}
@@ -142,7 +142,7 @@ func (us *URLStore) urlWorker() {
 		case ind, ok := <-inChan:
 			if ok {
 				if us.debug {
-					fmt.Println("Queueing URL :", ind)
+					//fmt.Println("Queueing URL :", ind)
 				}
 				//us.Lock()
 				us.inCount++
@@ -155,7 +155,7 @@ func (us *URLStore) urlWorker() {
 				tmpOutChan = us.PopChannel
 			} else {
 				//chanel is closed
-				fmt.Println("in_chan Channel is closed")
+				//fmt.Println("in_chan Channel is closed")
 				inChan = nil
 				inputChannelClosed = true
 			}
@@ -165,7 +165,7 @@ func (us *URLStore) urlWorker() {
 			us.outCount++
 			//us.Unlock()
 			if us.debug {
-				fmt.Println("DeQueueing URL", tmpVal)
+				//fmt.Println("DeQueueing URL", tmpVal)
 			}
 
 			if !us.advanceStore() {

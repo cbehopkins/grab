@@ -2,13 +2,14 @@ package grab
 
 import (
 	"fmt"
-	"github.com/cbehopkins/gkvlite"
 	"log"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/cbehopkins/gkvlite"
 )
 
 // URLMapOverFlush turns on cautious flushing of the structs
@@ -527,7 +528,7 @@ func (um *URLMap) VisitRandomBatch() chan []URL {
 	uBuf := make([]URL, 0, batchLength)
 	visitor := func(i *gkvlite.Item, depth uint64) bool {
 		ur := um.dkst.URLFromVals(i.Key, i.Val)
-		fmt.Println("Visiting", ur)
+		//fmt.Println("Visiting", ur)
 		uBuf = append(uBuf, ur)
 		if len(uBuf) == batchLength {
 			um.RUnlock()

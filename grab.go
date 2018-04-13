@@ -102,12 +102,6 @@ func memProfile(memPrfFn string) {
 		f.Close()
 	}
 }
-func isDir(path string) bool {
-	if stat, err := os.Stat(path); err == nil && stat.IsDir() {
-		return true
-	}
-	return false
-}
 func main() {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -139,7 +133,7 @@ func main() {
 	if *vwdflag == "" {
 		// Default value - nothing to do
 	} else {
-		if isDir(*vwdflag) {
+		if grab.IsDir(*vwdflag) {
 			wdflag = vwdflag
 			vdflg = vwdflag
 		}

@@ -74,8 +74,10 @@ func (dv *DomVisit) LoadBadFiles(badURLFn string) {
 
 // Close down the visitor
 func (dv DomVisit) Close() {
-	err := dv.badFile.Close()
-	check(err)
+	if dv.badFile != nil {
+		err := dv.badFile.Close()
+		check(err)
+	}
 }
 
 // Exist returns true if the supplied string already exists

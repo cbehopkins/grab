@@ -35,10 +35,21 @@ func tempfilename(dirName string, create bool) string {
 	err = tmpfile.Close()
 	check(err)
 	if !create {
-		check(os.Remove(filename))
+		rmFilename(filename)
 	}
 	return filename
 }
+func fileExists(fn string) bool {
+	_, err := os.Stat(fn)
+	return err == nil
+}
+func IsDir(path string) bool {
+	if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+		return true
+	}
+	return false
+}
+
 func rmFilename(fn string) {
 	if _, err := os.Stat(fn); err == nil {
 		err = os.Remove(fn)

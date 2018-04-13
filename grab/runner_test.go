@@ -3,6 +3,7 @@ package grab
 import (
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"testing"
 )
@@ -42,7 +43,7 @@ func TestRunner0(t *testing.T) {
 		false, //debug
 		polite,
 	)
-	runr.SetLinear()
+	//runr.SetLinear()
 	multiFetch.Worker(runr)
 	fmt.Println("Worker Started")
 
@@ -87,11 +88,20 @@ func TestRunner0(t *testing.T) {
 	runr.Wait()
 	log.Println("Shutting down fetcher")
 	multiFetch.Shutdown()
-	//multiFetch.Wait()
-	//multiFetch.Close()
 	log.Println("Fetcher Shutdown")
 	close(gc)
 	wg.Wait()
 	grabExpected.Close()
 	fetchExpected.Close()
+	runr.Shutdown()
+	rmFilename("visited.gkvlite")
+	rmFilename("unvisit.gkvlite")
+	for _, opt := range htc.DvA {
+		opt = GetBase(opt)
+		fmt.Println("got opt", opt)
+		if IsDir(opt) {
+			fmt.Println("Found a directory to remove")
+			os.RemoveAll(opt)
+		}
+	}
 }

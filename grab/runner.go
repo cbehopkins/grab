@@ -297,10 +297,10 @@ func abortableSleep(t time.Duration, cf func() bool) bool {
 
 func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 	var chanClosed bool
-	//if r.debug {
-	fmt.Println("genericOuter starting")
-	defer fmt.Println("genericOuter complete", chanClosed)
-	//}
+	if r.debug {
+		fmt.Println("genericOuter starting")
+		defer fmt.Println("genericOuter complete", chanClosed)
+	}
 	for !chanClosed {
 		if r.ust.unvisitSize() <= 0 {
 			return true
@@ -309,9 +309,9 @@ func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
 			return chanClosed
 		}
 		chanClosed = r.genericMiddle(grabTkRep, midFunc)
-		//if r.debug {
-		fmt.Println("r.genericMiddle complete", chanClosed)
-		//}
+		if r.debug {
+			fmt.Println("r.genericMiddle complete", chanClosed)
+		}
 	}
 	return chanClosed
 }
@@ -386,8 +386,8 @@ func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpCh
 			}
 		}
 	}
-	fmt.Println("Starting Lin Grab")
-	defer fmt.Println("End Lin Grab")
+	//fmt.Println("Starting Lin Grab")
+	//defer fmt.Println("End Lin Grab")
 	//var lastURL URL
 	for {
 		var urlRxd bool
