@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cbehopkins/token"
 )
 
 // MultiFetch is a parallel fetch engine
@@ -32,7 +34,7 @@ type MultiFetch struct {
 	counter   int
 	fcLk      sync.Mutex
 	st        time.Time
-	jpgTk     *TokenChan
+	jpgTk     *token.MultiToken
 }
 
 // NewMultiFetch - create a new fetch engine - specify if it should use multi mode
@@ -56,7 +58,7 @@ func NewMultiFetch(mm bool) *MultiFetch {
 // too small and you're wasting cpu potential
 // too high and you're thrashing the file system
 func (mf *MultiFetch) SetTestJpg(cnt int) {
-	mf.jpgTk = NewTokenChan(cnt, "jpg checker")
+	mf.jpgTk = token.NewTokenChan(cnt, "jpg checker")
 }
 
 // SetDebug turn on the debug mode
@@ -154,7 +156,7 @@ func (mf *MultiFetch) Scraming() bool {
 		return false
 	}
 }
-func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInProgres *bool, wt *WkTok) {
+func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInProgres *bool, wt *token.WkTok) {
 	if *scramInProgres == false {
 		//fmt.Println("Scram Started")
 		*scramInProgres = true
@@ -173,7 +175,7 @@ func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInPr
 }
 func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 	scramInProgres := false
-	wt := NewWkTok(4)
+	wt := token.NewWkTok(4)
 	var icd chan URL
 	if mf.download {
 		// If we are not set to download then
@@ -200,16 +202,16 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 			}
 			basename := urf.Base()
 			if basename != "" && dv.VisitedQ(basename) {
-				wt.GetTok()
+				wt.Get()
 				if mf.Scraming() {
 					// return the urf
 					mf.dumpChan <- urf
-					wt.PutTok()
+					wt.Put()
 				} else {
 					go func() {
 						df := func() { mf.downFunc(urf) }
 						withTimeout(df, "Timeout of url:"+urf.String())
-						wt.PutTok()
+						wt.Put()
 					}()
 				}
 			}
@@ -402,9 +404,9 @@ func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 		} else if strings.HasSuffix(fn, ".jpg") {
 			// Check if it is a corrupted file. If it is, then fetch again
 			//fmt.Println("yest jph", fn)
-			mf.jpgTk.GetToken("jpg")
+			mf.jpgTk.Get("jpg")
 			goodFile := checkJpg(potentialFileName)
-			mf.jpgTk.PutToken("jpg")
+			mf.jpgTk.Put("jpg")
 			if goodFile {
 				return false
 			}

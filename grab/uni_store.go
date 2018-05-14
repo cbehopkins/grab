@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"sync"
+
+	"github.com/cbehopkins/token"
 )
 
 // uniStore is a universal store collecting the vivisted and unvisited structures
@@ -114,7 +116,7 @@ func (usr uniStore) VisitFromBatch(startURL URL) chan []URL {
 func (usr uniStore) VisitRandomBatch() chan []URL {
 	return usr.unvisitUrls.VisitRandomBatch()
 }
-func (usr uniStore) getMissing(refr *TokenChan) map[string]struct{} {
+func (usr uniStore) getMissing(refr *token.MultiToken) map[string]struct{} {
 	return usr.unvisitUrls.VisitMissing(refr)
 }
 

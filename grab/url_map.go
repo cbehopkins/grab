@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cbehopkins/gkvlite"
+	"github.com/cbehopkins/token"
 )
 
 // URLMapOverFlush turns on cautious flushing of the structs
@@ -757,7 +758,7 @@ func (um *URLMap) flushWrites() {
 // VisitMissing is similar to Visit() but we supply the map of references
 // This attempts to search through the database
 // finding a good selection of URLs
-func (um *URLMap) VisitMissing(refr *TokenChan) map[string]struct{} {
+func (um *URLMap) VisitMissing(refr *token.MultiToken) map[string]struct{} {
 	retMap := make(map[string]struct{})
 	um.flushWrites() // Flush writes will happen later with go um.Flush()
 
@@ -765,7 +766,7 @@ func (um *URLMap) VisitMissing(refr *TokenChan) map[string]struct{} {
 	if um.closed {
 		um.RUnlock()
 	} else {
-		// Get up to 100 things that aren't on the TokenChan
+		// Get up to 100 things that aren't on the token.MultiToken
 		retMapURL := um.dkst.GetMissing(10000, refr)
 		um.RUnlock()
 		//s := Spinner{scaler: 100}

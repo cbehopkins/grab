@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/cbehopkins/gkvlite"
+	"github.com/cbehopkins/token"
 )
 
 // DkCollection Disk Collection
@@ -279,12 +280,12 @@ func (dc *DkCollection) GetAnyKeysRand() (retChan chan []byte) {
 	}()
 	return retChan
 }
-func (dc *DkCollection) getMissingChan(maxItems int, refr *TokenChan) chan string {
+func (dc *DkCollection) getMissingChan(maxItems int, refr *token.MultiToken) chan string {
 	uc := make(chan string)
 	go dc.getMissingChanWorker(uc, maxItems, refr)
 	return uc
 }
-func (dc *DkCollection) getMissingChanWorker(urlChan chan string, maxItems int, refr *TokenChan) {
+func (dc *DkCollection) getMissingChanWorker(urlChan chan string, maxItems int, refr *token.MultiToken) {
 	defer close(urlChan)
 	// we will allow up to max_same of the same basename to go through
 	// This is so we can fetch several things fromt he same host at once
@@ -319,7 +320,7 @@ func (dc *DkCollection) getMissingChanWorker(urlChan chan string, maxItems int, 
 		// Then it won't fetch this pass, so don't let it through
 		tmpBase := dc.roughBase(tmpVal)
 		if checkTk {
-			ok := refr.BaseExist(tmpBase)
+			ok := refr.Exist(tmpBase)
 			if ok {
 				// Keep going, look for something not in the map
 				return true
@@ -355,7 +356,7 @@ func (dc *DkCollection) getMissingChanWorker(urlChan chan string, maxItems int, 
 
 // GetMissing items from the collection
 // i.e. populate a return map with at most maxItems, moderated by tokenChan
-func (dc *DkCollection) GetMissing(maxItems int, refr *TokenChan) (retMap map[string]struct{}) {
+func (dc *DkCollection) GetMissing(maxItems int, refr *token.MultiToken) (retMap map[string]struct{}) {
 	retMap = make(map[string]struct{})
 	for tmpVal := range dc.getMissingChan(maxItems, refr) {
 		retMap[tmpVal] = struct{}{}

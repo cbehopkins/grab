@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/cbehopkins/token"
 	"golang.org/x/net/html"
 )
 
@@ -106,11 +107,11 @@ func (hm *Hamster) Close() {
 func (hm *Hamster) grabWithToken(
 	urlIn URL, // The URL we are tasked with crawling
 	tokenName string,
-	crawlChan *TokenChan, // FIXME Not needed
+	crawlChan *token.MultiToken, // FIXME Not needed
 	grabChan chan<- URL,
 ) {
 	// And return the crawl token for re-use
-	defer crawlChan.PutToken(tokenName)
+	defer crawlChan.Put(tokenName)
 	hm.grabWo(urlIn, grabChan)
 }
 func (hm *Hamster) grabWo(
@@ -361,10 +362,10 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 	}
 }
 
-func (hm *Hamster) grabItWork(urs URL, outCount *OutCounter, crawlChan *TokenChan, tmpChan chan<- URL) bool {
+func (hm *Hamster) grabItWork(urs URL, outCount *OutCounter, crawlChan *token.MultiToken, tmpChan chan<- URL) bool {
 	tokenGot := urs.Base()
 
-	if crawlChan.TryGetToken(tokenGot) {
+	if crawlChan.TryGet(tokenGot) {
 		// If we successfully got the token
 		if hm.printUrls {
 			fmt.Println("grab:", urs)

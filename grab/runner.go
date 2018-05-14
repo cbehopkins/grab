@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/cbehopkins/token"
 )
 
 // Runner is the main starting point for the grab engine
@@ -182,7 +184,7 @@ func (r *Runner) GrabRunner(numPFetch int) {
 	go r.grabRunner(numPFetch)
 }
 
-type mf func(*TokenChan, *OutCounter, chan URL) bool
+type mf func(*token.MultiToken, *OutCounter, chan URL) bool
 
 func (r *Runner) grabRunner(numPFetch int) {
 	//fmt.Println("Starting Hamster")
@@ -193,7 +195,7 @@ func (r *Runner) grabRunner(numPFetch int) {
 		r.wg.Done()
 		fmt.Println("grabRunner Complete")
 	}()
-	grabTkRep := NewTokenChan(numPFetch, "grab")
+	grabTkRep := token.NewTokenChan(numPFetch, "grab")
 
 	if r.linear {
 		r.genericOuter(grabTkRep, r.linGrabMiddle)
@@ -202,7 +204,7 @@ func (r *Runner) grabRunner(numPFetch int) {
 	}
 }
 
-func (r *Runner) genericMiddle(grabTkRep *TokenChan, midFunc mf) bool {
+func (r *Runner) genericMiddle(grabTkRep *token.MultiToken, midFunc mf) bool {
 	if r.debug {
 		fmt.Println("genericMiddle starting")
 	}
@@ -265,7 +267,7 @@ func (r *Runner) abortableSleep(t time.Duration) bool {
 	return abortableSleep(t, r.closed)
 }
 
-func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
+func (r *Runner) genericOuter(grabTkRep *token.MultiToken, midFunc mf) bool {
 	var chanClosed bool
 	if r.debug {
 		fmt.Println("genericOuter starting")
@@ -337,7 +339,7 @@ func (r *Runner) linearLoopSlice(urlSlc []URL, wkfc func(URL)) (urlRxd bool, las
 
 // Linear grab
 // In linear order grab the files and return true if we are complete
-func (r *Runner) linGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
+func (r *Runner) linGrabMiddle(grabTkRep *token.MultiToken, outCount *OutCounter, tmpChan chan URL) bool {
 	giwf := func(url URL) {
 		if !r.ust.Test(url, r.allInteresting) {
 			//log.Println("Not an allowed domain", url)
@@ -396,7 +398,7 @@ func (r *Runner) manageGoRoutines() bool {
 	return false
 }
 
-func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmpChan chan URL) bool {
+func (r *Runner) multiGrabMiddle(grabTkRep *token.MultiToken, outCount *OutCounter, tmpChan chan URL) bool {
 	if r.debug {
 		log.Println("Multi is starting - getMissing started")
 	}
@@ -428,7 +430,7 @@ func (r *Runner) multiGrabMiddle(grabTkRep *TokenChan, outCount *OutCounter, tmp
 	}
 	return false
 }
-func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) bool {
+func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *token.MultiToken, tmpChan chan URL) bool {
 	grabSuccess, closeChan := r.workMultiMap(missingMap, outCount, grabTkRep, tmpChan)
 	//if r.debug {
 	//	log.Println("r.workMultiMap complete", closeChan)
@@ -446,7 +448,7 @@ func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCount
 	r.Sleep()
 	return false
 }
-func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
+func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *token.MultiToken, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
 	grabSuccess = make([]URL, 0, len(missingMap))
 	//if r.debug {
 	//	fmt.Println("Enter workMultiMap")
@@ -493,7 +495,7 @@ func (r *Runner) AutoPace(multiFetch *MultiFetch, target int) {
 		}
 	}
 }
-func (r *Runner) getConditional(urs URL, outCount *OutCounter, crawlChan *TokenChan, tmpChan chan<- URL) bool {
+func (r *Runner) getConditional(urs URL, outCount *OutCounter, crawlChan *token.MultiToken, tmpChan chan<- URL) bool {
 	//fmt.Println("getConditional",urs)
 	if r.hm.grabItWork(urs, outCount, crawlChan, tmpChan) {
 		r.ust.setVisited(urs)

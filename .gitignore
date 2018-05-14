@@ -26,3 +26,7 @@ _testmain.go
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# I specifically do not want to check in the testcase configs
+# I don't want to put stress on the websites
+*.json
