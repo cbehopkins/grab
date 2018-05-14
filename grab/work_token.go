@@ -4,7 +4,8 @@ import (
 	"sync"
 )
 
-type wkTok struct {
+//WkTok is a work token - Wait for a token before working
+type WkTok struct {
 	sync.Mutex
 	cnt           int
 	maxCount      int
@@ -12,18 +13,21 @@ type wkTok struct {
 	waitChan      chan struct{}
 }
 
-func newWkTok(cnt int) *wkTok {
-	itm := new(wkTok)
+// NewWkTo creates a work token that you can get and put for
+func NewWkTok(cnt int) *WkTok {
+	itm := new(WkTok)
 	itm.maxCount = cnt
 	itm.broadcastChan = make(chan struct{})
 	return itm
 }
-func (wt *wkTok) qTok() bool {
+func (wt *WkTok) qTok() bool {
 	its := wt.cnt < wt.maxCount
 	//fmt.Println("qTok", its)
 	return its
 }
-func (wt *wkTok) wait() {
+
+// Wait for all wokens to complete
+func (wt *WkTok) Wait() {
 	wt.Lock()
 	if wt.waitChan == nil {
 		wt.waitChan = make(chan struct{})
@@ -35,13 +39,17 @@ func (wt *wkTok) wait() {
 		<-wt.waitChan
 	}
 }
-func (wt *wkTok) getTok() {
+
+// GetTok waits until we get a token
+func (wt *WkTok) GetTok() {
 	wt.Lock()
 	wt.loopToken() // loop until we can increment
 	wt.cnt++
 	wt.Unlock()
 }
-func (wt *wkTok) putTok() {
+
+// PutTok says we have finished with the token, put it back
+func (wt *WkTok) PutTok() {
 	wt.Lock()
 	wt.cnt--
 	// one of possibly many receivers will get this
@@ -59,7 +67,8 @@ func (wt *wkTok) putTok() {
 	}
 }
 
-func (wt *wkTok) loopToken() {
+// loopToken loops waiting for a token
+func (wt *WkTok) loopToken() {
 	// Stay in here until the entry does not exist
 	for success := wt.qTok(); !success; success = wt.qTok() {
 		wt.Unlock()

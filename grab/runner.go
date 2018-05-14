@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -125,24 +124,6 @@ func (r *Runner) PrintThroughput() {
 	fmt.Print("\n\n", Throughput(r.counter, elapsed))
 }
 
-// Throughput returns an output on stats of our throughput
-func Throughput(count int, elapsed float64) string {
-	if count == 0 {
-		return "Zero work\n"
-	}
-	tp := float64(count) / elapsed
-	tpInt := int64(tp)
-	if tpInt > 0 {
-		return strconv.FormatInt(tpInt, 10) + " Items per Second\n"
-	}
-	tpIntMin := int64(tp * 60)
-	if tpIntMin > 10 {
-		return strconv.FormatInt(tpIntMin, 10) + " Items per Minute\n"
-	}
-	tpIntHour := int64(tp * 60 * 60)
-	return strconv.FormatInt(tpIntHour, 10) + " Items per Hour\n"
-}
-
 // Resume after a pause
 func (r *Runner) Resume() {
 	r.pauseLk.Lock()
@@ -260,7 +241,9 @@ func (r *Runner) cycle() bool {
 	wePause := true
 	for wePause {
 		if r.closed() {
-			fmt.Println("cycle detected closed")
+			if r.debug {
+				fmt.Println("cycle detected closed")
+			}
 			return true
 		}
 		// We don't expect to have multiple threads contending for
@@ -280,19 +263,6 @@ func (r *Runner) cycle() bool {
 }
 func (r *Runner) abortableSleep(t time.Duration) bool {
 	return abortableSleep(t, r.closed)
-}
-
-func abortableSleep(t time.Duration, cf func() bool) bool {
-	startTime := time.Now()
-	for {
-		if cf() {
-			return true
-		}
-		if time.Since(startTime) > t {
-			return false
-		}
-		time.Sleep(time.Second)
-	}
 }
 
 func (r *Runner) genericOuter(grabTkRep *TokenChan, midFunc mf) bool {
@@ -476,24 +446,6 @@ func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCount
 	r.Sleep()
 	return false
 }
-
-// StartTimer creates a way to detect operations that take too long
-// Call start timer before the operation and it returns a channel
-// Close this channel at the end of the operation
-// You'll get a fatal error if this takes more than 40 seconds
-func StartTimer() chan struct{} {
-	bob := time.After(time.Second * 40)
-	closer := make(chan struct{})
-	go func() {
-		select {
-		case <-bob:
-			log.Fatal("Timed Out")
-		case <-closer:
-			return
-		}
-	}()
-	return closer
-}
 func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *TokenChan, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
 	grabSuccess = make([]URL, 0, len(missingMap))
 	//if r.debug {
@@ -501,7 +453,7 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 	//	defer fmt.Println("Exit workMultiMap")
 	//}
 	for urv := range missingMap {
-		tim := StartTimer()
+		tim := StartTimer((time.Minute * 40), urv.String())
 		if r.cycle() {
 			if r.debug {
 				fmt.Println("Work Closing")
@@ -509,7 +461,6 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 			close(tim)
 			return grabSuccess, true
 		}
-		//fmt.Println("Call gc")
 		if r.getConditional(urv, outCount, grabTkRep, tmpChan) {
 			// If we sucessfully grab this (get a token etc)
 			// then delete it fro the store
@@ -518,7 +469,6 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 			grabSuccess = append(grabSuccess, urv)
 		}
 		close(tim)
-		//fmt.Println("Finished gc")
 	}
 	return grabSuccess, false
 }

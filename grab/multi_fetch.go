@@ -15,8 +15,8 @@ type MultiFetch struct {
 	// We ar protected by a simple mutex
 	sync.Mutex
 	wg sync.WaitGroup
-	// Gob wait Group
-	// Ensure we wait for gob to have finished before we close the fetch channel
+	// Gob Wait Group
+	// Ensure we Wait for gob to have finished before we close the fetch channel
 	// That gob will be trying to write to
 	gwg       sync.WaitGroup
 	InChan    chan URL // Write Urls to here
@@ -130,7 +130,7 @@ func (mf *MultiFetch) Closed() bool {
 // Close down the multi fetcher
 // Close does not scram, it waits for downloads to finish
 func (mf *MultiFetch) Close() {
-	// wait for the Load gob to finish
+	// Wait for the Load gob to finish
 	mf.gwg.Wait()
 	mf.close()
 }
@@ -154,7 +154,7 @@ func (mf *MultiFetch) Scraming() bool {
 		return false
 	}
 }
-func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInProgres *bool, wt *wkTok) {
+func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInProgres *bool, wt *WkTok) {
 	if *scramInProgres == false {
 		//fmt.Println("Scram Started")
 		*scramInProgres = true
@@ -166,14 +166,14 @@ func (mf *MultiFetch) workScram(ic chan URL, dv DomVisitI, nme string, scramInPr
 			mf.saveProgress()
 		}
 		fmt.Println("Scram finished for:", nme)
-		wt.wait()
+		wt.Wait()
 		fmt.Println("worker finished", nme)
 		return
 	}
 }
 func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 	scramInProgres := false
-	wt := newWkTok(4)
+	wt := NewWkTok(4)
 	var icd chan URL
 	if mf.download {
 		// If we are not set to download then
@@ -188,10 +188,10 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 		case urf, ok := <-icd:
 			if !ok {
 				// This is a closed channel
-				// so all we have to do is wait for
+				// so all we have to do is Wait for
 				// any tokens to finish
 				fmt.Println("singleWorker seen closed", nme)
-				wt.wait()
+				wt.Wait()
 				return
 			}
 			//fmt.Println("Fetch:", urf)
@@ -200,39 +200,28 @@ func (mf *MultiFetch) singleWorker(ic chan URL, dv DomVisitI, nme string) {
 			}
 			basename := urf.Base()
 			if basename != "" && dv.VisitedQ(basename) {
-				wt.getTok()
+				wt.GetTok()
 				if mf.Scraming() {
 					// return the urf
 					mf.dumpChan <- urf
-					wt.putTok()
+					wt.PutTok()
 				} else {
 					go func() {
-						tchan := make(chan struct{})
-						go func() {
-							//fmt.Println("TX Start:", urf)
-							// Fetch returns true if it has used the network
-							if mf.fetchW(urf) {
-								//fmt.Println("Fetch Complete:", urf)
-								mf.incCount()
-								time.Sleep(500 * time.Millisecond)
-							}
-							//fmt.Println("TX Complete:", urf)
-
-							close(tchan)
-						}()
-						// Implement a timeout on the Fetch Work
-						select {
-						case <-tchan:
-							//fmt.Println("Finished Fetch of:", urf)
-						case <-time.After(FetchTimeout + time.Second):
-							log.Println("Timeout of url:", urf)
-						}
-						// Return the token at the end
-						wt.putTok()
+						df := func() { mf.downFunc(urf) }
+						withTimeout(df, "Timeout of url:"+urf.String())
+						wt.PutTok()
 					}()
 				}
 			}
 		}
+	}
+}
+func (mf *MultiFetch) downFunc(urg URL) {
+	// Fetch returns true if it has used the network
+	if mf.fetchW(urg) {
+		//fmt.Println("Fetch Complete:", urf)
+		mf.incCount()
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -344,7 +333,7 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	for _, ff := range mf.ffMap {
 		close(ff.PushChannel)
 	}
-	// and wait for each of the workers to close
+	// and Wait for each of the workers to close
 	// This will only happen once their queues are empty
 	fmt.Println("Dispatch waiting for all the workers to complete")
 	oc.Wait()

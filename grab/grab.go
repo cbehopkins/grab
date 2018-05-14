@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -348,4 +349,22 @@ func SaveGob(filename string, theChan chan URL, counter *OutCounter) {
 	wg.Wait()
 	fmt.Println("Finished gobbing")
 
+}
+
+// Throughput returns an output on stats of our throughput
+func Throughput(count int, elapsed float64) string {
+	if count == 0 {
+		return "Zero work\n"
+	}
+	tp := float64(count) / elapsed
+	tpInt := int64(tp)
+	if tpInt > 0 {
+		return strconv.FormatInt(tpInt, 10) + " Items per Second\n"
+	}
+	tpIntMin := int64(tp * 60)
+	if tpIntMin > 10 {
+		return strconv.FormatInt(tpIntMin, 10) + " Items per Minute\n"
+	}
+	tpIntHour := int64(tp * 60 * 60)
+	return strconv.FormatInt(tpIntHour, 10) + " Items per Hour\n"
 }
