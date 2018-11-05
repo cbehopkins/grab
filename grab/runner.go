@@ -3,7 +3,6 @@ package grab
 import (
 	"fmt"
 	"log"
-	"runtime"
 	"sync"
 	"time"
 
@@ -23,7 +22,6 @@ type Runner struct {
 	grabSlowly     bool
 	pauseLk        sync.Mutex
 	pause          bool
-	linear         bool
 	debug          bool
 	allInteresting bool
 }
@@ -184,7 +182,7 @@ func (r *Runner) GrabRunner(numPFetch int) {
 	go r.grabRunner(numPFetch)
 }
 
-type mf func(*token.MultiToken, *OutCounter, chan URL) bool
+type mf func(*token.MultiToken, *OutCounter, chan<- URL) bool
 
 func (r *Runner) grabRunner(numPFetch int) {
 	//fmt.Println("Starting Hamster")
@@ -197,11 +195,7 @@ func (r *Runner) grabRunner(numPFetch int) {
 	}()
 	grabTkRep := token.NewTokenChan(numPFetch, "grab")
 
-	if r.linear {
-		r.genericOuter(grabTkRep, r.linGrabMiddle)
-	} else {
-		r.genericOuter(grabTkRep, r.multiGrabMiddle)
-	}
+	r.genericOuter(grabTkRep, r.multiGrabMiddle)
 }
 
 func (r *Runner) genericMiddle(grabTkRep *token.MultiToken, midFunc mf) bool {
@@ -210,10 +204,11 @@ func (r *Runner) genericMiddle(grabTkRep *token.MultiToken, midFunc mf) bool {
 	}
 	outCount := NewOutCounter()
 	// pretend we have some workload so that we don't lock on zero work
-	outCount.Add()
-	outCount.Dec()
+	//outCount.Add()
+	//outCount.Dec()
 	tmpChan := make(chan URL)
 	// Create the worker to sort any new Urls into the  two bins
+	// i.e. tmpChan receives URLs from the crawler and runChan sorts into visited and unvisited
 	wgt := r.ust.runChan(tmpChan, "")
 
 	cc := midFunc(grabTkRep, outCount, tmpChan)
@@ -310,95 +305,7 @@ func (r *Runner) closed() bool {
 	return false
 }
 
-// linearLoopChan work through a chan of URLs
-func (r *Runner) linearLoopChan(urlChan chan URL, wkfc func(URL)) (urlRxd bool, lastURL URL) {
-	for urv := range urlChan {
-		lastURL = urv
-		if r.closed() {
-			return
-		}
-		wkfc(urv)
-		urlRxd = true
-	}
-	return
-}
-func (r *Runner) linearLoopSlice(urlSlc []URL, wkfc func(URL)) (urlRxd bool, lastURL URL) {
-	for _, urv := range urlSlc {
-		lastURL = urv
-		fmt.Println("looking at url", urv)
-		if r.closed() {
-			fmt.Println("Closing linear")
-			return
-		}
-		wkfc(urv)
-		urlRxd = true
-	}
-	fmt.Println("Closing linear")
-	return
-}
-
-// Linear grab
-// In linear order grab the files and return true if we are complete
-func (r *Runner) linGrabMiddle(grabTkRep *token.MultiToken, outCount *OutCounter, tmpChan chan URL) bool {
-	giwf := func(url URL) {
-		if !r.ust.Test(url, r.allInteresting) {
-			//log.Println("Not an allowed domain", url)
-			// Abort if a rubbish URL
-			return
-		}
-
-		if r.hm.grabItWork(url, outCount, grabTkRep, tmpChan) {
-			r.ust.setVisited(url)
-		} else {
-			vqt := r.ust.VisitedQ(url.URL())
-			// Could not get token
-			if !vqt {
-				log.Println("failed to get token for:", url, vqt)
-				log.Println(r.ust.dv)
-			}
-		}
-	}
-	//fmt.Println("Starting Lin Grab")
-	//defer fmt.Println("End Lin Grab")
-	//var lastURL URL
-	for {
-		var urlRxd bool
-		if r.manageGoRoutines() {
-			return true
-		}
-
-		//urlChanBatch := r.ust.VisitFromBatch(lastURL)
-		urlChanBatch := r.ust.VisitRandomBatch()
-		fmt.Println("Got a random batch")
-		for ucb := range urlChanBatch {
-			//urlRxd, lastURL = r.linearLoopSlice(ucb, giwf)
-			fmt.Println("Received from Random Batch")
-			urlRxd, _ = r.linearLoopSlice(ucb, giwf)
-			if !urlRxd {
-				// If there were no new urls for us
-				return false
-			}
-			if r.cycle() {
-				return true
-			}
-		}
-	}
-}
-
-func (r *Runner) manageGoRoutines() bool {
-	maxRoutines := 1000
-	for runtime.NumGoroutine() > maxRoutines {
-		log.Println("Sleeping because too many routines", runtime.NumGoroutine(), maxRoutines)
-		r.abortableSleep(10 * time.Second)
-		maxRoutines = maxRoutines << 1
-		if r.closed() {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *Runner) multiGrabMiddle(grabTkRep *token.MultiToken, outCount *OutCounter, tmpChan chan URL) bool {
+func (r *Runner) multiGrabMiddle(grabTkRep *token.MultiToken, outCount *OutCounter, tmpChan chan<- URL) bool {
 	if r.debug {
 		log.Println("Multi is starting - getMissing started")
 	}
@@ -430,7 +337,7 @@ func (r *Runner) multiGrabMiddle(grabTkRep *token.MultiToken, outCount *OutCount
 	}
 	return false
 }
-func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *token.MultiToken, tmpChan chan URL) bool {
+func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *token.MultiToken, tmpChan chan<- URL) bool {
 	grabSuccess, closeChan := r.workMultiMap(missingMap, outCount, grabTkRep, tmpChan)
 	//if r.debug {
 	//	log.Println("r.workMultiMap complete", closeChan)
@@ -448,7 +355,7 @@ func (r *Runner) runMultiGrabMap(missingMap map[URL]struct{}, outCount *OutCount
 	r.Sleep()
 	return false
 }
-func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *token.MultiToken, tmpChan chan URL) (grabSuccess []URL, closeChan bool) {
+func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter, grabTkRep *token.MultiToken, tmpChan chan<- URL) (grabSuccess []URL, closeChan bool) {
 	grabSuccess = make([]URL, 0, len(missingMap))
 	//if r.debug {
 	//	fmt.Println("Enter workMultiMap")
@@ -456,7 +363,7 @@ func (r *Runner) workMultiMap(missingMap map[URL]struct{}, outCount *OutCounter,
 	//}
 	for urv := range missingMap {
 		tim := StartTimer((time.Minute * 40), urv.String())
-		if r.cycle() {
+		if r.cycle() { // test if we're closed & pause as needed
 			if r.debug {
 				fmt.Println("Work Closing")
 			}
@@ -537,14 +444,4 @@ func (r *Runner) VisitedQ(urlIn string) bool {
 // VisitedA - Add if we haven't visited it
 func (r *Runner) VisitedA(urlIn string) bool {
 	return r.ust.VisitedA(urlIn)
-}
-
-// SetLinear - activates linear fetch mode
-func (r *Runner) SetLinear() {
-	r.linear = true
-}
-
-// ClearLinear - deactivate linear fetch mode
-func (r *Runner) ClearLinear() {
-	r.linear = false
 }

@@ -18,8 +18,11 @@ type FifoProto struct {
 // FifoInt Is the interface a type needs to implement
 // to support a fifo
 type FifoInt interface {
-	// In order to function as a fifoable structure
-	// an origionating data type must implement the following methods
+	// Moodify self to be of newCapacity
+	// copying in a through to b
+	// then append c through d
+	// this allows you to take a wrap-around style fifo
+	// and in one move create a new data store with contiguous data
 	DataResize(a, b, c, d, newCapacity int)
 }
 
@@ -111,7 +114,6 @@ func (fp FifoProto) AdvanceTail(inter FifoInt) FifoProto {
 // GrowStore Grows the store specified
 // Returns a new proto for that store
 func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
-	debug := false
 	// Now we have it copy the new data into it
 	// Now we can make some assumptions. The only reasong we are here
 	// must be because the queue is FULL
@@ -119,57 +121,28 @@ func (fp FifoProto) GrowStore(inter FifoInt) FifoProto {
 	if fp.rp == fp.wp {
 		log.Fatal("Stupid sod you're telling me to grow an empty queue")
 	}
+	if fp.rp > fp.wp {
+		fp.resize(inter, fp.rp)
+	} else {
+		fp.resize(inter, fp.wp)
+	}
+	return fp
+}
+
+func (fp *FifoProto) resize(inter FifoInt, point int) {
 	qCap := fp.cap
 	rdNorm := fp.rp % qCap
 	wrNorm := fp.wp % qCap
+	newCap := qCap << 1
 	if rdNorm != wrNorm {
 		log.Fatal("You are running grow with a none full queue")
-	} else if fp.rp > fp.wp {
-		if fp.rp > qCap {
-			// There is valid data from the read pointer
-			// to the end of the buffer
-			// then from the start of the buffer to the write pointer
-			// 5,6,7,x,x,x,2,3,4
-			//
-			if debug {
-				log.Println("Rp>Wp")
-			}
-			inter.DataResize(rdNorm, qCap, 0, wrNorm, qCap<<1)
-		} else {
-			// Data starts at read pointer and goes on until the write pointer
-			// How is this possible?
-			// x,x,x,2,3,4,5,6,7,x,x
-			if debug {
-				log.Println("Rp>Wp, Weird case")
-
-				log.Printf("Cap=%d\nWP=%d,RP=%d\nnWP=%d,nRP=%d\n", qCap, fp.wp, fp.rp, wrNorm, rdNorm)
-			}
-			inter.DataResize(rdNorm, wrNorm, 0, 0, qCap<<1)
-		}
-	} else /*write pointer is larger*/ {
-		if fp.wp >= qCap {
-			// There is data that starts at the read pointer and goes to the end of the buffer
-			// then data that start at the buffer and goes to the write pointer
-			// i.e. we wrote in some data that wrapped over into the upper region
-			// and read some of that
-			// so the old data is at the
-			// 5,6,7,x,x,x,2,3,4
-			if debug {
-				log.Println("Complex Wp>Rp")
-			}
-			inter.DataResize(rdNorm, qCap, 0, wrNorm, qCap<<1)
-		} else {
-			// there is data that starts at the read pointer and goes on until the write pointer
-			// i.e. we wrote some data in (and didn't wrap) and read some of that
-			// x,x,x,2,3,4,5,6,7,x,x
-			if debug {
-				log.Println("Simple Wp>Rp,")
-			}
-			inter.DataResize(rdNorm, wrNorm, 0, 0, qCap<<1)
-		}
+	}
+	if point >= qCap {
+		inter.DataResize(rdNorm, qCap, 0, wrNorm, newCap)
+	} else {
+		inter.DataResize(rdNorm, wrNorm, 0, 0, newCap)
 	}
 	fp.rp = 0
 	fp.wp = qCap
-	fp.cap = qCap << 1
-	return fp
+	fp.cap = newCap
 }

@@ -86,7 +86,6 @@ func shutdown(
 		fmt.Println("Shutdown the Fetch Function")
 	}
 	multiFetch.Shutdown()
-
 	// Wait for hamster to complete
 	fmt.Println("Fetch Complete")
 
@@ -119,7 +118,6 @@ func main() {
 	var gofastflg = flag.Bool("fast", false, "Go Fast")
 	var clearvisitedflg = flag.Bool("clearv", false, "Clear All visited into Unvisited")
 	var testjpgflg = flag.Bool("tjpg", true, "Test Jpgs for validity")
-	var linflg = flag.Bool("lin", true, "Linear grab mode - sequentially progress through unvisited")
 	var autopaceflg = flag.Int("apace", 0, "Automatically Pace the download")
 	var rundurationflg = flag.Duration("dur", 2*time.Hour, "Specify Run Duration")
 	var dumpvisitedflg = flag.String("dumpv", "", "Write Visited URLs to file")
@@ -183,10 +181,6 @@ func main() {
 		debug, // Print Urls
 		*politeflg,
 	)
-	if *linflg {
-		fmt.Println("Running In Linear Mode")
-		//runr.SetLinear()
-	}
 	// We expect to be able to write to the fetch channel, so start the worker
 	multiFetch.Worker(runr)
 	fmt.Println("Worker Started")
@@ -262,8 +256,7 @@ func main() {
 			defer shutdownInProgress.Unlock()
 			if !shutdownRun {
 				shutdownRun = true
-				memProfile(*memprofile)
-				fmt.Println("Calling Shutdown")
+				//memProfile(*memprofile)
 				multiFetch.Scram()
 				shutdown(pool, multiFetch, runr)
 			}
@@ -300,18 +293,18 @@ func main() {
 		fmt.Println("Runner complete. Waiting for fetch to complete")
 	}
 	multiFetch.Shutdown()
-	//if *dbgflg {
-	fmt.Println("Fetch complete. Waiting for shutdown lock")
-	//}
+	if *dbgflg {
+		fmt.Println("Fetch complete. Waiting for shutdown lock")
+	}
 
 	shutdownInProgress.Lock()
 	defer shutdownInProgress.Unlock()
-	//if *dbgflg {
-	fmt.Println("Got shutdown lock. Adios!")
-	//}
+	if *dbgflg {
+		fmt.Println("******Got shutdown lock. Adios!", &shutdownRun)
+	}
 	if !shutdownRun {
 		shutdownRun = true
-		memProfile(*memprofile)
+		//memProfile(*memprofile)
 		shutdown(pool, multiFetch, runr)
 	}
 }

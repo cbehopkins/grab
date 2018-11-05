@@ -9,13 +9,16 @@ import (
 )
 
 func TestRunner0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	rmFilename("visited.gkvlite")
 	rmFilename("unvisit.gkvlite")
 	var promiscuous, allInteresting, polite bool
 	var multipleFetchers bool
 	multipleFetchers = true
 	//printUrls = true
-	htc, err := LoadHamsterTestCase("rtc0.json")
+	htc, err := LoadHamsterTestCase("rtc1.json")
 	if err == nil {
 		log.Println("Read in test case")
 	} else {
@@ -101,7 +104,10 @@ func TestRunner0(t *testing.T) {
 		fmt.Println("got opt", opt)
 		if IsDir(opt) {
 			fmt.Println("Found a directory to remove")
-			os.RemoveAll(opt)
+			err := os.RemoveAll(opt)
+			if err != nil {
+				log.Fatal("unable to remove directory:", err)
+			}
 		}
 	}
 }

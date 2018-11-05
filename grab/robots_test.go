@@ -6,6 +6,9 @@ import (
 )
 
 func TestRobot(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	testURLs := []string{
 		"https://www.google.com/fred.html",
 		"http://www.rufty.org.uk/index.html",

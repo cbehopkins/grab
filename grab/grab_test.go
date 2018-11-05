@@ -27,6 +27,9 @@ func URLSrc(cnt int) (chan URL, map[string]struct{}) {
 }
 
 func TestGobWrite0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	outCount := NewOutCounter()
 	outCount.Add()
 

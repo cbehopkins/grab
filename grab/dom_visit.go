@@ -237,9 +237,8 @@ func (dv DomVisit) VisitedQ(urlIn string) bool {
 	ok := dv.Exist(urlIn)
 	if ok {
 		//log.Println("URL:", urlIn, " allowed as it exists", dv)
-		return true
 	}
-	return false
+	return ok
 }
 
 // VisitedA Adds a domain we should visit

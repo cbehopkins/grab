@@ -13,10 +13,16 @@ func (dc *DkCollection) checkBase(url, base string) bool {
 	return false
 }
 func TestCheckBase0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	st := NewDkCollection(os.TempDir()+"/bob", true)
 	st.checkBase("http://play.google.com", "play.google.com")
 }
 func TestCheckBase1(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	st := NewDkCollection(os.TempDir()+"/bob", true)
 	testStrings := []string{
 		"http://play.google.com",

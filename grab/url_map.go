@@ -560,13 +560,11 @@ func (um *URLMap) VisitFromBatch(startURL URL) chan []URL {
 		defer close(retChan)
 		um.Lock()
 		um.localFlush()
-		um.Unlock()
-		um.RLock()
 		if um.closed {
-			um.RUnlock()
+			um.Unlock()
 			return
 		}
-		um.RUnlock()
+		um.Unlock()
 		startingPoint := startURL.ToBa()
 		baCh := um.batchDiskReadURL(URLMapBatchCnt, startingPoint)
 		um.sendBatchURL(baCh, retChan)

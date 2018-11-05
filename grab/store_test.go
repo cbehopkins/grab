@@ -7,7 +7,9 @@ import (
 )
 
 func TestCall4(t *testing.T) {
-
+	if useTestParallel {
+		t.Parallel()
+	}
 	urlStore := NewURLStore()
 	// Receive from chURLs and store in a temporary buffer
 	url := "URL"
@@ -30,6 +32,9 @@ func TestCall4(t *testing.T) {
 	log.Println("All Done")
 }
 func TestCall16(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 
 	urlStore := NewURLStore()
 	// Receive from chURLs and store in a temporary buffer
@@ -59,6 +64,9 @@ func TestCall16(t *testing.T) {
 	log.Println("All Done")
 }
 func TestChan(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 
 	tst := make(chan URL)
 	urlStore := NewURLStore(tst)
@@ -82,6 +90,9 @@ func TestChan(t *testing.T) {
 	log.Println("All Done")
 }
 func TestChanP0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	for i := 1; i < 2049; i++ {
 		iLocal := i
 		name := strconv.Itoa(i)
@@ -119,6 +130,9 @@ func testNum(cnt int) {
 	log.Println("All Done:", cnt)
 }
 func TestCallE(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 
 	urlStore := NewURLStore(true)
 	// Receive from chURLs and store in a temporary buffer
@@ -146,6 +160,9 @@ func TestCallE(t *testing.T) {
 }
 
 func TestChanE(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 
 	tst := make(chan URL)
 	urlStore := NewURLStore(tst, true)

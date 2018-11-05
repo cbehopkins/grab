@@ -44,6 +44,8 @@ func fileExists(fn string) bool {
 	_, err := os.Stat(fn)
 	return err == nil
 }
+
+// IsDir returns true if the supplied path is a directory
 func IsDir(path string) bool {
 	if stat, err := os.Stat(path); err == nil && stat.IsDir() {
 		return true
@@ -138,6 +140,10 @@ func getHref(t html.Token) (ok bool, href string) {
 	// Iterate over all of the Token's attributes until we find an "href"
 	for _, a := range t.Attr {
 		if a.Key == "href" {
+			href = a.Val
+			ok = true
+		}
+		if a.Key == "src" {
 			href = a.Val
 			ok = true
 		}

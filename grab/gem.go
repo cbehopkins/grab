@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+// Gem holds good members to have
+// It is only used within the test harness
 type gem map[string]bool
 
 func newGem() gem {

@@ -172,78 +172,52 @@ func (hm *Hamster) validSuffix(linkedURL URL, cand []string) bool {
 	}
 	return false
 }
+
+var goodSuffix = []string{".jpg", ".mpg", ".mp4", ".avi"}
+var badSuffix = []string{".gz"}
+
 func (hm *Hamster) urlProc(urlOrig, urlIn URL, domainI string, grabChan chan<- URL) {
-	relinkedURLString := urlIn.URLs
 
 	domainJ := urlIn.Base()
 	if domainJ == "" {
-		//log.Println("Unable to get base, in urlProc", urlIn)
 		return
 	}
-	//fmt.Println("urlProc on:", urlIn)
-	isJpg := strings.Contains(relinkedURLString, ".jpg")
-	isMpg := strings.Contains(relinkedURLString, ".mpg")
-	isMp4 := strings.Contains(relinkedURLString, ".mp4")
-	isAvi := strings.Contains(relinkedURLString, ".avi")
-	isGz := strings.Contains(relinkedURLString, ".gz")
-	switch {
-	case isJpg:
+	if !hm.dv.GoodURL(urlIn) {
 		if hm.printUrls {
-			log.Printf("Found jpg:%s\n", relinkedURLString)
+			fmt.Println("not a good url:", urlIn)
 		}
-		if hm.allInteresting || hm.dv.VisitedQ(domainJ) {
-			if hm.validSuffix(urlIn, []string{".jpg"}) {
-				hm.fetchChan <- urlIn
-			}
-		}
+		return
+	}
+	goodFound := hm.validSuffix(NewURL(urlIn.URLs), goodSuffix)
+	badFound := hm.validSuffix(urlIn, badSuffix)
 
-	case isMpg, isMp4, isAvi:
-		if hm.printUrls {
-			log.Println("MPG found:", urlIn)
-		}
+	if goodFound {
 		vqok := hm.dv.VisitedQ(domainJ)
-		if hm.allInteresting || vqok {
-			if vqok {
-				if hm.validSuffix(urlIn, []string{".mpg", ".mp4", ".avi"}) {
-					hm.fetchChan <- urlIn
-				}
-				//fmt.Println("Sent URL", tmpUr)
-			} else {
-				if hm.printUrls {
-					fmt.Println(domainJ, " not allowed")
-				}
-			}
-		}
-	case isGz:
-	default:
+		log.Println("GOT:", vqok, domainJ, urlIn)
+		hm.goodFetch(false, "Fetch", domainJ, hm.fetchChan, urlIn)
+	} else if !badFound {
+		// Not a bad suffix and we think it's a url
 		grabAllowed := hm.promiscuous || urlOrig.GetPromiscuous() || urlOrig.GetShallow()
 		if hm.promiscuous {
 			urlIn.SetPromiscuous()
 		}
 		if grabAllowed {
-			interestingURL := hm.allInteresting || hm.dv.VisitedQ(domainJ) || (domainI == domainJ)
-			if interestingURL {
-				if hm.printUrls {
-					fmt.Printf("Interesting url, %s \n", urlIn)
-				}
-				if !hm.dv.GoodURL(urlIn) {
-					if hm.printUrls {
-						fmt.Println("not a good url:", urlIn)
-					}
-					return
-				}
-				grabChan <- urlIn
-			} else {
-				if hm.printUrls {
-					fmt.Printf("Uninteresting url, %s, %s, %s\n", domainI, domainJ, urlIn)
-				}
-			}
+			hm.goodFetch((domainI == domainJ), "Interesting URL", domainJ, grabChan, urlIn)
 		}
+	}
+}
+func (hm *Hamster) goodFetch(ov bool, message, domainJ string, theChan chan<- URL, urlIn URL) {
+	vqok := ov || hm.allInteresting || hm.dv.VisitedQ(domainJ)
+
+	if vqok {
+		//		if hm.printUrls {
+		log.Println(message, urlIn)
+		//		}
+		theChan <- urlIn
 	}
 }
 
 func (hm *Hamster) foundURL(urlOrig, url URL, domainI string, grabChan chan<- URL) {
-
 	if url.String() != "" {
 		hm.urlProc(urlOrig, url, domainI, grabChan)
 	}
@@ -311,7 +285,6 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 	titleText := ""
 	for {
 		tt := z.Next()
-		//fmt.Println("Processing token")
 
 		switch {
 		case tt == html.ErrorToken:
@@ -319,13 +292,12 @@ func (hm *Hamster) tokenhandle(z *html.Tokenizer, urlIn URL, domainI string,
 			return
 		case tt == html.StartTagToken:
 			t := z.Token()
-			//fmt.Println("Start Token")
 			// Check if the token is an <a> tag
 			isAnchor := t.Data == "a"
+			isAnchor = isAnchor || t.Data == "source"
 			isScript := t.Data == "script"
 			isTitle := t.Data == "title"
 			if isAnchor {
-				//fmt.Println("Anchor Token")
 				hm.anchorProc(
 					urlIn,
 					domainI,

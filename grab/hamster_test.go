@@ -56,10 +56,35 @@ func (htc *HamsterTestCase) FromJSON(input []byte) (err error) {
 	}
 	return
 }
+func TestValidSuffix(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 
+	hm := NewHamster(false, false, false, false)
+	type tv struct {
+		testString string
+		match      bool
+	}
+	testVals := []tv{
+		{"this.mpg", true},
+		{"https://3762493-480p.mp4", true},
+		{"that.mp3", false},
+	}
+	for _, bob := range testVals {
+		res := hm.validSuffix(NewURL(bob.testString), goodSuffix)
+		if res != bob.match {
+			log.Fatal("TestValidSuffix Fail on:", bob.testString)
+		}
+	}
+
+}
 func TestHam0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	var promiscuous, allInteresting, printUrls, polite bool
-	htc, err := LoadHamsterTestCase("htc0.json")
+	htc, err := LoadHamsterTestCase("htc2.json")
 	if err == nil {
 		log.Println("Read in test case")
 	} else {
@@ -105,6 +130,9 @@ func TestHam0(t *testing.T) {
 }
 
 func TestHam1(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	var promiscuous, allInteresting, printUrls, polite bool
 	htc, err := LoadHamsterTestCase("htc1.json")
 	if err == nil {

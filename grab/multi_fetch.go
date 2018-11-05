@@ -95,7 +95,7 @@ func (mf *MultiFetch) SetFileName(fn string) {
 	mf.filename = fn
 	mf.gwg.Add(1)
 	go func() {
-		// Because in Multi-Mode re read direct from InChan
+		// Because in Multi-Mode jpgRe read direct from InChan
 		// Maks sure we write there
 		LoadGob(mf.filename, mf.InChan, nil, false)
 		fmt.Println("Finished reading in Gob fully*************************")
@@ -342,84 +342,66 @@ func (mf *MultiFetch) dispatch(dv DomVisitI) {
 	//fmt.Println("All dispatch workers closed")
 }
 
+var jpgRe = regexp.MustCompile("(.*\\.jpg)(.*)")
+
 func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 	if mf.Closed() {
-		return false
-	}
-	// We retun true if we have used network bandwidth.
-	// If we have not then it's okay to jump straight onto the next file
-	array := strings.Split(fetchURL.URL(), "/")
-
-	var fn string
-	if len(array) > 2 {
-		fn = array[len(array)-1]
-	} else {
 		return false
 	}
 	if strings.HasPrefix(fetchURL.URL(), "file") {
 		return false
 	}
-
-	fn = strings.TrimLeft(fn, ".php?")
-	// logically there must be http:// so therefore length>2
-	dirStruct := array[2 : len(array)-1]
-	dirStr := strings.Join(dirStruct, "/")
-	dirStr = strings.Replace(dirStr, "//", "/", -1)
-	dirStr = strings.Replace(dirStr, "%", "_", -1)
-	dirStr = strings.Replace(dirStr, "&", "_", -1)
-	dirStr = strings.Replace(dirStr, "?", "_", -1)
-	dirStr = strings.Replace(dirStr, "=", "_", -1)
-
-	re := regexp.MustCompile("(.*\\.jpg)(.*)")
-	t1 := re.FindStringSubmatch(fn)
-	if len(t1) > 1 {
-		fn = t1[1]
+	// We retun true if we have used network bandwidth.
+	// If we have not then it's okay to jump straight onto the next file
+	dirStr, potentialFileName := mf.generateFilenames(fetchURL)
+	if potentialFileName == "" {
+		return false
 	}
-	pageTitle := fetchURL.GetTitle()
-	if pageTitle != "" {
-		pageTitle = strings.Replace(pageTitle, "/", "_", -1)
-		if strings.HasSuffix(fn, ".mp4") {
-			fn = pageTitle + ".mp4"
-			//fmt.Println("Title set, so set filename to:", fn)
-		}
-	}
-	fn = strings.Replace(fn, "%", "_", -1)
-	fn = strings.Replace(fn, "&", "_", -1)
-	fn = strings.Replace(fn, "?", "_", -1)
-	fn = strings.Replace(fn, "=", "_", -1)
-	fn = strings.Replace(fn, "\"", "_", -1)
-	fn = strings.Replace(fn, "'", "_", -1)
-	fn = strings.Replace(fn, "!", "_", -1)
-	fn = strings.Replace(fn, ",", "_", -1)
-	potentialFileName := dirStr + "/" + fn
+
 	if strings.HasPrefix(potentialFileName, "/") {
 		return false
 	}
-	if _, err := os.Stat(potentialFileName); !os.IsNotExist(err) {
-		// For a file that does already exist
-		if mf.jpgTk == nil {
-			// We're not testing all the jpgs for goodness
-			//fmt.Println("skipping downloading", potential_file_name)
-			return false
-		} else if strings.HasSuffix(fn, ".jpg") {
-			// Check if it is a corrupted file. If it is, then fetch again
-			//fmt.Println("yest jph", fn)
-			mf.jpgTk.Get("jpg")
-			goodFile := checkJpg(potentialFileName)
-			mf.jpgTk.Put("jpg")
-			if goodFile {
-				return false
-			}
-		} else {
-			// not a jpg and it already exists
-			return false
-		}
+	if mf.alreadyFetchedQ(potentialFileName) {
+		return false
 	}
 
 	// For a file that doesn't already exist, then just fetch it
 	if mf.debug {
 		fmt.Printf("Fetching %s, fn:%s\n", fetchURL, potentialFileName)
 	}
+
+	fetchFile(potentialFileName, dirStr, fetchURL)
+	return true
+}
+
+func (mf *MultiFetch) generateFilenames(fetchURL URL) (string, string) {
+	array := strings.Split(fetchURL.URL(), "/")
+
+	var fn string
+	// logically there must be http:// so therefore length>2
+	if len(array) > 2 {
+		fn = array[len(array)-1]
+	} else {
+		return "", ""
+	}
+
+	fn = strings.TrimLeft(fn, ".php?")
+	t1 := jpgRe.FindStringSubmatch(fn)
+	if len(t1) > 1 {
+		fn = t1[1]
+	}
+
+	pageTitle := fetchURL.GetTitle()
+	if pageTitle != "" {
+		pageTitle = strings.Replace(pageTitle, "/", "_", -1)
+		if strings.HasSuffix(fn, ".mp4") {
+			fn = pageTitle + ".mp4"
+		}
+	}
+	fn = mf.tidyFileName(fn)
+
+	dirStr := mf.genDirString(array)
+	potentialFileName := dirStr + "/" + fn
 
 	// if fetchURL does not have a recognised ending
 	// look through the url for one
@@ -431,12 +413,56 @@ func (mf *MultiFetch) fetchW(fetchURL URL) bool {
 			fmt.Println("Rewrite filename to:", potentialFileName)
 		}
 	}
-	//fmt.Println("Fetchfile start", potentialFileName)
-
-	fetchFile(potentialFileName, dirStr, fetchURL)
-	//fmt.Println("Fetchfile complete", potentialFileName)
-	return true
+	return dirStr, potentialFileName
 }
+
+func (mf *MultiFetch) alreadyFetchedQ(potentialFileName string) bool {
+	if _, err := os.Stat(potentialFileName); !os.IsNotExist(err) {
+		// For a file that does already exist
+		if mf.jpgTk == nil {
+			// We're not testing all the jpgs for goodness
+			//fmt.Println("skipping downloading", potential_file_name)
+			return true
+		} else if strings.HasSuffix(potentialFileName, ".jpg") {
+			// Check if it is a corrupted file. If it is, then fetch again
+			//fmt.Println("yest jph", fn)
+			mf.jpgTk.Get("jpg")
+			goodFile := checkJpg(potentialFileName)
+			mf.jpgTk.Put("jpg")
+			if goodFile {
+				return true
+			}
+		} else {
+			// not a jpg and it already exists
+			return true
+		}
+	}
+	return false
+}
+
+func (mf *MultiFetch) tidyFileName(fn string) string {
+	fn = strings.Replace(fn, "%", "_", -1)
+	fn = strings.Replace(fn, "&", "_", -1)
+	fn = strings.Replace(fn, "?", "_", -1)
+	fn = strings.Replace(fn, "=", "_", -1)
+	fn = strings.Replace(fn, "\"", "_", -1)
+	fn = strings.Replace(fn, "'", "_", -1)
+	fn = strings.Replace(fn, "!", "_", -1)
+	fn = strings.Replace(fn, ",", "_", -1)
+	return fn
+}
+
+func (mf *MultiFetch) genDirString(array []string) string {
+	dirStruct := array[2 : len(array)-1]
+	dirStr := strings.Join(dirStruct, "/")
+	dirStr = strings.Replace(dirStr, "//", "/", -1)
+	dirStr = strings.Replace(dirStr, "%", "_", -1)
+	dirStr = strings.Replace(dirStr, "&", "_", -1)
+	dirStr = strings.Replace(dirStr, "?", "_", -1)
+	dirStr = strings.Replace(dirStr, "=", "_", -1)
+	return dirStr
+}
+
 func findExtension(fetchURL, potentialFileName string) (bool, string) {
 	possibleExtensions := []string{"jpg", "mp4", "flv"}
 	for _, poss := range possibleExtensions {

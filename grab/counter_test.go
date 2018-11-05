@@ -10,6 +10,9 @@ import (
 
 func TestCountBasic00(t *testing.T) {
 	// Check that we don't lock if there is no work to do
+	if useTestParallel {
+		t.Parallel()
+	}
 	tc := NewOutCounter()
 	tc.Add()
 	tc.Dec()
@@ -18,6 +21,9 @@ func TestCountBasic00(t *testing.T) {
 	log.Println("Done")
 }
 func TestCountBasic0(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	tc := NewOutCounter()
 	tc.Add()
 	go func() {
@@ -29,6 +35,9 @@ func TestCountBasic0(t *testing.T) {
 	log.Println("Done")
 }
 func TestCountBasic1(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	tc := NewOutCounter()
 	tc.Add()
 	go func() {
@@ -39,6 +48,9 @@ func TestCountBasic1(t *testing.T) {
 	log.Println("Done")
 }
 func TestCountBasic2(t *testing.T) {
+	if useTestParallel {
+		t.Parallel()
+	}
 	tc := NewOutCounter()
 	tc.Add()
 	tc.Dec()

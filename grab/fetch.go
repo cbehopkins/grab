@@ -80,33 +80,9 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 		return
 	}
 	// Create any directories needed to put this file in them
-	var dirFileMode os.FileMode
-	dirFileMode = os.ModeDir | (OsUserRWX | OsAllR)
-	err := os.MkdirAll(dirStr, dirFileMode)
-	check(err)
-
-	out, err := os.Create(potentialFileName)
-	if err != nil {
-		var pe = err.(*os.PathError)        // let it panic or use the ,ok trick as below
-		var en, ok = pe.Err.(syscall.Errno) // not a Go 1 Compat guarantee, so handle failed type assertion
-		if !ok {
-			log.Fatalf("Unexpected error from os.Create: %s\n", pe)
-		}
-		switch en {
-		case syscall.EEXIST:
-			log.Fatal("Error in os create, File does not exist")
-		case syscall.EISDIR:
-			// Malformed URL gives this
-			// Indicates where we are fetching from is giving us illegal stuff
-			return
-		case syscall.EINVAL:
-			log.Fatal("Error in os create, invalid name")
-		case syscall.ENOENT:
-			// No such file or directory
-			return
-		default:
-			log.Fatalf("Unhandled syscall error:%x,%v\n", en, en)
-		}
+	out := createDownFile(dirStr, potentialFileName)
+	if out == nil {
+		return
 	}
 
 	timeout := time.Duration(FetchTimeout)
@@ -145,18 +121,52 @@ func fetchFile(potentialFileName string, dirStr string, fetchURL URL) {
 	rc := logSlow(potentialFileName)
 	_, _ = io.Copy(out, reader)
 	defer log.Println("Finished downloading:", potentialFileName)
-	close(trigger)
+	// close(trigger)	// Trigger the Calculation completion
 	close(rc)
 	err = out.Close() // can't defer this because of the file sync needed.
 	check(err)
 	_ = resp.Body.Close()
 	// Timestamp needs to be correct before this is closed
 	if true {
+		close(trigger)
 	} else if GenChecksums {
 		close(trigger)
 		wg.Wait()
 	}
 }
+
+func createDownFile(dirStr string, potentialFileName string) *os.File {
+	var dirFileMode os.FileMode
+	dirFileMode = os.ModeDir | (OsUserRWX | OsAllR)
+	err := os.MkdirAll(dirStr, dirFileMode)
+	check(err)
+
+	out, err := os.Create(potentialFileName)
+	if err != nil {
+		var pe = err.(*os.PathError)        // let it panic or use the ,ok trick as below
+		var en, ok = pe.Err.(syscall.Errno) // not a Go 1 Compat guarantee, so handle failed type assertion
+		if !ok {
+			log.Fatalf("Unexpected error from os.Create: %s\n", pe)
+		}
+		switch en {
+		case syscall.EEXIST:
+			log.Fatal("Error in os create, File does not exist")
+		case syscall.EISDIR:
+			// Malformed URL gives this
+			// Indicates where we are fetching from is giving us illegal stuff
+			return nil
+		case syscall.EINVAL:
+			log.Fatal("Error in os create, invalid name")
+		case syscall.ENOENT:
+			// No such file or directory
+			return nil
+		default:
+			log.Fatalf("Unhandled syscall error:%x,%v\n", en, en)
+		}
+	}
+	return out
+}
+
 func logSlow(fn string) chan struct{} {
 	startTime := time.Now()
 	closeChan := make(chan struct{})
